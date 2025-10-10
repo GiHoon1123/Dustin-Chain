@@ -1,0 +1,47 @@
+# 의존성
+node_modules
+
+# 빌드 결과물
+dist
+build
+*.tsbuildinfo
+
+# 환경 변수
+.env
+.env.local
+.env.*.local
+
+# 로그
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# 운영 체제
+.DS_Store
+*.sw?
+
+# 테스트 커버리지
+coverage
+*.lcov
+.nyc_output
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 임시 파일
+*.tmp
+*.temp
+
+# 백업 파일
+*.backup.md
