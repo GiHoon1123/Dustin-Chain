@@ -1,0 +1,267 @@
+# Dustin-Chain 개발 TODO List
+
+> 이더리움 POS 기반 블록체인 - 핵심 기능 MVP
+
+---
+
+## 🎯 목표
+
+서버에 배포 가능한 최소 기능 블록체인 구현
+
+---
+
+## Phase 1: 기초 인프라 🔧
+
+### 1.1 Crypto 유틸리티
+
+- [ ] SHA-256 해시 함수 구현
+- [ ] Keccak-256 해시 함수 구현 (이더리움 표준)
+- [ ] secp256k1 키 생성 (개인키 → 공개키)
+- [ ] ECDSA 서명 & 검증
+- [ ] 이더리움 스타일 주소 생성 (0x...)
+- [ ] 유틸리티 테스트 작성
+
+### 1.2 기본 타입 정의
+
+- [ ] Address 타입
+- [ ] Hash 타입
+- [ ] Signature 타입 (v, r, s)
+- [ ] BigNumber 처리 (큰 숫자)
+- [ ] Constants 정의 (BLOCK_TIME, MIN_STAKE, REWARD 등)
+
+---
+
+## Phase 2: 핵심 데이터 구조 📦
+
+### 2.1 Account 모듈
+
+- [ ] Account 엔티티 생성
+  - address (주소)
+  - balance (잔액)
+  - nonce (트랜잭션 순서 번호)
+  - stakedBalance (스테이킹 금액)
+- [ ] Account Service
+- [ ] Account 상태 저장소 (In-Memory)
+
+### 2.2 Transaction 모듈
+
+- [ ] Transaction 엔티티
+  - 기본 트랜잭션 (송금)
+  - 스테이킹 트랜잭션
+- [ ] 트랜잭션 서명
+- [ ] 트랜잭션 검증 로직
+- [ ] 트랜잭션 해시 계산
+- [ ] Transaction Pool (Mempool) 구현
+- [ ] Transaction Service
+
+### 2.3 Block 모듈
+
+- [ ] Block Header 구조
+  - 블록 번호
+  - 이전 블록 해시
+  - 타임스탬프
+  - 상태 루트
+  - 트랜잭션 루트
+  - proposer (블록 생성자 주소)
+- [ ] Block Body (트랜잭션 리스트)
+- [ ] 블록 해시 계산
+- [ ] 블록 검증 로직
+- [ ] Block Service
+
+---
+
+## Phase 3: 상태 관리 💾
+
+### 3.1 State Manager
+
+- [ ] 전역 상태 관리 (모든 계정)
+- [ ] Genesis State 초기화
+  - 창시자 계정: 10,000,000 DSTN
+  - 테스트 계정 3개: 각 100,000 DSTN
+- [ ] 상태 변경 메서드 (트랜잭션 실행)
+- [ ] 상태 조회 메서드
+- [ ] 간단한 Merkle Root 계산
+
+### 3.2 Transaction Pool
+
+- [ ] Pending 트랜잭션 저장
+- [ ] Gas Price 기반 우선순위
+- [ ] 트랜잭션 추가/제거
+- [ ] 무효 트랜잭션 필터링
+
+---
+
+## Phase 4: POS 합의 메커니즘 ⚡
+
+### 4.1 Validator 모듈
+
+- [ ] Validator 엔티티
+  - address
+  - stakedAmount
+  - isActive
+  - rewards
+- [ ] 밸리데이터 등록 (최소 32 DSTN)
+- [ ] 밸리데이터 활성화/비활성화
+- [ ] Validator Service
+
+### 4.2 Staking 시스템
+
+- [ ] 스테이킹 예치 로직
+- [ ] 스테이킹 인출 로직
+- [ ] 스테이킹 금액 검증
+- [ ] Staking Service
+
+### 4.3 Consensus Engine
+
+- [ ] 슬롯/에포크 시스템 (12초/슬롯)
+- [ ] 다음 블록 생성자 선택 알고리즘
+  - 가중치 기반 무작위 선택
+- [ ] 블록 검증 (proposer 권한 확인)
+- [ ] 보상 분배 (2 DSTN + 수수료)
+- [ ] Consensus Service
+
+---
+
+## Phase 5: 블록체인 통합 🔗
+
+### 5.1 Blockchain Core
+
+- [ ] Genesis Block 생성
+- [ ] 블록 추가 로직
+  - 블록 검증
+  - 트랜잭션 실행
+  - 상태 업데이트
+  - 체인에 추가
+- [ ] 블록 조회 (번호, 해시)
+- [ ] 체인 상태 조회
+- [ ] Blockchain Service
+
+### 5.2 Block Production
+
+- [ ] 12초마다 자동 블록 생성
+- [ ] Mempool에서 트랜잭션 선택
+- [ ] 블록 조립
+- [ ] 블록 서명
+- [ ] 블록 브로드캐스트 (로컬)
+- [ ] Block Producer Service
+
+---
+
+## Phase 6: API 엔드포인트 🌐
+
+### 6.1 Wallet Controller
+
+- [ ] `POST /wallet/create` - 새 지갑 생성
+- [ ] `POST /wallet/import` - 개인키로 지갑 가져오기
+- [ ] `GET /wallet/:address` - 지갑 정보 조회
+
+### 6.2 Account Controller
+
+- [ ] `GET /account/:address` - 계정 잔액 조회
+- [ ] `GET /account/:address/transactions` - 계정 트랜잭션 내역
+
+### 6.3 Transaction Controller
+
+- [ ] `POST /transaction/send` - 트랜잭션 전송
+- [ ] `GET /transaction/:hash` - 트랜잭션 조회
+- [ ] `GET /transaction/pool` - Mempool 조회
+- [ ] `GET /transaction/pending/:address` - 특정 주소의 pending 트랜잭션
+
+### 6.4 Staking Controller
+
+- [ ] `POST /staking/deposit` - 스테이킹 예치
+- [ ] `POST /staking/withdraw` - 스테이킹 인출
+- [ ] `GET /staking/validators` - 밸리데이터 목록
+- [ ] `GET /staking/:address` - 스테이킹 정보 조회
+
+### 6.5 Block Controller
+
+- [ ] `GET /block/latest` - 최신 블록 조회
+- [ ] `GET /block/:number` - 블록 번호로 조회
+- [ ] `GET /block/hash/:hash` - 블록 해시로 조회
+
+### 6.6 Blockchain Controller
+
+- [ ] `GET /blockchain/status` - 체인 상태 (높이, 밸리데이터 수 등)
+- [ ] `GET /blockchain/genesis` - Genesis 블록 조회
+
+---
+
+## Phase 7: 배포 준비 🚀
+
+### 7.1 설정 & 환경
+
+- [ ] 환경 변수 설정 (.env)
+- [ ] 설정 파일 (config.ts)
+- [ ] 로깅 시스템 (winston)
+- [ ] 에러 핸들링
+
+### 7.2 문서화
+
+- [ ] README 업데이트
+  - 프로젝트 소개
+  - 설치 방법
+  - API 문서
+  - 사용 예시
+- [ ] API 문서 (Swagger)
+- [ ] 아키텍처 다이어그램
+
+### 7.3 테스트
+
+- [ ] 핵심 기능 단위 테스트
+- [ ] E2E 테스트
+- [ ] 트랜잭션 시나리오 테스트
+- [ ] 스테이킹 시나리오 테스트
+
+### 7.4 서버 배포
+
+- [ ] Docker 설정
+- [ ] 프로덕션 빌드
+- [ ] PM2 설정 (프로세스 관리)
+- [ ] 서버 배포
+
+---
+
+## 🎁 추가 기능 (나중에)
+
+### 선택적 기능
+
+- [ ] 트랜잭션 수수료 (Gas) 시스템
+- [ ] EIP-1559 스타일 Base Fee
+- [ ] 슬래싱 (악의적 행동 처벌)
+- [ ] 인출 대기 큐
+- [ ] Block Explorer (웹 UI)
+- [ ] 지갑 웹 인터페이스
+
+### Phase 2 (미래)
+
+- [ ] P2P 네트워크 (실제 분산 네트워크)
+- [ ] EVM 구현 (스마트 컨트랙트)
+- [ ] ERC-20 토큰 지원
+- [ ] 데이터베이스 영속성 (PostgreSQL)
+
+---
+
+## 📊 진행 상황
+
+- [ ] Phase 1: 기초 인프라 (0%)
+- [ ] Phase 2: 핵심 데이터 구조 (0%)
+- [ ] Phase 3: 상태 관리 (0%)
+- [ ] Phase 4: POS 합의 (0%)
+- [ ] Phase 5: 블록체인 통합 (0%)
+- [ ] Phase 6: API 엔드포인트 (0%)
+- [ ] Phase 7: 배포 준비 (0%)
+
+---
+
+## 🎯 MVP 핵심 목표
+
+**최소 기능으로 동작하는 블록체인:**
+
+1. ✅ 지갑 생성 가능
+2. ✅ 코인 전송 가능
+3. ✅ 스테이킹 가능
+4. ✅ 자동으로 블록 생성
+5. ✅ REST API로 조회 가능
+
+**이것만 되면 배포 가능!** 🚀
