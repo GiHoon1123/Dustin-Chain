@@ -62,14 +62,27 @@
 
 ### 2.2 Transaction 모듈
 
-- [ ] Transaction 엔티티
-  - 기본 트랜잭션 (송금)
-  - 스테이킹 트랜잭션
-- [ ] 트랜잭션 서명
-- [ ] 트랜잭션 검증 로직
-- [ ] 트랜잭션 해시 계산
-- [ ] Transaction Pool (Mempool) 구현
-- [ ] Transaction Service
+- [x] Transaction 엔티티
+  - from, to, value, nonce
+  - v, r, s (서명)
+  - status (pending/confirmed/failed)
+- [x] 트랜잭션 서명 (EIP-155)
+- [x] 트랜잭션 검증 로직
+  - 서명 검증 (ecrecover)
+  - Nonce 검증
+  - 잔액 검증
+- [x] 트랜잭션 해시 계산
+- [x] Transaction Pool (Mempool) 구현 (In-Memory)
+- [x] Transaction Service
+  - signTransaction (테스트용)
+  - submitTransaction
+  - validateTransaction
+  - getTransaction
+- [x] Transaction Controller
+  - POST /transaction/sign (테스트용)
+  - POST /transaction/send
+  - GET /transaction/:hash
+- [x] Swagger 문서화
 
 ### 2.3 Block 모듈
 
