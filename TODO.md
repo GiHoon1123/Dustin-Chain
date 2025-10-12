@@ -14,20 +14,22 @@
 
 ### 1.1 Crypto 유틸리티
 
-- [ ] SHA-256 해시 함수 구현
-- [ ] Keccak-256 해시 함수 구현 (이더리움 표준)
-- [ ] secp256k1 키 생성 (개인키 → 공개키)
-- [ ] ECDSA 서명 & 검증
-- [ ] 이더리움 스타일 주소 생성 (0x...)
-- [ ] 유틸리티 테스트 작성
+- [x] SHA-256 해시 함수 구현 (불필요 - Keccak-256만 사용)
+- [x] Keccak-256 해시 함수 구현 (이더리움 표준)
+  - hashBuffer, hashHex, hashUtf8 분리
+- [x] secp256k1 키 생성 (개인키 → 공개키)
+- [x] ECDSA 서명 & 검증
+  - EIP-155 지원 (chainId 포함)
+- [x] 이더리움 스타일 주소 생성 (0x...)
+- [x] 유틸리티 테스트 작성
 
 ### 1.2 기본 타입 정의
 
-- [ ] Address 타입
-- [ ] Hash 타입
-- [ ] Signature 타입 (v, r, s)
-- [ ] BigNumber 처리 (큰 숫자)
-- [ ] Constants 정의 (BLOCK_TIME, MIN_STAKE, REWARD 등)
+- [x] Address 타입
+- [x] Hash 타입
+- [x] Signature 타입 (v, r, s)
+- [x] BigNumber 처리 (큰 숫자) - BigInt 사용
+- [x] Constants 정의 (BLOCK_TIME, MIN_STAKE, REWARD 등)
 
 ---
 
@@ -35,13 +37,28 @@
 
 ### 2.1 Account 모듈
 
-- [ ] Account 엔티티 생성
+- [x] Account 엔티티 생성
   - address (주소)
   - balance (잔액)
   - nonce (트랜잭션 순서 번호)
-  - stakedBalance (스테이킹 금액)
-- [ ] Account Service
-- [ ] Account 상태 저장소 (In-Memory)
+  - stakedBalance (스테이킹 금액) - Phase 4로 이동
+- [x] Account Service
+  - 계정 생성 및 조회
+  - 잔액 관리
+  - Nonce 관리
+  - 계정 간 송금
+- [x] Account 상태 저장소 (In-Memory)
+  - Repository Pattern 적용
+  - IAccountRepository 인터페이스
+  - InMemoryAccountRepository 구현
+- [x] Account Controller
+  - POST /account/create-wallet
+  - GET /account/:address
+  - GET /account/:address/balance
+  - GET /account/:address/nonce
+  - POST /account/add-balance (테스트용)
+  - POST /account/transfer
+- [x] Account Service 테스트 작성 (18개 테스트 통과)
 
 ### 2.2 Transaction 모듈
 
