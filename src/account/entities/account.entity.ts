@@ -74,6 +74,61 @@ export class Account {
   }
 
   /**
+   * 잔액 추가
+   *
+   * 비즈니스 규칙:
+   * - 추가 금액은 양수여야 함
+   * - 잔액은 항상 0 이상
+   *
+   * @param amount - 추가할 금액 (Wei)
+   * @throws {Error} 금액이 0 이하인 경우
+   */
+  addBalance(amount: bigint): void {
+    if (amount <= 0n) {
+      throw new Error('Amount must be positive');
+    }
+    this.balance += amount;
+  }
+
+  /**
+   * 잔액 차감
+   *
+   * 비즈니스 규칙:
+   * - 차감 금액은 양수여야 함
+   * - 잔액이 부족하면 차감 불가
+   * - 잔액은 절대 음수가 될 수 없음
+   *
+   * @param amount - 차감할 금액 (Wei)
+   * @throws {Error} 금액이 0 이하이거나 잔액 부족인 경우
+   */
+  subtractBalance(amount: bigint): void {
+    if (amount <= 0n) {
+      throw new Error('Amount must be positive');
+    }
+    if (this.balance < amount) {
+      throw new Error(
+        `Insufficient balance. Current: ${this.balance}, Required: ${amount}`,
+      );
+    }
+    this.balance -= amount;
+  }
+
+  /**
+   * Nonce 증가
+   *
+   * 비즈니스 규칙:
+   * - 트랜잭션 실행 시마다 1씩 증가
+   * - 순차적으로 증가 (건너뛰기 불가)
+   *
+   * 이더리움에서:
+   * - 트랜잭션 처리 후 자동 증가
+   * - 절대 감소하지 않음
+   */
+  incrementNonce(): void {
+    this.nonce++;
+  }
+
+  /**
    * 계정 정보를 간단한 객체로 변환
    *
    * 용도:
