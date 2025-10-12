@@ -104,4 +104,3 @@ export class SignTransactionResponseDto {
   })
   s: string;
 }
-

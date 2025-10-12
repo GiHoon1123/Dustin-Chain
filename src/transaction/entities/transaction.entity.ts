@@ -1,5 +1,5 @@
-import { Address, Hash } from '../../common/types/common.types';
 import { Signature } from '../../common/crypto/crypto.types';
+import { Address, Hash } from '../../common/types/common.types';
 
 /**
  * Transaction Entity
@@ -177,4 +177,3 @@ export class Transaction {
     };
   }
 }
-

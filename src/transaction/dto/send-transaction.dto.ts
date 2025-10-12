@@ -116,4 +116,3 @@ export class SendTransactionResponseDto {
   })
   message: string;
 }
-

@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
+import { AccountModule } from '../account/account.module';
+import { TransactionPool } from './pool/transaction.pool';
 import { TransactionController } from './transaction.controller';
 import { TransactionService } from './transaction.service';
-import { TransactionPool } from './pool/transaction.pool';
-import { AccountModule } from '../account/account.module';
 
 /**
  * Transaction Module
@@ -29,4 +29,3 @@ import { AccountModule } from '../account/account.module';
   exports: [TransactionService, TransactionPool],
 })
 export class TransactionModule {}
-

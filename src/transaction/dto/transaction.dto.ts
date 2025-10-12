@@ -75,4 +75,3 @@ export class TransactionDto {
   })
   timestamp: string;
 }
-
