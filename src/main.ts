@@ -21,6 +21,7 @@ async function bootstrap() {
     .setDescription('이더리움 POS 기반 블록체인 API 문서')
     .setVersion('1.0')
     .addTag('account', '계정 관리 API')
+    .addTag('transaction', '트랜잭션 관리 API')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

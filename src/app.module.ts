@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AccountModule } from './account/account.module';
 import { CommonModule } from './common/common.module';
+import { TransactionModule } from './transaction/transaction.module';
 
 /**
  * AppModule
@@ -10,9 +11,10 @@ import { CommonModule } from './common/common.module';
  * Modules:
  * - CommonModule: 전역 유틸리티 (CryptoService 등)
  * - AccountModule: 계정 상태 관리
+ * - TransactionModule: 트랜잭션 관리
  */
 @Module({
-  imports: [CommonModule, AccountModule],
+  imports: [CommonModule, AccountModule, TransactionModule],
   controllers: [],
   providers: [],
 })
