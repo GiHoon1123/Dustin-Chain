@@ -1,14 +1,6 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CryptoService } from '../common/crypto/crypto.service';
-import { isValidAddress } from '../common/types/common.types';
 import { AccountService } from './account.service';
 import { AccountDto } from './dto/account.dto';
 import {
@@ -123,10 +115,6 @@ export class AccountController {
     type: AccountDto,
   })
   async getAccount(@Param('address') address: string): Promise<AccountDto> {
-    if (!isValidAddress(address)) {
-      throw new BadRequestException('Invalid address format');
-    }
-
     const account = await this.accountService.getOrCreateAccount(address);
     return account.toJSON();
   }
@@ -162,13 +150,8 @@ export class AccountController {
   ): Promise<AddBalanceResponseDto> {
     const { address, amount } = body;
 
-    if (!isValidAddress(address)) {
-      throw new BadRequestException('Invalid address');
-    }
-    if (!amount || BigInt(amount) <= 0n) {
-      throw new BadRequestException('Invalid amount');
-    }
-
+    // DTO에서 이미 형식 검증 완료
+    // Service에서 비즈니스 로직 처리
     await this.accountService.addBalance(address, BigInt(amount));
 
     return {

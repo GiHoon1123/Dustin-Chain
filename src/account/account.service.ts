@@ -85,16 +85,21 @@ export class AccountService {
    * - 블록 보상
    * - Genesis 초기화
    *
+   * Service 역할:
+   * - Repository에서 계정 조회 (외부 인프라)
+   * - Entity의 비즈니스 로직 호출
+   * - 변경사항 저장 (외부 인프라)
+   *
    * @param address - 계정 주소
    * @param amount - 추가할 금액 (Wei)
+   * @throws {Error} Entity에서 비즈니스 규칙 위반 시
    */
   async addBalance(address: Address, amount: bigint): Promise<void> {
-    if (amount < 0n) {
-      throw new Error('Amount cannot be negative');
-    }
-
     const account = await this.getOrCreateAccount(address);
-    account.balance += amount;
+
+    // Entity에서 비즈니스 규칙 검증 (양수 체크)
+    account.addBalance(amount);
+
     await this.repository.save(account);
 
     this.logger.debug(
@@ -110,24 +115,21 @@ export class AccountService {
    * - 스테이킹
    * - 수수료 지불
    *
+   * Service 역할:
+   * - Repository에서 계정 조회
+   * - Entity의 비즈니스 로직 호출
+   * - 변경사항 저장
+   *
    * @param address - 계정 주소
    * @param amount - 차감할 금액 (Wei)
-   * @throws 잔액 부족 시 에러
+   * @throws {Error} Entity에서 비즈니스 규칙 위반 시 (잔액 부족 등)
    */
   async subtractBalance(address: Address, amount: bigint): Promise<void> {
-    if (amount < 0n) {
-      throw new Error('Amount cannot be negative');
-    }
-
     const account = await this.getOrCreateAccount(address);
 
-    if (account.balance < amount) {
-      throw new Error(
-        `Insufficient balance. Account: ${address}, Balance: ${account.balance}, Required: ${amount}`,
-      );
-    }
+    // Entity에서 비즈니스 규칙 검증 (양수 체크 + 잔액 부족 체크)
+    account.subtractBalance(amount);
 
-    account.balance -= amount;
     await this.repository.save(account);
 
     this.logger.debug(
@@ -171,11 +173,19 @@ export class AccountService {
    * - 트랜잭션 실행 후 nonce++
    * - 순서 보장
    *
+   * Service 역할:
+   * - Repository에서 계정 조회
+   * - Entity의 비즈니스 로직 호출
+   * - 변경사항 저장
+   *
    * @param address - 계정 주소
    */
   async incrementNonce(address: Address): Promise<void> {
     const account = await this.getOrCreateAccount(address);
-    account.nonce++;
+
+    // Entity에서 비즈니스 로직 실행
+    account.incrementNonce();
+
     await this.repository.save(account);
 
     this.logger.debug(`Incremented nonce for ${address}: ${account.nonce}`);
