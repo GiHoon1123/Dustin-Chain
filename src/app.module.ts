@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AccountModule } from './account/account.module';
 import { CommonModule } from './common/common.module';
 
 /**
@@ -6,11 +7,12 @@ import { CommonModule } from './common/common.module';
  *
  * 애플리케이션의 루트 모듈
  *
- * CommonModule을 전역 모듈로 import하여
- * CryptoService 등 기본 유틸리티를 모든 모듈에서 사용 가능하게 함
+ * Modules:
+ * - CommonModule: 전역 유틸리티 (CryptoService 등)
+ * - AccountModule: 계정 상태 관리
  */
 @Module({
-  imports: [CommonModule],
+  imports: [CommonModule, AccountModule],
   controllers: [],
   providers: [],
 })
