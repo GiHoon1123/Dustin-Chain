@@ -4,7 +4,7 @@
  */
 
 /**
- * BLOCK_TIME: 블록 생성 주기 (초)
+ * BLOCK_TIME: 블록 생성 주기 (밀리초)
  *
  * 이더리움에서:
  * - 12초 (1 slot)
@@ -14,7 +14,7 @@
  * - 너무 짧으면: 네트워크 부하, 포크 발생 가능성 증가
  * - 너무 길면: 트랜잭션 확인 시간 지연
  */
-export const BLOCK_TIME = 12; // seconds
+export const BLOCK_TIME = 12000; // milliseconds (12 seconds)
 
 /**
  * EPOCH_SIZE: 한 에포크당 슬롯(블록) 수
