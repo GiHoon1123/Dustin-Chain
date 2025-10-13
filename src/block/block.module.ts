@@ -41,4 +41,3 @@ import { IBlockRepository } from './repositories/block.repository.interface';
   exports: [BlockService, BlockProducer],
 })
 export class BlockModule {}
-

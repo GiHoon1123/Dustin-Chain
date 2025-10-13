@@ -53,4 +53,3 @@ export interface IBlockRepository {
 }
 
 export const IBlockRepository = Symbol('IBlockRepository');
-

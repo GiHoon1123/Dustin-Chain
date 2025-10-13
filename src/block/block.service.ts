@@ -383,4 +383,3 @@ export class BlockService {
     };
   }
 }
-

@@ -81,4 +81,3 @@ export class BlockMemoryRepository implements IBlockRepository {
     return Promise.resolve();
   }
 }
-

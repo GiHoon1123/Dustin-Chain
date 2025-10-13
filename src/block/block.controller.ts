@@ -1,7 +1,7 @@
 import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BlockService } from './block.service';
-import { BlockDto, BlockHeaderDto, ChainStatsDto } from './dto/block.dto';
+import { BlockDto, ChainStatsDto } from './dto/block.dto';
 import { BlockProducer } from './producer/block.producer';
 
 /**
@@ -171,4 +171,3 @@ export class BlockController {
     return this.blockProducer.getStatus();
   }
 }
-

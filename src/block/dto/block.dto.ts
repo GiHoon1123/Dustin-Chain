@@ -160,4 +160,3 @@ export class ChainStatsDto {
   })
   genesisProposer: string;
 }
-

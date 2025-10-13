@@ -138,10 +138,13 @@ export class BlockProducer implements OnModuleInit {
       const block = await this.blockService.createBlock();
 
       this.logger.log(
-        `✅ Block #${block.number} produced: ${block.hash} (${block.getTransactionCount()} txs)`,
+        `Block #${block.number} produced: ${block.hash} (${block.getTransactionCount()} txs)`,
       );
     } catch (error) {
-      this.logger.error(`Failed to produce block: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to produce block: ${error.message}`,
+        error.stack,
+      );
       // 에러가 나도 다음 블록은 계속 생성
     }
   }
@@ -193,4 +196,3 @@ export class BlockProducer implements OnModuleInit {
     };
   }
 }
-
