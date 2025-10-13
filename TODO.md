@@ -86,17 +86,34 @@
 
 ### 2.3 Block 모듈
 
-- [ ] Block Header 구조
-  - 블록 번호
-  - 이전 블록 해시
-  - 타임스탬프
-  - 상태 루트
-  - 트랜잭션 루트
-  - proposer (블록 생성자 주소)
-- [ ] Block Body (트랜잭션 리스트)
-- [ ] 블록 해시 계산
-- [ ] 블록 검증 로직
-- [ ] Block Service
+- [x] Block 엔티티
+  - number, hash, parentHash
+  - timestamp
+  - proposer (임시 고정 주소)
+  - transactions (전체 객체 저장)
+  - stateRoot, transactionsRoot
+- [x] Block Repository 인터페이스
+- [x] InMemoryBlockRepository 구현
+- [x] Block Service
+  - Genesis Block 생성
+  - 블록 생성 로직
+  - 트랜잭션 실행
+  - Proposer 보상 지급
+  - 블록 해시 계산
+  - 블록 조회
+- [x] Block Producer (자동 생성)
+  - Slot 기반 시스템 (Genesis 시간 기준)
+  - 12초마다 자동 블록 생성
+  - 서버 시작 시 자동 시작
+  - Mempool에서 트랜잭션 선택 및 실행
+- [x] Block Controller
+  - GET /block/latest
+  - GET /block/number/:number
+  - GET /block/hash/:hash
+  - GET /block/stats
+  - GET /block/producer-status
+- [x] Swagger 문서화
+- [x] BlockModule 생성 및 통합
 
 ---
 
