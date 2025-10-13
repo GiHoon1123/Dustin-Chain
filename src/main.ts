@@ -22,6 +22,7 @@ async function bootstrap() {
     .setVersion('1.0')
     .addTag('account', '계정 관리 API')
     .addTag('transaction', '트랜잭션 관리 API')
+    .addTag('block', '블록 조회 API')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
