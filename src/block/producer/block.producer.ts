@@ -1,5 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { BLOCK_TIME } from '../../common/constants/blockchain.constants';
+import { AccountService } from '../../account/account.service';
+import {
+  BLOCK_REWARD,
+  BLOCK_TIME,
+  WEI_PER_DSTN,
+} from '../../common/constants/blockchain.constants';
+import { ConsensusService } from '../../consensus/consensus.service';
+import { ValidatorService } from '../../validator/validator.service';
 import { BlockService } from '../block.service';
 
 /**
@@ -32,7 +39,12 @@ export class BlockProducer implements OnModuleInit {
   private isRunning = false;
   private currentTimeout: NodeJS.Timeout | null = null;
 
-  constructor(private readonly blockService: BlockService) {}
+  constructor(
+    private readonly blockService: BlockService,
+    private readonly validatorService: ValidatorService,
+    private readonly consensusService: ConsensusService,
+    private readonly accountService: AccountService,
+  ) {}
 
   /**
    * 모듈 초기화 시 자동 시작
@@ -47,6 +59,9 @@ export class BlockProducer implements OnModuleInit {
     // Genesis Block 생성
     const genesisBlock = await this.blockService.createGenesisBlock();
     this.genesisTime = genesisBlock.timestamp;
+
+    // ConsensusService에도 Genesis Time 설정
+    this.consensusService.setGenesisTime(this.genesisTime);
 
     this.logger.log(
       `Genesis Time set: ${new Date(this.genesisTime).toISOString()}`,
@@ -122,23 +137,69 @@ export class BlockProducer implements OnModuleInit {
   /**
    * 블록 생성 실행
    *
-   * 이더리움:
-   * 1. Mempool에서 트랜잭션 선택
-   * 2. 트랜잭션 실행
-   * 3. 상태 변경
-   * 4. 블록 생성
-   * 5. Proposer에게 보상
+   * 이더리움 POS:
+   * 1. Proposer 선택 (슬롯마다 1명)
+   * 2. Committee 선택 (슬롯마다 128명)
+   * 3. Proposer가 블록 생성
+   * 4. Committee가 블록 검증 (Attestation)
+   * 5. 2/3 이상이면 블록 확정
+   * 6. Proposer에게 보상
    *
    * 우리:
-   * - BlockService.createBlock()에 위임
-   * - 에러 처리만 담당
+   * - ValidatorService로 Proposer/Committee 선택
+   * - ConsensusService로 Attestation 수집
+   * - BlockService로 블록 생성
    */
   private async produceBlock(): Promise<void> {
     try {
-      const block = await this.blockService.createBlock();
+      const currentSlot = this.getCurrentSlot();
+
+      if (currentSlot === null) {
+        throw new Error('Genesis Time not set');
+      }
+
+      // 1. Proposer 선택 (256명 중 1명)
+      const proposer = await this.validatorService.selectProposer(currentSlot);
+
+      // 2. Committee 선택 (256명 중 128명)
+      const committee =
+        await this.validatorService.selectCommittee(currentSlot);
 
       this.logger.log(
-        `Block #${block.number} produced: ${block.hash} (${block.getTransactionCount()} txs)`,
+        `Slot ${currentSlot}: Proposer=${proposer.slice(0, 10)}..., Committee=${committee.length} validators`,
+      );
+
+      // 3. 블록 생성 (Proposer가 생성)
+      const block = await this.blockService.createBlock(proposer);
+
+      // 4. Committee로부터 Attestation 수집
+      const attestations = await this.consensusService.collectAttestations(
+        block,
+        committee,
+      );
+
+      // 5. Supermajority 확인 (2/3 이상)
+      const hasSupermajority = this.consensusService.hasSupermajority(
+        attestations,
+        committee.length,
+      );
+
+      if (hasSupermajority) {
+        this.logger.log(
+          `✅ Block #${block.number} produced: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
+        );
+      } else {
+        this.logger.warn(
+          `⚠️ Block #${block.number} insufficient attestations: ${attestations.length}/${committee.length}`,
+        );
+      }
+
+      // 6. Proposer에게 보상
+      const blockReward = BigInt(BLOCK_REWARD) * WEI_PER_DSTN;
+      await this.accountService.addBalance(proposer, blockReward);
+
+      this.logger.debug(
+        `Block reward ${BLOCK_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
       );
     } catch (error) {
       this.logger.error(

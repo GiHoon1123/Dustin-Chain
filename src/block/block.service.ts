@@ -134,12 +134,12 @@ export class BlockService {
    * 우리:
    * - Mempool에서 모든 pending 트랜잭션 가져옴
    * - 트랜잭션 실행 (송금, nonce 증가)
-   * - Proposer에게 BLOCK_REWARD
-   * - 블록 생성
+   * - 블록 생성 (보상은 BlockProducer에서 처리)
    *
+   * @param proposer - 블록 생성자 주소 (ValidatorService에서 선택)
    * @returns 생성된 블록
    */
-  async createBlock(): Promise<Block> {
+  async createBlock(proposer: Address): Promise<Block> {
     // 1. 이전 블록 가져오기
     const latestBlock = await this.repository.findLatest();
     if (!latestBlock) {
@@ -176,12 +176,7 @@ export class BlockService {
       }
     }
 
-    // 4. Proposer에게 보상
-    const blockReward = BigInt(BLOCK_REWARD) * WEI_PER_DSTN;
-    await this.accountService.addBalance(this.GENESIS_PROPOSER, blockReward);
-    this.logger.debug(
-      `Block reward ${BLOCK_REWARD} DSTN to ${this.GENESIS_PROPOSER}`,
-    );
+    // 4. (보상은 BlockProducer에서 처리)
 
     // 5. State Root 계산
     const stateRoot = await this.calculateStateRoot();
@@ -194,7 +189,7 @@ export class BlockService {
       blockNumber,
       parentHash,
       timestamp,
-      this.GENESIS_PROPOSER,
+      proposer,
       transactionsRoot,
       stateRoot,
     );
@@ -204,7 +199,7 @@ export class BlockService {
       blockNumber,
       parentHash,
       timestamp,
-      this.GENESIS_PROPOSER,
+      proposer,
       executedTxs,
       stateRoot,
       transactionsRoot,
