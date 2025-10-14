@@ -1,11 +1,14 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AccountService } from '../../account/account.service';
 import {
-  BLOCK_REWARD,
   BLOCK_TIME,
+  COMMITTEE_REWARD_POOL,
+  PROPOSER_REWARD,
   WEI_PER_DSTN,
 } from '../../common/constants/blockchain.constants';
+import { Address } from '../../common/types/common.types';
 import { ConsensusService } from '../../consensus/consensus.service';
+import { Attestation } from '../../consensus/entities/attestation.entity';
 import { ValidatorService } from '../../validator/validator.service';
 import { BlockService } from '../block.service';
 
@@ -194,13 +197,8 @@ export class BlockProducer implements OnModuleInit {
         );
       }
 
-      // 6. Proposer에게 보상
-      const blockReward = BigInt(BLOCK_REWARD) * WEI_PER_DSTN;
-      await this.accountService.addBalance(proposer, blockReward);
-
-      this.logger.debug(
-        `Block reward ${BLOCK_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
-      );
+      // 6. 보상 분배
+      await this.distributeRewards(proposer, attestations);
     } catch (error) {
       this.logger.error(
         `Failed to produce block: ${error.message}`,
@@ -208,6 +206,54 @@ export class BlockProducer implements OnModuleInit {
       );
       // 에러가 나도 다음 블록은 계속 생성
     }
+  }
+
+  /**
+   * 보상 분배
+   *
+   * 이더리움:
+   * - Proposer: Base Reward + Transaction Fees
+   * - Attesters: Attestation Reward (각자)
+   *
+   * 우리:
+   * - Proposer: 2 DSTN
+   * - Committee: 1 DSTN을 128명이 나눔 (각 ~0.0078 DSTN)
+   *
+   * @param proposer - 블록 제안자
+   * @param attestations - Attestation 배열
+   */
+  private async distributeRewards(
+    proposer: Address,
+    attestations: Attestation[],
+  ): Promise<void> {
+    // 1. Proposer 보상 (2 DSTN)
+    const proposerReward = BigInt(PROPOSER_REWARD) * WEI_PER_DSTN;
+    await this.accountService.addBalance(proposer, proposerReward);
+
+    this.logger.debug(
+      `Proposer reward: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
+    );
+
+    // 2. Committee 보상 (1 DSTN을 Attestation 제출자들이 나눔)
+    if (attestations.length > 0) {
+      const totalCommitteeReward = BigInt(COMMITTEE_REWARD_POOL) * WEI_PER_DSTN;
+      const rewardPerAttester = totalCommitteeReward / BigInt(attestations.length);
+
+      for (const attestation of attestations) {
+        await this.accountService.addBalance(
+          attestation.validator,
+          rewardPerAttester,
+        );
+      }
+
+      this.logger.debug(
+        `Committee rewards: ${attestations.length} validators × ${Number(rewardPerAttester) / Number(WEI_PER_DSTN)} DSTN`,
+      );
+    }
+
+    // 총 보상
+    const totalReward = PROPOSER_REWARD + COMMITTEE_REWARD_POOL;
+    this.logger.debug(`Total block reward: ${totalReward} DSTN distributed`);
   }
 
   /**

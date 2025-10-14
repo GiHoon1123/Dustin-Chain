@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { COMMITTEE_SIZE } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
 import { Validator } from './entities/validator.entity';
@@ -34,11 +35,6 @@ export class ValidatorService {
    * 우리: 256명 (2배) - Committee 선택 알고리즘 테스트용
    */
   private readonly genesisValidators: Validator[] = [];
-
-  /**
-   * Committee 크기 (이더리움 표준)
-   */
-  private readonly COMMITTEE_SIZE = 128;
 
   constructor(private readonly cryptoService: CryptoService) {
     this.initializeGenesisValidators();
@@ -136,9 +132,9 @@ export class ValidatorService {
   async selectCommittee(slot: number): Promise<Address[]> {
     const validators = await this.getAllValidators();
 
-    if (validators.length < this.COMMITTEE_SIZE) {
+    if (validators.length < COMMITTEE_SIZE) {
       this.logger.warn(
-        `Not enough validators (${validators.length}) for full committee (${this.COMMITTEE_SIZE})`,
+        `Not enough validators (${validators.length}) for full committee (${COMMITTEE_SIZE})`,
       );
       return validators.map((v) => v.address);
     }
@@ -151,7 +147,7 @@ export class ValidatorService {
 
     // 상위 128명 선택
     const committee = shuffled
-      .slice(0, this.COMMITTEE_SIZE)
+      .slice(0, COMMITTEE_SIZE)
       .map((v) => v.address);
 
     this.logger.debug(
@@ -219,7 +215,7 @@ export class ValidatorService {
       total,
       active,
       inactive: total - active,
-      committeeSize: this.COMMITTEE_SIZE,
+      committeeSize: COMMITTEE_SIZE,
     };
   }
 }

@@ -47,17 +47,21 @@ export const MIN_STAKE = 32; // DSTN
  * BLOCK_REWARD: 블록 생성 보상 (DSTN)
  *
  * 이더리움에서:
- * - 약 0.02-0.03 ETH (변동)
- * - 스테이킹 보상으로 지급
+ * - Proposer: Base Reward + Fees
+ * - Attesters: Attestation Reward
  *
  * 왜 필요한가:
  * - 밸리데이터 참여 인센티브
  * - 네트워크 보안 유지
  *
- * Dustin-Chain:
- * - 단순화를 위해 고정값 2 DSTN
+ * Dustin-Chain 보상 체계:
+ * - 총 블록 보상: 3 DSTN
+ * - Proposer: 2 DSTN (블록 제안)
+ * - Committee: 1 DSTN (128명 나눔, Attestation 제출자)
  */
-export const BLOCK_REWARD = 2; // DSTN
+export const PROPOSER_REWARD = 2; // DSTN
+export const COMMITTEE_REWARD_POOL = 1; // DSTN (128명 분배)
+export const COMMITTEE_SIZE = 128;
 
 /**
  * GENESIS_BALANCE: Genesis 블록 초기 분배 금액

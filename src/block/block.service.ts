@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AccountService } from '../account/account.service';
 import {
-  BLOCK_REWARD,
   GENESIS_BALANCE,
   WEI_PER_DSTN,
 } from '../common/constants/blockchain.constants';
@@ -210,7 +209,7 @@ export class BlockService {
     await this.repository.save(block);
 
     this.logger.log(
-      `Block #${blockNumber} created: ${hash} (${executedTxs.length} txs, reward: ${BLOCK_REWARD} DSTN)`,
+      `Block #${blockNumber} created: ${hash} (${executedTxs.length} txs)`,
     );
 
     return block;
