@@ -237,7 +237,8 @@ export class BlockProducer implements OnModuleInit {
     // 2. Committee 보상 (1 DSTN을 Attestation 제출자들이 나눔)
     if (attestations.length > 0) {
       const totalCommitteeReward = BigInt(COMMITTEE_REWARD_POOL) * WEI_PER_DSTN;
-      const rewardPerAttester = totalCommitteeReward / BigInt(attestations.length);
+      const rewardPerAttester =
+        totalCommitteeReward / BigInt(attestations.length);
 
       for (const attestation of attestations) {
         await this.accountService.addBalance(

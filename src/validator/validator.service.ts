@@ -146,9 +146,7 @@ export class ValidatorService {
     const shuffled = this.shuffle(validators, seed);
 
     // 상위 128명 선택
-    const committee = shuffled
-      .slice(0, COMMITTEE_SIZE)
-      .map((v) => v.address);
+    const committee = shuffled.slice(0, COMMITTEE_SIZE).map((v) => v.address);
 
     this.logger.debug(
       `Slot ${slot}: Selected Committee ${committee.length} validators`,
