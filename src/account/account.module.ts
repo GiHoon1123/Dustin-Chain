@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { StateManager } from '../state/state-manager';
 import { AccountController } from './account.controller';
 import { AccountService } from './account.service';
 import { AccountMemoryRepository } from './repositories/account-memory.repository';
@@ -28,13 +29,16 @@ import { IAccountRepository } from './repositories/account.repository.interface'
       provide: 'IAccountRepository',
       useClass: AccountMemoryRepository,
     },
-    // Service에 Repository 주입
+    // Service에 Repository와 StateManager 주입
     {
       provide: AccountService,
-      useFactory: (repository: IAccountRepository) => {
-        return new AccountService(repository);
+      useFactory: (
+        repository: IAccountRepository,
+        stateManager: StateManager,
+      ) => {
+        return new AccountService(repository, stateManager);
       },
-      inject: ['IAccountRepository'],
+      inject: ['IAccountRepository', StateManager],
     },
   ],
   exports: [AccountService], // 다른 모듈에서 사용 가능

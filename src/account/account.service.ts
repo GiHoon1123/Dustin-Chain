@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Address } from '../common/types/common.types';
+import { StateManager } from '../state/state-manager';
 import { Account } from './entities/account.entity';
 import { IAccountRepository } from './repositories/account.repository.interface';
 
@@ -21,7 +22,10 @@ import { IAccountRepository } from './repositories/account.repository.interface'
 export class AccountService {
   private readonly logger = new Logger(AccountService.name);
 
-  constructor(private readonly repository: IAccountRepository) {}
+  constructor(
+    private readonly repository: IAccountRepository,
+    private readonly stateManager: StateManager,
+  ) {}
 
   /**
    * 계정 조회 (없으면 생성)
@@ -34,11 +38,11 @@ export class AccountService {
    * @returns Account
    */
   async getOrCreateAccount(address: Address): Promise<Account> {
-    let account = await this.repository.findByAddress(address);
+    let account = await this.stateManager.getAccount(address);
 
     if (!account) {
       account = new Account(address);
-      await this.repository.save(account);
+      this.stateManager.setAccount(address, account);
       this.logger.log(`Created new account: ${address}`);
     }
 
@@ -52,7 +56,7 @@ export class AccountService {
    * @returns Account 또는 null
    */
   async getAccount(address: Address): Promise<Account | null> {
-    return this.repository.findByAddress(address);
+    return this.stateManager.getAccount(address);
   }
 
   /**
@@ -62,7 +66,7 @@ export class AccountService {
    * @returns 잔액 (Wei 단위), 계정 없으면 0
    */
   async getBalance(address: Address): Promise<bigint> {
-    const account = await this.repository.findByAddress(address);
+    const account = await this.stateManager.getAccount(address);
     return account ? account.balance : 0n;
   }
 
@@ -73,7 +77,7 @@ export class AccountService {
    * @returns nonce, 계정 없으면 0
    */
   async getNonce(address: Address): Promise<number> {
-    const account = await this.repository.findByAddress(address);
+    const account = await this.stateManager.getAccount(address);
     return account ? account.nonce : 0;
   }
 
@@ -86,9 +90,9 @@ export class AccountService {
    * - Genesis 초기화
    *
    * Service 역할:
-   * - Repository에서 계정 조회 (외부 인프라)
+   * - StateManager에서 계정 조회
    * - Entity의 비즈니스 로직 호출
-   * - 변경사항 저장 (외부 인프라)
+   * - 변경사항을 StateManager에 저장 (저널에 기록)
    *
    * @param address - 계정 주소
    * @param amount - 추가할 금액 (Wei)
@@ -100,9 +104,10 @@ export class AccountService {
     // Entity에서 비즈니스 규칙 검증 (양수 체크)
     account.addBalance(amount);
 
-    await this.repository.save(account);
+    // StateManager에 변경사항 저장 (저널에 기록)
+    this.stateManager.setAccount(address, account);
 
-    this.logger.debug(
+    this.logger.log(
       `Added ${amount} Wei to ${address}, new balance: ${account.balance}`,
     );
   }
@@ -116,9 +121,9 @@ export class AccountService {
    * - 수수료 지불
    *
    * Service 역할:
-   * - Repository에서 계정 조회
+   * - StateManager에서 계정 조회
    * - Entity의 비즈니스 로직 호출
-   * - 변경사항 저장
+   * - 변경사항을 StateManager에 저장 (저널에 기록)
    *
    * @param address - 계정 주소
    * @param amount - 차감할 금액 (Wei)
@@ -130,9 +135,10 @@ export class AccountService {
     // Entity에서 비즈니스 규칙 검증 (양수 체크 + 잔액 부족 체크)
     account.subtractBalance(amount);
 
-    await this.repository.save(account);
+    // StateManager에 변경사항 저장 (저널에 기록)
+    this.stateManager.setAccount(address, account);
 
-    this.logger.debug(
+    this.logger.log(
       `Subtracted ${amount} Wei from ${address}, new balance: ${account.balance}`,
     );
   }
@@ -174,9 +180,9 @@ export class AccountService {
    * - 순서 보장
    *
    * Service 역할:
-   * - Repository에서 계정 조회
+   * - StateManager에서 계정 조회
    * - Entity의 비즈니스 로직 호출
-   * - 변경사항 저장
+   * - 변경사항을 StateManager에 저장 (저널에 기록)
    *
    * @param address - 계정 주소
    */
@@ -186,9 +192,10 @@ export class AccountService {
     // Entity에서 비즈니스 로직 실행
     account.incrementNonce();
 
-    await this.repository.save(account);
+    // StateManager에 변경사항 저장 (저널에 기록)
+    this.stateManager.setAccount(address, account);
 
-    this.logger.debug(`Incremented nonce for ${address}: ${account.nonce}`);
+    this.logger.log(`Incremented nonce for ${address}: ${account.nonce}`);
   }
 
   /**
@@ -197,6 +204,9 @@ export class AccountService {
    * 용도:
    * - 관리자 페이지
    * - 디버깅
+   *
+   * 주의: StateManager는 개별 계정 조회만 지원하므로
+   * 현재는 Repository를 통해 조회 (향후 StateManager에 전체 조회 기능 추가 필요)
    */
   async getAllAccounts(): Promise<Account[]> {
     return this.repository.findAll();
@@ -206,6 +216,7 @@ export class AccountService {
    * 계정 존재 확인
    */
   async exists(address: Address): Promise<boolean> {
-    return this.repository.exists(address);
+    const account = await this.stateManager.getAccount(address);
+    return account !== null;
   }
 }
