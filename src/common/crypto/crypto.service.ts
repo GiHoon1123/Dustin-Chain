@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as elliptic from 'elliptic';
 import * as keccak from 'keccak';
+import { RLP } from '@ethereumjs/rlp';
+import { bytesToHex, hexToBytes } from '@ethereumjs/util';
 import { CHAIN_ID } from '../constants/blockchain.constants';
 import {
   addHexPrefix,
@@ -353,5 +355,141 @@ export class CryptoService {
     } catch (error) {
       return false;
     }
+  }
+
+  // ========================================
+  // RLP (Recursive Length Prefix) 인코딩
+  // ========================================
+
+  /**
+   * RLP 인코딩
+   *
+   * 이더리움에서의 동작:
+   * - 데이터를 결정론적으로 바이트 배열로 직렬화
+   * - 같은 데이터 → 항상 같은 인코딩 → 같은 해시
+   * - JSON보다 크기 작음 (바이너리)
+   *
+   * 사용처:
+   * - 블록 해시 계산
+   * - 트랜잭션 해시 계산
+   * - 계정 상태 해시 계산
+   * - Merkle Trie에 데이터 저장
+   *
+   * RLP 규칙:
+   * - 문자열/바이트 배열: 길이 + 데이터
+   * - 리스트: 길이 + 재귀적으로 인코딩된 항목들
+   *
+   * 예시:
+   * ```typescript
+   * rlpEncode([5, 1000, "0xabc"]);
+   * // → Buffer (바이너리 데이터)
+   * ```
+   *
+   * @param input - 인코딩할 데이터 (숫자, 문자열, 배열, Buffer 등)
+   * @returns RLP 인코딩된 Buffer
+   */
+  rlpEncode(input: any): Uint8Array {
+    return RLP.encode(input);
+  }
+
+  /**
+   * RLP 디코딩
+   *
+   * 이더리움에서의 동작:
+   * - RLP 인코딩된 바이트 배열을 원본 데이터로 복원
+   *
+   * 사용처:
+   * - 네트워크에서 받은 데이터 파싱
+   * - Merkle Trie에서 데이터 조회
+   * - 블록/트랜잭션 데이터 복원
+   *
+   * @param encoded - RLP 인코딩된 Buffer 또는 Uint8Array
+   * @returns 디코딩된 원본 데이터
+   */
+  rlpDecode(encoded: Uint8Array): any {
+    return RLP.decode(encoded);
+  }
+
+  /**
+   * RLP 인코딩 + Keccak-256 해시 (Buffer 반환)
+   *
+   * 이더리움에서의 동작:
+   * - 데이터를 RLP 인코딩 → Keccak-256 해시
+   * - 가장 흔한 패턴 (블록, 트랜잭션, 계정 등)
+   *
+   * 사용처:
+   * - 블록 해시 계산
+   * - 트랜잭션 해시 계산
+   * - Merkle Trie 키 생성
+   *
+   * 예시:
+   * ```typescript
+   * // 계정 해시
+   * const accountHash = rlpHashBuffer([nonce, balance, storageRoot, codeHash]);
+   *
+   * // 트랜잭션 해시
+   * const txHash = rlpHashBuffer([nonce, to, value, data]);
+   * ```
+   *
+   * @param input - 해시할 데이터
+   * @returns Keccak-256 해시 (32 bytes Buffer)
+   */
+  rlpHashBuffer(input: any): Buffer {
+    const encoded = this.rlpEncode(input);
+    const hash = keccak('keccak256').update(Buffer.from(encoded)).digest();
+    return hash;
+  }
+
+  /**
+   * RLP 인코딩 + Keccak-256 해시 (Hex 문자열 반환)
+   *
+   * 이더리움에서의 동작:
+   * - rlpHashBuffer와 동일하지만 Hex 문자열로 반환
+   * - "0x" 접두사 포함
+   *
+   * 사용처:
+   * - API 응답용
+   * - 사람이 읽기 쉬운 해시
+   *
+   * @param input - 해시할 데이터
+   * @returns "0x" + 64 hex characters (32 bytes)
+   */
+  rlpHash(input: any): Hash {
+    const hash = this.rlpHashBuffer(input);
+    return addHexPrefix(hash.toString('hex'));
+  }
+
+  /**
+   * Hex 문자열을 Uint8Array로 변환
+   *
+   * 이더리움 유틸리티:
+   * - "0x123abc" → Uint8Array [0x12, 0x3a, 0xbc]
+   *
+   * 사용처:
+   * - RLP 인코딩 전 데이터 변환
+   * - Merkle Trie에 데이터 저장
+   *
+   * @param hex - Hex 문자열 ("0x" 선택)
+   * @returns Uint8Array
+   */
+  hexToBytes(hex: string): Uint8Array {
+    const prefixed = hex.startsWith('0x') ? hex : `0x${hex}`;
+    return hexToBytes(prefixed as `0x${string}`);
+  }
+
+  /**
+   * Uint8Array를 Hex 문자열로 변환
+   *
+   * 이더리움 유틸리티:
+   * - Uint8Array [0x12, 0x3a, 0xbc] → "0x123abc"
+   *
+   * 사용처:
+   * - Buffer를 사람이 읽을 수 있는 형태로 변환
+   *
+   * @param bytes - Uint8Array 또는 Buffer
+   * @returns "0x" + hex 문자열
+   */
+  bytesToHex(bytes: Uint8Array): string {
+    return addHexPrefix(bytesToHex(bytes));
   }
 }
