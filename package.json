@@ -22,6 +22,9 @@
     "generate:genesis": "ts-node scripts/generate-genesis.ts"
   },
   "dependencies": {
+    "@ethereumjs/rlp": "^10.0.0",
+    "@ethereumjs/trie": "^6.2.1",
+    "@ethereumjs/util": "^10.0.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
