@@ -1,8 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Trie } from '@ethereumjs/trie';
 import { AccountService } from '../account/account.service';
 import { CryptoService } from '../common/crypto/crypto.service';
+import {
+  EMPTY_HASH,
+  EMPTY_ROOT,
+} from '../common/constants/blockchain.constants';
 import { Address, Hash } from '../common/types/common.types';
 import { Transaction } from '../transaction/entities/transaction.entity';
 import { TransactionPool } from '../transaction/pool/transaction.pool';
@@ -96,7 +101,7 @@ export class BlockService {
     const parentHash = '0x' + '0'.repeat(64);
 
     const stateRoot = await this.calculateStateRoot();
-    const transactionsRoot = this.calculateTransactionsRoot([]);
+    const transactionsRoot = await this.calculateTransactionsRoot([]);
 
     const hash = this.calculateBlockHash(
       0,
@@ -209,7 +214,7 @@ export class BlockService {
     const stateRoot = await this.calculateStateRoot();
 
     // 6. Transactions Root 계산
-    const transactionsRoot = this.calculateTransactionsRoot(executedTxs);
+    const transactionsRoot = await this.calculateTransactionsRoot(executedTxs);
 
     // 7. Block Hash 계산
     const hash = this.calculateBlockHash(
@@ -272,13 +277,32 @@ export class BlockService {
   /**
    * 블록 해시 계산
    *
-   * 이더리움:
+   * 이더리움에서의 동작:
    * - Keccak-256(RLP(header))
    * - Header 필드들을 RLP 인코딩 후 해시
    *
-   * 우리:
-   * - 간단하게 JSON으로 직렬화 후 해시
-   * - 나중에 RLP 추가
+   * 블록 Header 구조 (간소화):
+   * - parentHash: 이전 블록 해시
+   * - stateRoot: 계정 상태 루트
+   * - transactionsRoot: 트랜잭션 루트
+   * - number: 블록 번호
+   * - timestamp: 생성 시간
+   * - proposer: 블록 생성자
+   *
+   * 이더리움 전체 Header (참고용):
+   * - parentHash, unclesHash, beneficiary(coinbase), stateRoot,
+   *   transactionsRoot, receiptsRoot, logsBloom, difficulty,
+   *   number, gasLimit, gasUsed, timestamp, extraData,
+   *   mixHash, nonce
+   *
+   * 우리는 간소화된 버전 사용:
+   * - 핵심 필드만 포함
+   * - POS에서 불필요한 필드 제외 (difficulty, unclesHash 등)
+   *
+   * 왜 RLP인가:
+   * - 결정론적 인코딩 (같은 데이터 → 같은 해시)
+   * - 이더리움 표준
+   * - JSON보다 작은 크기
    *
    * @param number - 블록 번호
    * @param parentHash - 이전 블록 해시
@@ -286,7 +310,7 @@ export class BlockService {
    * @param proposer - 블록 생성자
    * @param transactionsRoot - 트랜잭션 루트
    * @param stateRoot - 상태 루트
-   * @returns 블록 해시
+   * @returns 블록 해시 (32 bytes, "0x...")
    */
   private calculateBlockHash(
     number: number,
@@ -296,63 +320,142 @@ export class BlockService {
     transactionsRoot: Hash,
     stateRoot: Hash,
   ): Hash {
-    const headerData = {
-      number,
-      parentHash,
-      timestamp,
-      proposer,
-      transactionsRoot,
-      stateRoot,
-    };
+    // Header 필드를 배열로 구성 (순서 중요!)
+    // RLP 인코딩: [parentHash, stateRoot, transactionsRoot, number, timestamp, proposer]
+    const headerArray = [
+      this.cryptoService.hexToBytes(parentHash), // 이전 블록 해시
+      this.cryptoService.hexToBytes(stateRoot), // 상태 루트
+      this.cryptoService.hexToBytes(transactionsRoot), // 트랜잭션 루트
+      number, // 블록 번호
+      timestamp, // 타임스탬프
+      this.cryptoService.hexToBytes(proposer), // 블록 생성자
+    ];
 
-    return this.cryptoService.hashUtf8(JSON.stringify(headerData));
+    // RLP 인코딩 + Keccak-256 해시
+    return this.cryptoService.rlpHash(headerArray);
   }
 
   /**
    * State Root 계산
    *
-   * 이더리움:
+   * 이더리움에서의 동작:
    * - Merkle Patricia Trie의 루트 해시
    * - 모든 계정 상태를 Trie에 저장
+   * - Key: keccak256(address) - 주소를 해시하여 키로 사용
+   * - Value: RLP([nonce, balance, storageRoot, codeHash]) - 계정 정보를 RLP 인코딩
    *
-   * 우리 (현재):
-   * - 간단하게 모든 계정을 JSON으로 해시
-   * - 나중에 Merkle Tree 추가
+   * 계정 구조 (4개 필드):
+   * 1. nonce: 트랜잭션 순서 번호
+   * 2. balance: 잔액 (Wei 단위)
+   * 3. storageRoot: 스마트 컨트랙트 저장소 루트 (우리는 EMPTY_ROOT)
+   * 4. codeHash: 스마트 컨트랙트 코드 해시 (우리는 EMPTY_HASH)
    *
-   * @returns State Root 해시
+   * 왜 Merkle Patricia Trie인가:
+   * - 효율적인 증명 (Merkle Proof)
+   * - Light Client 지원
+   * - 부분 상태 검증 가능
+   * - 이더리움 표준
+   *
+   * @returns State Root 해시 (32 bytes, "0x...")
    */
   private async calculateStateRoot(): Promise<Hash> {
-    const accounts = await this.accountService.getAllAccounts();
-    const stateData = accounts.map((acc) => ({
-      address: acc.address,
-      balance: acc.balance.toString(),
-      nonce: acc.nonce,
-    }));
+    // 1. 새 Trie 인스턴스 생성
+    const trie = new Trie();
 
-    return this.cryptoService.hashUtf8(JSON.stringify(stateData));
+    // 2. 모든 계정 조회
+    const accounts = await this.accountService.getAllAccounts();
+
+    // 3. 각 계정을 Trie에 삽입
+    for (const account of accounts) {
+      // Key: keccak256(address)
+      const key = this.cryptoService.hexToBytes(
+        this.cryptoService.hashHex(account.address),
+      );
+
+      // Value: RLP([nonce, balance, storageRoot, codeHash])
+      // 이더리움 계정의 4가지 필드
+      const value = this.cryptoService.rlpEncode([
+        account.nonce, // nonce
+        account.balance, // balance (BigInt)
+        this.cryptoService.hexToBytes(EMPTY_ROOT), // storageRoot (스마트 컨트랙트 없음)
+        this.cryptoService.hexToBytes(EMPTY_HASH), // codeHash (스마트 컨트랙트 없음)
+      ]);
+
+      // Trie에 저장
+      await trie.put(key, value);
+    }
+
+    // 4. Root 해시 반환
+    const root = trie.root();
+
+    // Uint8Array → Hex 문자열 변환
+    return this.cryptoService.bytesToHex(root);
   }
 
   /**
    * Transactions Root 계산
    *
-   * 이더리움:
-   * - Merkle Tree의 루트 해시
-   * - 트랜잭션들을 Merkle Tree로 구성
+   * 이더리움에서의 동작:
+   * - Merkle Patricia Trie의 루트 해시
+   * - 트랜잭션들을 Trie에 저장
+   * - Key: RLP(index) - 트랜잭션 순서 (0, 1, 2, ...)
+   * - Value: RLP(transaction) - 트랜잭션 전체 데이터
    *
-   * 우리 (현재):
-   * - 트랜잭션 해시들을 모아서 해시
-   * - 나중에 Merkle Tree 추가
+   * 트랜잭션 데이터:
+   * - nonce, to, value, from, v, r, s
+   * - 서명 포함된 전체 트랜잭션
+   *
+   * 왜 Merkle Patricia Trie인가:
+   * - 트랜잭션 존재 증명 가능 (Merkle Proof)
+   * - Light Client가 특정 트랜잭션만 검증 가능
+   * - 이더리움 표준
+   *
+   * 빈 블록 처리:
+   * - 트랜잭션이 없으면 EMPTY_ROOT 반환
+   * - 이더리움 표준 값
    *
    * @param transactions - 트랜잭션 리스트
-   * @returns Transactions Root 해시
+   * @returns Transactions Root 해시 (32 bytes, "0x...")
    */
-  private calculateTransactionsRoot(transactions: Transaction[]): Hash {
+  private async calculateTransactionsRoot(
+    transactions: Transaction[],
+  ): Promise<Hash> {
+    // 1. 빈 블록: EMPTY_ROOT 반환
     if (transactions.length === 0) {
-      return '0x' + '0'.repeat(64);
+      return EMPTY_ROOT;
     }
 
-    const txHashes = transactions.map((tx) => tx.hash);
-    return this.cryptoService.hashUtf8(JSON.stringify(txHashes));
+    // 2. 새 Trie 인스턴스 생성
+    const trie = new Trie();
+
+    // 3. 각 트랜잭션을 Trie에 삽입
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+
+      // Key: RLP(index) - 트랜잭션 순서
+      const key = this.cryptoService.rlpEncode(i);
+
+      // Value: RLP(transaction) - 트랜잭션 전체 데이터
+      // [nonce, to, value, from, v, r, s]
+      const value = this.cryptoService.rlpEncode([
+        tx.nonce, // nonce
+        this.cryptoService.hexToBytes(tx.to), // to address
+        tx.value, // value (BigInt)
+        this.cryptoService.hexToBytes(tx.from), // from address
+        tx.v, // signature v
+        this.cryptoService.hexToBytes(tx.r), // signature r
+        this.cryptoService.hexToBytes(tx.s), // signature s
+      ]);
+
+      // Trie에 저장
+      await trie.put(key, value);
+    }
+
+    // 4. Root 해시 반환
+    const root = trie.root();
+
+    // Uint8Array → Hex 문자열 변환
+    return this.cryptoService.bytesToHex(root);
   }
 
   /**
