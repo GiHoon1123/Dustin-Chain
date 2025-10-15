@@ -1,8 +1,17 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import { COMMITTEE_SIZE } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
 import { Validator } from './entities/validator.entity';
+
+interface GenesisAccount {
+  index: number;
+  address: string;
+  publicKey: string;
+  privateKey: string;
+}
 
 /**
  * Validator Service
@@ -43,13 +52,54 @@ export class ValidatorService {
   /**
    * Genesis Validators 초기화
    *
-   * 256개 주소 생성:
-   * - 0x0000000000000000000000000000000000000001
-   * - 0x0000000000000000000000000000000000000002
-   * - ...
-   * - 0x0000000000000000000000000000000000000100 (256)
+   * genesis-accounts.json에서 256개 계정 로드
    */
   private initializeGenesisValidators(): void {
+    try {
+      const accountsPath = this.findAccountsFile();
+
+      if (!accountsPath) {
+        this.logger.warn('genesis-accounts.json not found, using fallback');
+        this.useFallbackValidators();
+        return;
+      }
+
+      const fileContent = fs.readFileSync(accountsPath, 'utf8');
+      const accounts: GenesisAccount[] = JSON.parse(fileContent);
+
+      for (const account of accounts) {
+        const validator = new Validator(account.address);
+        this.genesisValidators.push(validator);
+      }
+
+      this.logger.log(
+        `Initialized ${this.genesisValidators.length} Genesis Validators from genesis-accounts.json`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to load genesis-accounts.json: ${error.message}`,
+      );
+      this.useFallbackValidators();
+    }
+  }
+
+  private findAccountsFile(): string | null {
+    const possiblePaths = [
+      path.resolve(process.cwd(), 'genesis-accounts.json'),
+      path.resolve(__dirname, '../../genesis-accounts.json'),
+      path.resolve(__dirname, '../../../genesis-accounts.json'),
+    ];
+
+    for (const filePath of possiblePaths) {
+      if (fs.existsSync(filePath)) {
+        return filePath;
+      }
+    }
+
+    return null;
+  }
+
+  private useFallbackValidators(): void {
     for (let i = 1; i <= 256; i++) {
       const address = '0x' + i.toString(16).padStart(40, '0');
       const validator = new Validator(address);
@@ -57,7 +107,7 @@ export class ValidatorService {
     }
 
     this.logger.log(
-      `Initialized ${this.genesisValidators.length} Genesis Validators`,
+      `Initialized ${this.genesisValidators.length} Fallback Validators`,
     );
   }
 

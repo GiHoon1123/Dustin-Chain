@@ -45,3 +45,6 @@ coverage
 
 # 백업 파일
 *.backup.md
+
+# Genesis 계정 개인키
+genesis-accounts.json
