@@ -62,23 +62,36 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
       return this.cache.get(address)!;
     }
 
-    // 3. DB에서 찾기
+    // 3. DB에서 찾기 (DB가 열려있을 때만)
     try {
-      const accountData = await this.db.get(`account:${address}`);
-      if (accountData) {
-        // Ethereum 2.0 방식: RLP 디코딩 후 Account 객체로 변환
-        const account = this.deserializeAccount(accountData);
+      if (this.db.status === 'open') {
+        const accountData = await this.db.get(`account:${address}`);
+        if (accountData) {
+          // Ethereum 2.0 방식: RLP 디코딩 후 Account 객체로 변환
+          const account = this.deserializeAccount(accountData);
 
-        // 캐시에 추가 (크기 제한 확인)
-        this.addToCache(address, account);
+          // 캐시에 추가 (크기 제한 확인)
+          this.addToCache(address, account);
 
-        return account;
+          return account;
+        }
+      } else {
+        // DB가 아직 열리지 않았으면 캐시에서만 조회
+        this.logger.debug(
+          'DB not open yet, returning null for account:',
+          address,
+        );
+        return null;
       }
     } catch (error) {
       // DB에 없으면 null 반환
-      if (error.code === 'LEVEL_NOT_FOUND') {
+      if (
+        error.code === 'LEVEL_NOT_FOUND' ||
+        error.code === 'LEVEL_DATABASE_NOT_OPEN'
+      ) {
         return null;
       }
+      this.logger.error('Failed to get account from DB:', error);
       throw error;
     }
 
