@@ -1,0 +1,15 @@
+{
+  "cursor.sync.enabled": true,
+  "cursor.sync.project": true,
+  "typescript.preferences.includePackageJsonAutoImports": "auto",
+  "typescript.suggest.autoImports": true,
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.git": true
+  }
+}

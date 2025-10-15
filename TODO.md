@@ -1,314 +1,144 @@
-# Dustin-Chain 개발 TODO List
+# Dustin-Chain Ethereum 2.0 구현 TODO 리스트
 
-> 이더리움 POS 기반 블록체인 - 핵심 기능 MVP
+## 📋 현재 진행 상황
 
----
+### ✅ 완료된 작업들
 
-## 🎯 목표
+#### 1단계: StateManager 기반 아키텍처 구축
 
-서버에 배포 가능한 최소 기능 블록체인 구현
+- [x] **LevelDB 설치 및 설정**
+  - `level` 패키지 설치
+  - `@types/level` 타입 정의 설치
+  - LevelDB 데이터베이스 초기화
 
----
+- [x] **StateManager 클래스 구현 (캐시 + 저널링 + DB)**
+  - LevelDB 기반 영구 저장소 구현
+  - LRU 캐시 시스템 구현
+  - 저널링 시스템으로 변경사항 추적
+  - RLP 직렬화/역직렬화 구현
+  - Ethereum 2.0 계정 구조 `[nonce, balance, storageRoot, codeHash]` 적용
+  - 에포크 기반 체크포인트 시스템 구현 (32블록마다)
 
-## Phase 1: 기초 인프라 🔧
+- [x] **StateModule을 글로벌 모듈로 설정**
+  - `@Global()` 데코레이터 추가
+  - StateManager 전역 제공으로 의존성 주입 간소화
+  - CryptoService 중복 provider 제거
+  - AppModule에 StateModule import 추가
 
-### 1.1 Crypto 유틸리티
+- [x] **AccountService StateManager 연동**
+  - StateManager 의존성 주입
+  - 모든 계정 조회/수정 메서드를 StateManager 사용하도록 변경
+  - `getOrCreateAccount`, `getAccount`, `getBalance`, `getNonce`, `addBalance`, `subtractBalance`, `incrementNonce`, `exists` 메서드 수정
+  - AccountModule에서 StateManager 주입 설정
+  - Genesis 계정 잔액 0 문제 해결
 
-- [x] SHA-256 해시 함수 구현 (불필요 - Keccak-256만 사용)
-- [x] Keccak-256 해시 함수 구현 (이더리움 표준)
-  - hashBuffer, hashHex, hashUtf8 분리
-- [x] secp256k1 키 생성 (개인키 → 공개키)
-- [x] ECDSA 서명 & 검증
-  - EIP-155 지원 (chainId 포함)
-- [x] 이더리움 스타일 주소 생성 (0x...)
-- [x] 유틸리티 테스트 작성
+- [x] **StateManager LevelDB 오류 수정**
+  - `getAccount()` 메서드에서 DB 상태 확인 후 접근
+  - `this.db.status === 'open'` 체크 추가
+  - `LEVEL_DATABASE_NOT_OPEN` 에러 처리 추가
+  - 의존성 주입 순서 문제로 인한 DB 접근 오류 수정
 
-### 1.2 기본 타입 정의
+### 🔄 현재 상태
 
-- [x] Address 타입
-- [x] Hash 타입
-- [x] Signature 타입 (v, r, s)
-- [x] BigNumber 처리 (큰 숫자) - BigInt 사용
-- [x] Constants 정의 (BLOCK_TIME, MIN_STAKE, REWARD 등)
-
----
-
-## Phase 2: 핵심 데이터 구조 📦
-
-### 2.1 Account 모듈
-
-- [x] Account 엔티티 생성
-  - address (주소)
-  - balance (잔액)
-  - nonce (트랜잭션 순서 번호)
-  - stakedBalance (스테이킹 금액) - Phase 4로 이동
-- [x] Account Service
-  - 계정 생성 및 조회
-  - 잔액 관리
-  - Nonce 관리
-  - 계정 간 송금
-- [x] Account 상태 저장소 (In-Memory)
-  - Repository Pattern 적용
-  - IAccountRepository 인터페이스
-  - InMemoryAccountRepository 구현
-- [x] Account Controller
-  - POST /account/create-wallet
-  - GET /account/:address
-  - GET /account/:address/balance
-  - GET /account/:address/nonce
-  - POST /account/add-balance (테스트용)
-  - POST /account/transfer
-- [x] Account Service 테스트 작성 (18개 테스트 통과)
-
-### 2.2 Transaction 모듈
-
-- [x] Transaction 엔티티
-  - from, to, value, nonce
-  - v, r, s (서명)
-  - status (pending/confirmed/failed)
-- [x] 트랜잭션 서명 (EIP-155)
-- [x] 트랜잭션 검증 로직
-  - 서명 검증 (ecrecover)
-  - Nonce 검증
-  - 잔액 검증
-- [x] 트랜잭션 해시 계산
-- [x] Transaction Pool (Mempool) 구현 (In-Memory)
-- [x] Transaction Service
-  - signTransaction (테스트용)
-  - submitTransaction
-  - validateTransaction
-  - getTransaction
-- [x] Transaction Controller
-  - POST /transaction/sign (테스트용)
-  - POST /transaction/send
-  - GET /transaction/:hash
-- [x] Swagger 문서화
-
-### 2.3 Block 모듈
-
-- [x] Block 엔티티
-  - number, hash, parentHash
-  - timestamp
-  - proposer (임시 고정 주소)
-  - transactions (전체 객체 저장)
-  - stateRoot, transactionsRoot
-- [x] Block Repository 인터페이스
-- [x] InMemoryBlockRepository 구현
-- [x] Block Service
-  - Genesis Block 생성
-  - 블록 생성 로직
-  - 트랜잭션 실행
-  - Proposer 보상 지급
-  - 블록 해시 계산
-  - 블록 조회
-- [x] Block Producer (자동 생성)
-  - Slot 기반 시스템 (Genesis 시간 기준)
-  - 12초마다 자동 블록 생성
-  - 서버 시작 시 자동 시작
-  - Mempool에서 트랜잭션 선택 및 실행
-- [x] Block Controller
-  - GET /block/latest
-  - GET /block/number/:number
-  - GET /block/hash/:hash
-  - GET /block/stats
-  - GET /block/producer-status
-- [x] Swagger 문서화
-- [x] BlockModule 생성 및 통합
+- **AccountService**: StateManager 사용하여 정상 동작 ✅
+- **StateManager**: DB 상태 확인 후 안전한 접근 ✅
+- **LevelDB**: 오류 없이 정상 동작 ✅
+- **Genesis 계정**: 정상적으로 잔액 보유 (50+ DSTN) ✅
+- **저널링 시스템**: 변경사항 추적 중 (아직 `commitBlock()` 호출 안됨)
 
 ---
 
-## Phase 3: 상태 관리 💾
+## 🚀 다음 단계: BlockService StateManager 연동
 
-### 3.1 State Manager
+### 📝 2단계: BlockService StateManager 연동 (진행 예정)
 
-- [ ] 전역 상태 관리 (모든 계정)
-- [ ] Genesis State 초기화
-  - 창시자 계정: 10,000,000 DSTN
-  - 테스트 계정 3개: 각 100,000 DSTN
-- [ ] 상태 변경 메서드 (트랜잭션 실행)
-- [ ] 상태 조회 메서드
-- [ ] 간단한 Merkle Root 계산
+- [ ] **BlockService에 StateManager 의존성 주입**
+  - BlockService 생성자에 StateManager 주입
+  - BlockModule에서 StateManager 의존성 설정
 
-### 3.2 Transaction Pool
+- [ ] **BlockService Genesis Block 생성 시 StateManager.commitBlock() 호출**
+  - Genesis Block 생성 후 저널의 변경사항을 LevelDB에 저장
+  - Genesis 계정들의 잔액이 실제로 LevelDB에 영구 저장되도록 수정
 
-- [ ] Pending 트랜잭션 저장
-- [ ] Gas Price 기반 우선순위
-- [ ] 트랜잭션 추가/제거
-- [ ] 무효 트랜잭션 필터링
+- [ ] **BlockService 일반 블록 생성 시 StateManager 사용**
+  - 블록 생성 시 `StateManager.startBlock()` 호출
+  - 블록 완성 시 `StateManager.commitBlock()` 호출
+  - 블록 롤백 시 `StateManager.rollbackBlock()` 호출
 
----
+- [ ] **BlockService stateRoot 계산을 StateManager 기반으로 수정**
+  - 현재 임시 Trie 대신 StateManager의 상태를 기반으로 stateRoot 계산
+  - Ethereum 2.0 표준에 맞는 상태 루트 계산
 
-## Phase 4: POS 합의 메커니즘 ⚡
+### 📝 3단계: 나머지 서비스들 StateManager 연동
 
-### 4.1 Validator 모듈
+- [ ] **TransactionService의 계정 조회 로직 수정**
+  - TransactionService에서 StateManager 사용하도록 수정
+  - 트랜잭션 실행 시 계정 상태 변경을 StateManager를 통해 처리
 
-- [ ] Validator 엔티티
-  - address
-  - stakedAmount
-  - isActive
-  - rewards
-- [ ] 밸리데이터 등록 (최소 32 DSTN)
-- [ ] 밸리데이터 활성화/비활성화
-- [ ] Validator Service
+- [ ] **모든 서비스에서 getOrCreateAccount → getAccount로 변경**
+  - Ethereum 2.0 표준에 맞게 계정이 없으면 null 반환
+  - 명시적인 계정 생성만 허용
 
-### 4.2 Staking 시스템
+- [ ] **AccountRepository를 StateManager 기반으로 변경**
+  - 기존 메모리 기반 Repository를 StateManager 기반으로 교체
+  - 또는 Repository를 완전히 제거하고 StateManager 직접 사용
 
-- [ ] 스테이킹 예치 로직
-- [ ] 스테이킹 인출 로직
-- [ ] 스테이킹 금액 검증
-- [ ] Staking Service
+### 📝 4단계: 정리 및 최적화
 
-### 4.3 Consensus Engine
+- [ ] **기존 메모리 기반 저장소 제거 및 정리**
+  - AccountMemoryRepository 제거
+  - BlockMemoryRepository를 StateManager 기반으로 교체
+  - 불필요한 메모리 기반 저장소 정리
 
-- [ ] 슬롯/에포크 시스템 (12초/슬롯)
-- [ ] 다음 블록 생성자 선택 알고리즘
-  - 가중치 기반 무작위 선택
-- [ ] 블록 검증 (proposer 권한 확인)
-- [ ] 보상 분배 (2 DSTN + 수수료)
-- [ ] Consensus Service
+- [ ] **StateManager 성능 최적화**
+  - 캐시 크기 조정
+  - 배치 처리 최적화
+  - 메모리 사용량 모니터링
 
----
-
-## Phase 5: 블록체인 통합 🔗
-
-### 5.1 Blockchain Core
-
-- [ ] Genesis Block 생성
-- [ ] 블록 추가 로직
-  - 블록 검증
-  - 트랜잭션 실행
-  - 상태 업데이트
-  - 체인에 추가
-- [ ] 블록 조회 (번호, 해시)
-- [ ] 체인 상태 조회
-- [ ] Blockchain Service
-
-### 5.2 Block Production
-
-- [ ] 12초마다 자동 블록 생성
-- [ ] Mempool에서 트랜잭션 선택
-- [ ] 블록 조립
-- [ ] 블록 서명
-- [ ] 블록 브로드캐스트 (로컬)
-- [ ] Block Producer Service
+- [ ] **에포크 체크포인트 시스템 완성**
+  - 체크포인트 복구 로직 테스트
+  - 서버 재시작 시 체크포인트에서 복구 확인
 
 ---
 
-## Phase 6: API 엔드포인트 🌐
+## 🎯 최종 목표
 
-### 6.1 Wallet Controller
+### Ethereum 2.0 완전 구현
 
-- [ ] `POST /wallet/create` - 새 지갑 생성
-- [ ] `POST /wallet/import` - 개인키로 지갑 가져오기
-- [ ] `GET /wallet/:address` - 지갑 정보 조회
+- **풀 노드 아키텍처**: stateRoot만 블록체인에 저장, 실제 데이터는 LevelDB에 저장
+- **저널링 시스템**: 블록 단위로 상태 변경사항 추적 및 롤백 지원
+- **RLP 직렬화**: Ethereum 표준에 맞는 데이터 직렬화
+- **에포크 체크포인트**: 32블록마다 체크포인트 저장으로 빠른 복구
+- **LevelDB 영구 저장**: 서버 재시작 후에도 상태 유지
 
-### 6.2 Account Controller
+### 현재 문제점
 
-- [ ] `GET /account/:address` - 계정 잔액 조회
-- [ ] `GET /account/:address/transactions` - 계정 트랜잭션 내역
-
-### 6.3 Transaction Controller
-
-- [ ] `POST /transaction/send` - 트랜잭션 전송
-- [ ] `GET /transaction/:hash` - 트랜잭션 조회
-- [ ] `GET /transaction/pool` - Mempool 조회
-- [ ] `GET /transaction/pending/:address` - 특정 주소의 pending 트랜잭션
-
-### 6.4 Staking Controller
-
-- [ ] `POST /staking/deposit` - 스테이킹 예치
-- [ ] `POST /staking/withdraw` - 스테이킹 인출
-- [ ] `GET /staking/validators` - 밸리데이터 목록
-- [ ] `GET /staking/:address` - 스테이킹 정보 조회
-
-### 6.5 Block Controller
-
-- [ ] `GET /block/latest` - 최신 블록 조회
-- [ ] `GET /block/:number` - 블록 번호로 조회
-- [ ] `GET /block/hash/:hash` - 블록 해시로 조회
-
-### 6.6 Blockchain Controller
-
-- [ ] `GET /blockchain/status` - 체인 상태 (높이, 밸리데이터 수 등)
-- [ ] `GET /blockchain/genesis` - Genesis 블록 조회
+- **저널의 변경사항이 LevelDB에 저장되지 않음**: `commitBlock()` 호출 필요
+- **BlockService가 StateManager를 사용하지 않음**: 블록 생성 시 상태 관리 분리
+- **stateRoot 계산이 임시 Trie 사용**: StateManager 기반으로 변경 필요
 
 ---
 
-## Phase 7: 배포 준비 🚀
+## 📊 진행률
 
-### 7.1 설정 & 환경
+- **1단계 (StateManager 기반 아키텍처)**: 100% 완료 ✅
+- **2단계 (BlockService 연동)**: 0% (다음 작업)
+- **3단계 (나머지 서비스 연동)**: 0%
+- **4단계 (정리 및 최적화)**: 0%
 
-- [ ] 환경 변수 설정 (.env)
-- [ ] 설정 파일 (config.ts)
-- [ ] 로깅 시스템 (winston)
-- [ ] 에러 핸들링
-
-### 7.2 문서화
-
-- [ ] README 업데이트
-  - 프로젝트 소개
-  - 설치 방법
-  - API 문서
-  - 사용 예시
-- [ ] API 문서 (Swagger)
-- [ ] 아키텍처 다이어그램
-
-### 7.3 테스트
-
-- [ ] 핵심 기능 단위 테스트
-- [ ] E2E 테스트
-- [ ] 트랜잭션 시나리오 테스트
-- [ ] 스테이킹 시나리오 테스트
-
-### 7.4 서버 배포
-
-- [ ] Docker 설정
-- [ ] 프로덕션 빌드
-- [ ] PM2 설정 (프로세스 관리)
-- [ ] 서버 배포
+**전체 진행률: 약 25%**
 
 ---
 
-## 🎁 추가 기능 (나중에)
+## 🔧 기술 스택
 
-### 선택적 기능
-
-- [ ] 트랜잭션 수수료 (Gas) 시스템
-- [ ] EIP-1559 스타일 Base Fee
-- [ ] 슬래싱 (악의적 행동 처벌)
-- [ ] 인출 대기 큐
-- [ ] Block Explorer (웹 UI)
-- [ ] 지갑 웹 인터페이스
-
-### Phase 2 (미래)
-
-- [ ] P2P 네트워크 (실제 분산 네트워크)
-- [ ] EVM 구현 (스마트 컨트랙트)
-- [ ] ERC-20 토큰 지원
-- [ ] 데이터베이스 영속성 (PostgreSQL)
+- **NestJS**: 백엔드 프레임워크
+- **LevelDB**: 영구 저장소
+- **RLP**: Ethereum 표준 직렬화
+- **Keccak-256**: 해싱 알고리즘
+- **Merkle Patricia Trie**: 상태 루트 계산
+- **TypeScript**: 타입 안전성
 
 ---
 
-## 📊 진행 상황
-
-- [ ] Phase 1: 기초 인프라 (0%)
-- [ ] Phase 2: 핵심 데이터 구조 (0%)
-- [ ] Phase 3: 상태 관리 (0%)
-- [ ] Phase 4: POS 합의 (0%)
-- [ ] Phase 5: 블록체인 통합 (0%)
-- [ ] Phase 6: API 엔드포인트 (0%)
-- [ ] Phase 7: 배포 준비 (0%)
-
----
-
-## 🎯 MVP 핵심 목표
-
-**최소 기능으로 동작하는 블록체인:**
-
-1. ✅ 지갑 생성 가능
-2. ✅ 코인 전송 가능
-3. ✅ 스테이킹 가능
-4. ✅ 자동으로 블록 생성
-5. ✅ REST API로 조회 가능
-
-**이것만 되면 배포 가능!** 🚀
+_마지막 업데이트: 2025-10-15_
