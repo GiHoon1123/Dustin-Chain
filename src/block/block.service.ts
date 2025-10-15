@@ -1,15 +1,28 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AccountService } from '../account/account.service';
-import {
-  GENESIS_BALANCE,
-  WEI_PER_DSTN,
-} from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address, Hash } from '../common/types/common.types';
 import { Transaction } from '../transaction/entities/transaction.entity';
 import { TransactionPool } from '../transaction/pool/transaction.pool';
 import { Block } from './entities/block.entity';
 import { IBlockRepository } from './repositories/block.repository.interface';
+
+interface GenesisConfig {
+  config: {
+    chainId: number;
+    blockTime: number;
+    epochSize: number;
+  };
+  timestamp: string;
+  extraData: string;
+  alloc: {
+    [address: string]: {
+      balance: string;
+    };
+  };
+}
 
 /**
  * Block Service
@@ -31,17 +44,12 @@ export class BlockService {
   private readonly logger = new Logger(BlockService.name);
 
   /**
-   * Genesis 계정 (임시 Proposer)
+   * Genesis Proposer
    *
    * 이더리움:
-   * - Genesis Block에 초기 잔액이 할당된 계정들
-   *
-   * 우리:
-   * - 이 계정을 임시 Proposer로 사용
-   * - Validator 모듈 만들면 실제 선택 로직 구현
+   * - Genesis Block Proposer
    */
-  private readonly GENESIS_PROPOSER: Address =
-    '0x0000000000000000000000000000000000000001';
+  private GENESIS_PROPOSER: Address = '';
 
   constructor(
     @Inject(IBlockRepository)
@@ -54,19 +62,12 @@ export class BlockService {
   /**
    * Genesis Block 생성
    *
-   * 이더리움 Genesis:
+   * 이더리움:
    * - 블록 번호: 0
    * - parentHash: 0x0000...0000
-   * - 초기 계정들에 잔액 할당
-   * - 설정 파일(genesis.json)로 관리
-   *
-   * 우리:
-   * - GENESIS_PROPOSER에게 GENESIS_BALANCE 할당
-   * - 빈 트랜잭션 리스트
-   * - 애플리케이션 시작 시 한 번만 실행
+   * - genesis.json의 alloc 계정들에 잔액 할당
    */
   async createGenesisBlock(): Promise<Block> {
-    // 이미 Genesis Block 존재 확인
     const existing = await this.repository.findByNumber(0);
     if (existing) {
       this.logger.log('Genesis Block already exists');
@@ -75,22 +76,28 @@ export class BlockService {
 
     this.logger.log('Creating Genesis Block...');
 
-    // Genesis 계정 생성 및 초기 잔액 할당
-    await this.accountService.addBalance(
-      this.GENESIS_PROPOSER,
-      BigInt(GENESIS_BALANCE.FOUNDER) * WEI_PER_DSTN,
+    // genesis.json 로드
+    const genesis = this.loadGenesisConfig();
+
+    // alloc 계정들 초기화
+    const addresses = Object.keys(genesis.alloc);
+    for (const [address, data] of Object.entries(genesis.alloc)) {
+      await this.accountService.addBalance(address, BigInt(data.balance));
+    }
+
+    // 첫 번째 계정을 Genesis Proposer로 설정
+    this.GENESIS_PROPOSER = addresses[0];
+
+    this.logger.log(
+      `Initialized ${addresses.length} genesis accounts from genesis.json`,
     );
 
     const timestamp = Date.now();
-    const parentHash = '0x' + '0'.repeat(64); // 0x0000...0000
+    const parentHash = '0x' + '0'.repeat(64);
 
-    // State Root 계산 (간단하게)
     const stateRoot = await this.calculateStateRoot();
-
-    // Transactions Root (빈 배열)
     const transactionsRoot = this.calculateTransactionsRoot([]);
 
-    // Block Hash 계산
     const hash = this.calculateBlockHash(
       0,
       parentHash,
@@ -113,11 +120,32 @@ export class BlockService {
 
     await this.repository.save(genesisBlock);
 
-    this.logger.log(
-      `Genesis Block created: ${hash} (${this.GENESIS_PROPOSER}: ${GENESIS_BALANCE.FOUNDER} DSTN)`,
-    );
+    this.logger.log(`Genesis Block created: ${hash}`);
 
     return genesisBlock;
+  }
+
+  /**
+   * genesis.json 로드
+   *
+   * 이더리움:
+   * - Genesis Block 초기 설정 파일
+   */
+  private loadGenesisConfig(): GenesisConfig {
+    const possiblePaths = [
+      path.resolve(process.cwd(), 'genesis.json'),
+      path.resolve(__dirname, '../../genesis.json'),
+      path.resolve(__dirname, '../../../genesis.json'),
+    ];
+
+    for (const filePath of possiblePaths) {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(content);
+      }
+    }
+
+    throw new Error('genesis.json not found');
   }
 
   /**
