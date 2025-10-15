@@ -132,3 +132,39 @@ export const MAX_TRANSACTIONS_PER_BLOCK = 1000;
  * Dustin-Chain: 256 블록 (약 51분)
  */
 export const WITHDRAWAL_DELAY = 256; // blocks
+
+/**
+ * EMPTY_ROOT: 빈 Merkle Patricia Trie의 루트 해시
+ *
+ * 이더리움에서:
+ * - 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421
+ * - 빈 Trie를 RLP 인코딩 후 Keccak-256 해시
+ *
+ * 사용처:
+ * - storageRoot (스마트 컨트랙트 없는 계정)
+ * - transactionsRoot (트랜잭션 없는 블록)
+ * - receiptsRoot (리시트 없는 블록)
+ *
+ * 왜 이 값인가:
+ * - 이더리움 표준 값
+ * - keccak256(rlp.encode([])) 의 결과
+ */
+export const EMPTY_ROOT =
+  '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421';
+
+/**
+ * EMPTY_HASH: 빈 데이터의 Keccak-256 해시
+ *
+ * 이더리움에서:
+ * - 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+ * - 빈 바이트 배열을 Keccak-256 해시
+ *
+ * 사용처:
+ * - codeHash (스마트 컨트랙트 코드 없는 계정)
+ *
+ * 왜 이 값인가:
+ * - 이더리움 표준 값
+ * - keccak256('') 의 결과
+ */
+export const EMPTY_HASH =
+  '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470';
