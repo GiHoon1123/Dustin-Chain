@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Level } from 'level';
 import { Account } from '../account/entities/account.entity';
+import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
 
 @Injectable()
@@ -21,6 +22,8 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
 
   // 캐시 크기 제한
   private readonly CACHE_SIZE_LIMIT = 1000;
+
+  constructor(private readonly cryptoService: CryptoService) {}
 
   async onModuleInit(): Promise<void> {
     try {
@@ -63,7 +66,8 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
     try {
       const accountData = await this.db.get(`account:${address}`);
       if (accountData) {
-        const account = JSON.parse(accountData) as Account;
+        // Ethereum 2.0 방식: RLP 디코딩 후 Account 객체로 변환
+        const account = this.deserializeAccount(accountData);
 
         // 캐시에 추가 (크기 제한 확인)
         this.addToCache(address, account);
@@ -122,8 +126,9 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
           }
         }
       } else {
-        // 계정 저장
-        await this.db.put(`account:${address}`, JSON.stringify(account));
+        // 계정 저장 - Ethereum 2.0 방식: RLP 인코딩
+        const serializedAccount = this.serializeAccount(account);
+        await this.db.put(`account:${address}`, serializedAccount);
         this.addToCache(address, account);
         this.logger.debug(`Account ${address} committed to DB`);
       }
@@ -152,6 +157,47 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
     }
 
     this.cache.set(address, account);
+  }
+
+  /**
+   * 계정을 Ethereum 2.0 방식으로 직렬화 (RLP 인코딩)
+   */
+  private serializeAccount(account: Account): string {
+    // Ethereum 2.0 계정 구조: [nonce, balance, storageRoot, codeHash]
+    const accountData = [
+      account.nonce.toString(),
+      account.balance.toString(),
+      '0x0000000000000000000000000000000000000000000000000000000000000000', // storageRoot (EOA는 빈 해시)
+      '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470', // codeHash (EOA는 빈 해시)
+    ];
+
+    // RLP 인코딩 후 hex 문자열로 변환
+    const rlpEncoded = this.cryptoService.rlpEncode(accountData);
+    return Buffer.from(rlpEncoded).toString('hex');
+  }
+
+  /**
+   * Ethereum 2.0 방식으로 역직렬화 (RLP 디코딩)
+   */
+  private deserializeAccount(serializedData: string): Account {
+    try {
+      // hex 문자열을 Uint8Array로 변환 후 RLP 디코딩
+      const hexBuffer = Buffer.from(serializedData, 'hex');
+      const decoded = this.cryptoService.rlpDecode(hexBuffer);
+
+      // Ethereum 2.0 계정 구조: [nonce, balance, storageRoot, codeHash]
+      const [nonce, balance] = decoded as [string, string];
+
+      // Account 객체 생성 (address는 키에서 추출)
+      const account = new Account(''); // address는 나중에 설정
+      account.nonce = parseInt(nonce);
+      account.balance = BigInt(balance);
+
+      return account;
+    } catch (error) {
+      this.logger.error('Failed to deserialize account:', error);
+      throw new Error('Invalid account data in database');
+    }
   }
 
   /**
@@ -221,10 +267,14 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
     stateRoot: string;
   } | null> {
     try {
-      const keys = await this.db.keys({
+      const keys: string[] = [];
+      for await (const key of this.db.keys({
         gt: 'epoch:',
         lt: 'epoch:~',
-      });
+      })) {
+        keys.push(key);
+      }
+
       if (keys.length === 0) return null;
 
       const lastKey = keys[keys.length - 1];
