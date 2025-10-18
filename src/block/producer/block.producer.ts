@@ -225,17 +225,16 @@ export class BlockProducer implements OnModuleInit {
         this.logger.error('Failed to rollback block:', String(rollbackError));
       }
 
-      const errorMessage = error && typeof error === 'object' && 'message' in error 
-        ? String(error.message) 
-        : String(error);
-      const errorStack = error && typeof error === 'object' && 'stack' in error 
-        ? String(error.stack) 
-        : undefined;
-        
-      this.logger.error(
-        `Failed to produce block: ${errorMessage}`,
-        errorStack,
-      );
+      const errorMessage =
+        error && typeof error === 'object' && 'message' in error
+          ? String(error.message)
+          : String(error);
+      const errorStack =
+        error && typeof error === 'object' && 'stack' in error
+          ? String(error.stack)
+          : undefined;
+
+      this.logger.error(`Failed to produce block: ${errorMessage}`, errorStack);
       // 에러가 나도 다음 블록은 계속 생성
     }
   }
