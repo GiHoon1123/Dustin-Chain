@@ -9,6 +9,7 @@ import {
   EMPTY_ROOT,
 } from '../common/constants/blockchain.constants';
 import { Address, Hash } from '../common/types/common.types';
+import { StateManager } from '../state/state-manager';
 import { Transaction } from '../transaction/entities/transaction.entity';
 import { TransactionPool } from '../transaction/pool/transaction.pool';
 import { Block } from './entities/block.entity';
@@ -62,6 +63,7 @@ export class BlockService {
     private readonly cryptoService: CryptoService,
     private readonly accountService: AccountService,
     private readonly txPool: TransactionPool,
+    private readonly stateManager: StateManager,
   ) {}
 
   /**
@@ -123,6 +125,11 @@ export class BlockService {
       hash,
     );
 
+    // ✅ 저널의 Genesis 계정들을 LevelDB에 커밋
+    await this.stateManager.commitBlock();
+    this.logger.log('Genesis accounts committed to LevelDB');
+
+    // 블록 저장
     await this.repository.save(genesisBlock);
 
     this.logger.log(`Genesis Block created: ${hash}`);
@@ -238,14 +245,26 @@ export class BlockService {
       hash,
     );
 
-    // 9. 저장
-    await this.repository.save(block);
+    // 9. ✅ 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
+    // 블록 객체만 반환
 
     this.logger.log(
-      `Block #${blockNumber} created: ${hash} (${executedTxs.length} txs)`,
+      `Block #${blockNumber} created (not saved yet): ${hash} (${executedTxs.length} txs)`,
     );
 
     return block;
+  }
+
+  /**
+   * 블록 저장
+   * 
+   * BlockProducer에서 2/3 확인 후 호출
+   * 
+   * @param block - 저장할 블록
+   */
+  async saveBlock(block: Block): Promise<void> {
+    await this.repository.save(block);
+    this.logger.log(`Block #${block.number} saved: ${block.hash}`);
   }
 
   /**

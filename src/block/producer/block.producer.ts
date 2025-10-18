@@ -9,6 +9,7 @@ import {
 import { Address } from '../../common/types/common.types';
 import { ConsensusService } from '../../consensus/consensus.service';
 import { Attestation } from '../../consensus/entities/attestation.entity';
+import { StateManager } from '../../state/state-manager';
 import { ValidatorService } from '../../validator/validator.service';
 import { BlockService } from '../block.service';
 
@@ -47,6 +48,7 @@ export class BlockProducer implements OnModuleInit {
     private readonly validatorService: ValidatorService,
     private readonly consensusService: ConsensusService,
     private readonly accountService: AccountService,
+    private readonly stateManager: StateManager,
   ) {}
 
   /**
@@ -71,7 +73,7 @@ export class BlockProducer implements OnModuleInit {
     );
 
     // 블록 생성 시작
-    await this.start();
+    this.start();
   }
 
   /**
@@ -83,7 +85,7 @@ export class BlockProducer implements OnModuleInit {
    * 3. setTimeout으로 정확한 시간에 블록 생성
    * 4. 블록 생성 후 다음 슬롯 예약
    */
-  async start(): Promise<void> {
+  start(): void {
     if (this.isRunning) {
       this.logger.warn('Block Producer is already running');
       return;
@@ -131,9 +133,10 @@ export class BlockProducer implements OnModuleInit {
     );
 
     // 정확한 시간에 블록 생성
-    this.currentTimeout = setTimeout(async () => {
-      await this.produceBlock();
-      this.scheduleNextBlock(); // 다음 블록 예약
+    this.currentTimeout = setTimeout(() => {
+      void this.produceBlock().then(() => {
+        this.scheduleNextBlock(); // 다음 블록 예약
+      });
     }, delay);
   }
 
@@ -145,13 +148,15 @@ export class BlockProducer implements OnModuleInit {
    * 2. Committee 선택 (슬롯마다 128명)
    * 3. Proposer가 블록 생성
    * 4. Committee가 블록 검증 (Attestation)
-   * 5. 2/3 이상이면 블록 확정
+   * 5. 2/3 이상이면 블록 확정 (Justified)
    * 6. Proposer에게 보상
    *
    * 우리:
    * - ValidatorService로 Proposer/Committee 선택
    * - ConsensusService로 Attestation 수집
    * - BlockService로 블록 생성
+   * - 2/3 이상 (Justified) → commitBlock() + saveBlock()
+   * - 2/3 미달 → rollbackBlock()
    */
   private async produceBlock(): Promise<void> {
     try {
@@ -172,37 +177,64 @@ export class BlockProducer implements OnModuleInit {
         `Slot ${currentSlot}: Proposer=${proposer.slice(0, 10)}..., Committee=${committee.length} validators`,
       );
 
-      // 3. 블록 생성 (Proposer가 생성)
+      // 3. 저널 시작 (블록 실행 준비)
+      await this.stateManager.startBlock();
+
+      // 4. 블록 생성 (Proposer가 생성, 저장 안 함)
       const block = await this.blockService.createBlock(proposer);
 
-      // 4. Committee로부터 Attestation 수집
+      // 5. Committee로부터 Attestation 수집
       const attestations = await this.consensusService.collectAttestations(
         block,
         committee,
       );
 
-      // 5. Supermajority 확인 (2/3 이상)
+      // 6. Supermajority 확인 (2/3 이상)
       const hasSupermajority = this.consensusService.hasSupermajority(
         attestations,
         committee.length,
       );
 
+      // 7. ✅ Justified (2/3 이상) → 저장
       if (hasSupermajority) {
+        // 저널의 변경사항을 LevelDB에 커밋
+        await this.stateManager.commitBlock();
+
+        // 블록 저장
+        await this.blockService.saveBlock(block);
+
+        // 보상 분배
+        await this.distributeRewards(proposer, attestations);
+
         this.logger.log(
-          `✅ Block #${block.number} produced: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
+          `✅ Block #${block.number} Justified & Saved: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
         );
       } else {
+        // ❌ 2/3 미달 → 롤백
+        await this.stateManager.rollbackBlock();
+
         this.logger.warn(
-          `⚠️ Block #${block.number} insufficient attestations: ${attestations.length}/${committee.length}`,
+          `❌ Block #${block.number} Rejected (< 2/3): ${attestations.length}/${committee.length} attestations`,
         );
       }
+    } catch (error: any) {
+      // 에러 발생 시 롤백
+      try {
+        await this.stateManager.rollbackBlock();
+      } catch (rollbackError: any) {
+        this.logger.error('Failed to rollback block:', String(rollbackError));
+      }
 
-      // 6. 보상 분배
-      await this.distributeRewards(proposer, attestations);
-    } catch (error) {
+      const errorMessage = error && typeof error === 'object' && 'message' in error 
+        ? String(error.message) 
+        : String(error);
+      const errorStack = error && typeof error === 'object' && 'stack' in error 
+        ? String(error.stack) 
+        : undefined;
+        
       this.logger.error(
-        `Failed to produce block: ${error.message}`,
-        error.stack,
+        `Failed to produce block: ${errorMessage}`,
+        errorStack,
       );
       // 에러가 나도 다음 블록은 계속 생성
     }
