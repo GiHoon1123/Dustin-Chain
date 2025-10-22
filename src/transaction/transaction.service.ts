@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AccountService } from '../account/account.service';
-import { BlockLevelDBRepository } from '../block/repositories/block-leveldb.repository';
-import { IBlockRepository } from '../block/repositories/block.repository.interface';
 import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Signature } from '../common/crypto/crypto.types';
 import { Address, Hash } from '../common/types/common.types';
+import { BlockLevelDBRepository } from '../storage/repositories/block-leveldb.repository';
+import { IBlockRepository } from '../storage/repositories/block.repository.interface';
 import { TransactionReceipt } from './entities/transaction-receipt.entity';
 import { Transaction } from './entities/transaction.entity';
 import { TransactionPool } from './pool/transaction.pool';

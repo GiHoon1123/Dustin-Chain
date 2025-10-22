@@ -4,6 +4,7 @@ import { BlockModule } from './block/block.module';
 import { CommonModule } from './common/common.module';
 import { ConsensusModule } from './consensus/consensus.module';
 import { StateModule } from './state/state.module';
+import { StorageModule } from './storage/storage.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { ValidatorModule } from './validator/validator.module';
 
@@ -14,7 +15,8 @@ import { ValidatorModule } from './validator/validator.module';
  *
  * Global Modules:
  * - CommonModule: 전역 유틸리티 (CryptoService 등)
- * - StateModule: 전역 상태 관리 (StateManager)
+ * - StateModule: 전역 상태 관리 (StateManager - 계정 저장소)
+ * - StorageModule: 전역 저장소 관리 (BlockLevelDBRepository - 블록 저장소)
  *
  * Feature Modules:
  * - AccountModule: 계정 상태 관리
@@ -25,8 +27,12 @@ import { ValidatorModule } from './validator/validator.module';
  */
 @Module({
   imports: [
+    // Global Modules
     CommonModule, // @Global() - CryptoService 전역 제공
     StateModule, // @Global() - StateManager 전역 제공
+    StorageModule, // @Global() - BlockLevelDBRepository 전역 제공
+
+    // Feature Modules
     AccountModule,
     TransactionModule,
     ValidatorModule,

@@ -15,12 +15,12 @@ import {
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address, Hash } from '../common/types/common.types';
 import { StateManager } from '../state/state-manager';
+import { BlockLevelDBRepository } from '../storage/repositories/block-leveldb.repository';
+import { IBlockRepository } from '../storage/repositories/block.repository.interface';
 import { TransactionReceipt } from '../transaction/entities/transaction-receipt.entity';
 import { Transaction } from '../transaction/entities/transaction.entity';
 import { TransactionPool } from '../transaction/pool/transaction.pool';
 import { Block } from './entities/block.entity';
-import { BlockLevelDBRepository } from './repositories/block-leveldb.repository';
-import { IBlockRepository } from './repositories/block.repository.interface';
 
 interface GenesisConfig {
   config: {

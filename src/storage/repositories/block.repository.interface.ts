@@ -1,5 +1,5 @@
+import { Block } from '../../block/entities/block.entity';
 import { Hash } from '../../common/types/common.types';
-import { Block } from '../entities/block.entity';
 
 /**
  * Block Repository Interface

@@ -6,11 +6,15 @@ import {
 } from '@nestjs/common';
 import { ClassicLevel } from 'classic-level';
 import * as LRUCacheModule from 'lru-cache';
+import {
+  Block,
+  BlockBody,
+  BlockHeader,
+} from '../../block/entities/block.entity';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { Hash } from '../../common/types/common.types';
 import { TransactionReceipt } from '../../transaction/entities/transaction-receipt.entity';
 import { Transaction } from '../../transaction/entities/transaction.entity';
-import { Block, BlockBody, BlockHeader } from '../entities/block.entity';
 import { IBlockRepository } from './block.repository.interface';
 
 const LRU = LRUCacheModule.LRUCache || LRUCacheModule;
