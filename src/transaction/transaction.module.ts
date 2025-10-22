@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AccountModule } from '../account/account.module';
+import { BlockModule } from '../block/block.module';
 import { TransactionPool } from './pool/transaction.pool';
 import { TransactionController } from './transaction.controller';
 import { TransactionService } from './transaction.service';
@@ -23,7 +24,7 @@ import { TransactionService } from './transaction.service';
  * - CommonModule: Crypto 서비스 (서명 검증)
  */
 @Module({
-  imports: [AccountModule],
+  imports: [AccountModule, forwardRef(() => BlockModule)],
   controllers: [TransactionController],
   providers: [TransactionService, TransactionPool],
   exports: [TransactionService, TransactionPool],

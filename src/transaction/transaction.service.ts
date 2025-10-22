@@ -1,9 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AccountService } from '../account/account.service';
+import { BlockLevelDBRepository } from '../block/repositories/block-leveldb.repository';
+import { IBlockRepository } from '../block/repositories/block.repository.interface';
 import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Signature } from '../common/crypto/crypto.types';
 import { Address, Hash } from '../common/types/common.types';
+import { TransactionReceipt } from './entities/transaction-receipt.entity';
 import { Transaction } from './entities/transaction.entity';
 import { TransactionPool } from './pool/transaction.pool';
 
@@ -29,6 +32,8 @@ export class TransactionService {
     private readonly cryptoService: CryptoService,
     private readonly accountService: AccountService,
     private readonly txPool: TransactionPool,
+    @Inject(IBlockRepository)
+    private readonly blockRepository: IBlockRepository,
   ) {}
 
   /**
@@ -288,5 +293,24 @@ export class TransactionService {
    */
   getPoolStats() {
     return this.txPool.getStats();
+  }
+
+  /**
+   * Receipt 조회
+   *
+   * @param hash - 트랜잭션 해시
+   * @returns Receipt 또는 null
+   */
+  async getReceipt(hash: Hash): Promise<TransactionReceipt | null> {
+    const levelDbRepo = this.blockRepository as BlockLevelDBRepository;
+    const receipt = await levelDbRepo.findReceipt(hash);
+
+    if (!receipt) {
+      this.logger.debug(`Receipt not found: ${hash}`);
+      return null;
+    }
+
+    this.logger.debug(`Receipt found: ${hash}`);
+    return receipt;
   }
 }

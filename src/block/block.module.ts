@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AccountModule } from '../account/account.module';
 import { ConsensusModule } from '../consensus/consensus.module';
 import { TransactionModule } from '../transaction/transaction.module';
@@ -30,7 +30,12 @@ import { IBlockRepository } from './repositories/block.repository.interface';
  * - Genesis Block 생성 후 12초마다 블록 생성
  */
 @Module({
-  imports: [AccountModule, TransactionModule, ValidatorModule, ConsensusModule],
+  imports: [
+    AccountModule,
+    forwardRef(() => TransactionModule),
+    ValidatorModule,
+    ConsensusModule,
+  ],
   controllers: [BlockController],
   providers: [
     BlockService,
@@ -40,6 +45,6 @@ import { IBlockRepository } from './repositories/block.repository.interface';
       useClass: BlockLevelDBRepository, // ✅ BlockMemoryRepository → BlockLevelDBRepository
     },
   ],
-  exports: [BlockService, BlockProducer],
+  exports: [BlockService, BlockProducer, IBlockRepository],
 })
 export class BlockModule {}
