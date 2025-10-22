@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { AccountService } from '../../account/account.service';
 import {
   BLOCK_TIME,
@@ -35,9 +35,13 @@ import { BlockService } from '../block.service';
  * - Cron보다 정확한 타이밍
  * - 서버 재시작 시에도 슬롯 번호 일치
  * - 이더리움과 동일한 메커니즘
+ *
+ * NestJS Lifecycle:
+ * - onApplicationBootstrap: BlockService.onApplicationBootstrap() 이후 실행
+ * - Genesis Block이 이미 생성/복구된 상태 보장
  */
 @Injectable()
-export class BlockProducer implements OnModuleInit {
+export class BlockProducer implements OnApplicationBootstrap {
   private readonly logger = new Logger(BlockProducer.name);
   private genesisTime: number | null = null;
   private isRunning = false;
@@ -52,24 +56,47 @@ export class BlockProducer implements OnModuleInit {
   ) {}
 
   /**
-   * 모듈 초기화 시 자동 시작
+   * 애플리케이션 부트스트랩
    *
-   * NestJS Lifecycle Hook:
-   * - 서버 시작 시 자동 실행
-   * - Genesis Block 생성 후 블록 생성 시작
+   * NestJS Lifecycle:
+   * 1. BlockLevelDBRepository.onModuleInit() - DB 열기
+   * 2. BlockService.onApplicationBootstrap() - Genesis Block 체크/생성
+   * 3. BlockProducer.onApplicationBootstrap() - 블록 생성 시작 ✅
+   *
+   * 주의: onApplicationBootstrap은 모든 서비스에서 동시 실행됨
+   * BlockService가 Genesis Block을 생성할 때까지 대기 필요
    */
-  async onModuleInit() {
+  async onApplicationBootstrap() {
     this.logger.log('Block Producer initializing...');
 
-    // Genesis Block 생성
-    const genesisBlock = await this.blockService.createGenesisBlock();
+    // Genesis Block을 찾을 때까지 대기 (최대 10초)
+    let genesisBlock: any = null;
+    let attempts = 0;
+    const maxAttempts = 100; // 10초 (100ms * 100)
+
+    while (!genesisBlock && attempts < maxAttempts) {
+      const block = await this.blockService.getBlockByNumber(0);
+      if (block) {
+        genesisBlock = block;
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+    }
+    
+    if (!genesisBlock) {
+      throw new Error('Genesis Block not found after waiting 10 seconds');
+    }
+
+    this.logger.log('Genesis Block found, starting Block Producer');
+
     this.genesisTime = genesisBlock.timestamp;
 
     // ConsensusService에도 Genesis Time 설정
-    this.consensusService.setGenesisTime(this.genesisTime);
+    this.consensusService.setGenesisTime(this.genesisTime!);
 
     this.logger.log(
-      `Genesis Time set: ${new Date(this.genesisTime).toISOString()}`,
+      `Genesis Time set: ${new Date(this.genesisTime!).toISOString()}`,
     );
 
     // 블록 생성 시작

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Trie } from '@ethereumjs/trie';
 import { AccountService } from '../account/account.service';
 import { CryptoService } from '../common/crypto/crypto.service';
@@ -44,9 +44,13 @@ interface GenesisConfig {
  * 이더리움:
  * - Execution Layer 역할 (트랜잭션 실행, 상태 변경)
  * - Consensus Layer와 연동 (Validator가 블록 제안)
+ *
+ * NestJS Lifecycle:
+ * - onApplicationBootstrap: 모든 모듈의 onModuleInit이 완료된 후 실행
+ * - BlockLevelDBRepository.onModuleInit()이 먼저 완료되어 DB가 열린 상태 보장
  */
 @Injectable()
-export class BlockService {
+export class BlockService implements OnApplicationBootstrap {
   private readonly logger = new Logger(BlockService.name);
 
   /**
@@ -65,6 +69,20 @@ export class BlockService {
     private readonly txPool: TransactionPool,
     private readonly stateManager: StateManager,
   ) {}
+
+  /**
+   * 애플리케이션 부트스트랩
+   *
+   * NestJS Lifecycle:
+   * 1. onModuleInit (모든 모듈) - BlockLevelDBRepository DB 열기
+   * 2. onApplicationBootstrap (모든 모듈) - Genesis Block 체크/생성 ✅
+   *
+   * 이 시점에는 BlockLevelDBRepository의 LevelDB가 이미 열린 상태 보장
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    this.logger.log('Checking Genesis Block...');
+    await this.createGenesisBlock();
+  }
 
   /**
    * Genesis Block 생성
