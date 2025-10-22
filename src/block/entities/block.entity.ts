@@ -2,6 +2,37 @@ import { Address, Hash } from '../../common/types/common.types';
 import { Transaction } from '../../transaction/entities/transaction.entity';
 
 /**
+ * Block Header (Ethereum Geth 방식)
+ * 
+ * 헤더만 별도로 저장/조회:
+ * - 크기 작음 (~200 bytes)
+ * - 자주 조회됨
+ * - 캐싱 효율적
+ */
+export interface BlockHeader {
+  number: number;
+  hash: Hash;
+  parentHash: Hash;
+  timestamp: number;
+  proposer: Address;
+  stateRoot: Hash;
+  transactionsRoot: Hash;
+  transactionCount: number;
+}
+
+/**
+ * Block Body (Ethereum Geth 방식)
+ * 
+ * 바디는 필요할 때만 조회:
+ * - 크기 큼 (트랜잭션 전체)
+ * - 가끔 조회됨
+ * - 캐싱 안 함 (디스크 직접)
+ */
+export interface BlockBody {
+  transactions: Transaction[];
+}
+
+/**
  * Block Entity
  *
  * 이더리움 블록:
@@ -170,9 +201,14 @@ export class Block {
   }
 
   /**
-   * Header만 반환 (간단한 조회용)
+   * Header만 반환 (Ethereum Geth 방식)
+   * 
+   * 용도:
+   * - 헤더 캐싱
+   * - 헤더만 필요한 조회 (블록 번호, 해시 등)
+   * - LevelDB 저장
    */
-  getHeader() {
+  getHeader(): BlockHeader {
     return {
       number: this.number,
       hash: this.hash,
@@ -183,5 +219,36 @@ export class Block {
       stateRoot: this.stateRoot,
       transactionsRoot: this.transactionsRoot,
     };
+  }
+
+  /**
+   * Body만 반환 (Ethereum Geth 방식)
+   * 
+   * 용도:
+   * - 트랜잭션 전체 조회 시
+   * - LevelDB 저장 (헤더와 분리)
+   */
+  getBody(): BlockBody {
+    return {
+      transactions: this.transactions,
+    };
+  }
+
+  /**
+   * Header + Body로 Block 재구성 (Ethereum Geth 방식)
+   * 
+   * LevelDB에서 조회 후 Block 객체 생성
+   */
+  static fromHeaderAndBody(header: BlockHeader, body: BlockBody): Block {
+    return new Block(
+      header.number,
+      header.parentHash,
+      header.timestamp,
+      header.proposer,
+      body.transactions,
+      header.stateRoot,
+      header.transactionsRoot,
+      header.hash,
+    );
   }
 }

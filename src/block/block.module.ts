@@ -6,7 +6,7 @@ import { ValidatorModule } from '../validator/validator.module';
 import { BlockController } from './block.controller';
 import { BlockService } from './block.service';
 import { BlockProducer } from './producer/block.producer';
-import { BlockMemoryRepository } from './repositories/block-memory.repository';
+import { BlockLevelDBRepository } from './repositories/block-leveldb.repository';
 import { IBlockRepository } from './repositories/block.repository.interface';
 
 /**
@@ -18,7 +18,7 @@ import { IBlockRepository } from './repositories/block.repository.interface';
  * - BlockService: 블록 생성 및 조회 로직
  * - BlockProducer: 12초마다 자동 블록 생성
  * - BlockController: 블록 조회 API
- * - BlockMemoryRepository: In-Memory 블록 저장소
+ * - BlockLevelDBRepository: LevelDB 블록 저장소 (Ethereum Geth 방식)
  *
  * 의존성:
  * - AccountModule: 계정 상태 관리 (잔액, nonce)
@@ -37,7 +37,7 @@ import { IBlockRepository } from './repositories/block.repository.interface';
     BlockProducer,
     {
       provide: IBlockRepository,
-      useClass: BlockMemoryRepository,
+      useClass: BlockLevelDBRepository, // ✅ BlockMemoryRepository → BlockLevelDBRepository
     },
   ],
   exports: [BlockService, BlockProducer],
