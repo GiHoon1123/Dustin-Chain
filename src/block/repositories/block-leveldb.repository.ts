@@ -8,6 +8,7 @@ import { ClassicLevel } from 'classic-level';
 import * as LRUCacheModule from 'lru-cache';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { Hash } from '../../common/types/common.types';
+import { TransactionReceipt } from '../../transaction/entities/transaction-receipt.entity';
 import { Transaction } from '../../transaction/entities/transaction.entity';
 import { Block, BlockBody, BlockHeader } from '../entities/block.entity';
 import { IBlockRepository } from './block.repository.interface';
@@ -29,6 +30,7 @@ type LRUType = typeof LRU;
  * - "n" + blockHash → blockNumber (역조회)
  * - "h" + blockNumber + blockHash → Block Header (RLP)
  * - "b" + blockNumber + blockHash → Block Body (RLP)
+ * - "r" + txHash → Transaction Receipt (RLP)
  * - "LastBlock" → latestBlockHash
  */
 @Injectable()
@@ -138,7 +140,10 @@ export class BlockLevelDBRepository
       // 2. 해시로 조회
       return await this.findByHash(hash);
     } catch (error: any) {
-      if (error.code === 'LEVEL_NOT_FOUND' || error.code === 'LEVEL_DATABASE_NOT_OPEN') {
+      if (
+        error.code === 'LEVEL_NOT_FOUND' ||
+        error.code === 'LEVEL_DATABASE_NOT_OPEN'
+      ) {
         return null;
       }
       this.logger.error(
@@ -281,6 +286,7 @@ export class BlockLevelDBRepository
       header.proposer,
       header.stateRoot,
       header.transactionsRoot,
+      header.receiptsRoot,
       header.transactionCount.toString(),
     ];
 
@@ -304,6 +310,7 @@ export class BlockLevelDBRepository
         proposer,
         stateRoot,
         transactionsRoot,
+        receiptsRoot,
         transactionCount,
       ] = decoded as string[];
 
@@ -315,6 +322,7 @@ export class BlockLevelDBRepository
         proposer,
         stateRoot,
         transactionsRoot,
+        receiptsRoot,
         transactionCount: parseInt(transactionCount),
       };
     } catch (error: any) {
@@ -373,6 +381,127 @@ export class BlockLevelDBRepository
     } catch (error: any) {
       this.logger.error('Failed to deserialize body:', error);
       throw new Error('Invalid body data in database');
+    }
+  }
+
+  /**
+   * Receipt 저장 (Geth 방식)
+   *
+   * 키: "r" + txHash → Receipt (RLP)
+   *
+   * @param receipt - 저장할 Receipt
+   */
+  async saveReceipt(receipt: TransactionReceipt): Promise<void> {
+    if (this.db.status !== 'open') {
+      this.logger.warn('Database is not open, skipping receipt save');
+      return;
+    }
+
+    const key = `r${receipt.transactionHash}`;
+    const value = this.serializeReceipt(receipt);
+
+    await this.db.put(key, value);
+    this.logger.debug(`Receipt saved: ${receipt.transactionHash}`);
+  }
+
+  /**
+   * Receipt 조회
+   *
+   * @param txHash - 트랜잭션 해시
+   * @returns Receipt 또는 null
+   */
+  async findReceipt(txHash: Hash): Promise<TransactionReceipt | null> {
+    if (this.db.status !== 'open') {
+      return null;
+    }
+
+    const key = `r${txHash}`;
+
+    try {
+      const value = await this.db.get(key);
+      if (!value) {
+        return null;
+      }
+
+      return this.deserializeReceipt(value);
+    } catch (error: any) {
+      if (error.code === 'LEVEL_NOT_FOUND') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Receipt RLP 직렬화
+   *
+   * 이더리움 Receipt RLP:
+   * [status, cumulativeGasUsed, logsBloom, logs]
+   *
+   * 우리 Receipt RLP (확장):
+   * [txHash, txIndex, blockHash, blockNumber, from, to, status, gasUsed, cumulativeGasUsed, contractAddress, logs, logsBloom]
+   */
+  private serializeReceipt(receipt: TransactionReceipt): string {
+    const rlpData = [
+      receipt.transactionHash,
+      receipt.transactionIndex.toString(),
+      receipt.blockHash,
+      receipt.blockNumber.toString(),
+      receipt.from,
+      receipt.to,
+      receipt.status.toString(),
+      receipt.gasUsed.toString(),
+      receipt.cumulativeGasUsed.toString(),
+      receipt.contractAddress || '',
+      JSON.stringify(receipt.logs),
+      receipt.logsBloom,
+    ];
+
+    return JSON.stringify(rlpData);
+  }
+
+  /**
+   * Receipt RLP 역직렬화
+   */
+  private deserializeReceipt(data: string): TransactionReceipt {
+    try {
+      const rlpData = JSON.parse(data);
+
+      const [
+        transactionHash,
+        transactionIndex,
+        blockHash,
+        blockNumber,
+        from,
+        to,
+        status,
+        gasUsed,
+        cumulativeGasUsed,
+        contractAddress,
+        logs,
+        logsBloom,
+      ] = rlpData;
+
+      const receipt = new TransactionReceipt(
+        transactionHash,
+        parseInt(transactionIndex),
+        blockHash,
+        parseInt(blockNumber),
+        from,
+        to,
+        parseInt(status) as 1 | 0,
+        BigInt(gasUsed),
+        BigInt(cumulativeGasUsed),
+      );
+
+      receipt.contractAddress = contractAddress || null;
+      receipt.logs = JSON.parse(logs);
+      receipt.logsBloom = logsBloom;
+
+      return receipt;
+    } catch (error: any) {
+      this.logger.error('Failed to deserialize receipt:', error);
+      throw new Error('Invalid receipt data in database');
     }
   }
 }
