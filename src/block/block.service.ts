@@ -1,18 +1,25 @@
+import { Trie } from '@ethereumjs/trie';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
-import { Trie } from '@ethereumjs/trie';
 import { AccountService } from '../account/account.service';
-import { CryptoService } from '../common/crypto/crypto.service';
 import {
   EMPTY_HASH,
   EMPTY_ROOT,
 } from '../common/constants/blockchain.constants';
+import { CryptoService } from '../common/crypto/crypto.service';
 import { Address, Hash } from '../common/types/common.types';
 import { StateManager } from '../state/state-manager';
+import { TransactionReceipt } from '../transaction/entities/transaction-receipt.entity';
 import { Transaction } from '../transaction/entities/transaction.entity';
 import { TransactionPool } from '../transaction/pool/transaction.pool';
 import { Block } from './entities/block.entity';
+import { BlockLevelDBRepository } from './repositories/block-leveldb.repository';
 import { IBlockRepository } from './repositories/block.repository.interface';
 
 interface GenesisConfig {
@@ -122,6 +129,7 @@ export class BlockService implements OnApplicationBootstrap {
 
     const stateRoot = await this.calculateStateRoot();
     const transactionsRoot = await this.calculateTransactionsRoot([]);
+    const receiptsRoot = await this.calculateReceiptsRoot([]);
 
     const hash = this.calculateBlockHash(
       0,
@@ -129,6 +137,7 @@ export class BlockService implements OnApplicationBootstrap {
       timestamp,
       this.GENESIS_PROPOSER,
       transactionsRoot,
+      receiptsRoot,
       stateRoot,
     );
 
@@ -140,6 +149,7 @@ export class BlockService implements OnApplicationBootstrap {
       [],
       stateRoot,
       transactionsRoot,
+      receiptsRoot,
       hash,
     );
 
@@ -214,9 +224,16 @@ export class BlockService implements OnApplicationBootstrap {
       `Creating Block #${blockNumber} with ${pendingTxs.length} transactions`,
     );
 
-    // 3. 트랜잭션 실행
+    // 3. 트랜잭션 실행 및 Receipt 생성
     const executedTxs: Transaction[] = [];
-    for (const tx of pendingTxs) {
+    const receipts: TransactionReceipt[] = [];
+    let cumulativeGasUsed = BigInt(0);
+
+    for (let i = 0; i < pendingTxs.length; i++) {
+      const tx = pendingTxs[i];
+      let status: 1 | 0 = 1; // 성공
+      let gasUsed = BigInt(21000); // 기본 Gas (이더리움 기본 전송 Gas)
+
       try {
         await this.executeTransaction(tx);
         tx.confirm(blockNumber);
@@ -230,7 +247,23 @@ export class BlockService implements OnApplicationBootstrap {
         );
         tx.fail();
         this.txPool.remove(tx.hash);
+        status = 0; // 실패
       }
+
+      // Receipt 생성
+      cumulativeGasUsed += gasUsed;
+      const receipt = new TransactionReceipt(
+        tx.hash,
+        i, // transactionIndex
+        '', // blockHash (나중에 설정)
+        blockNumber,
+        tx.from,
+        tx.to,
+        status,
+        gasUsed,
+        cumulativeGasUsed,
+      );
+      receipts.push(receipt);
     }
 
     // 4. (보상은 BlockProducer에서 처리)
@@ -241,17 +274,21 @@ export class BlockService implements OnApplicationBootstrap {
     // 6. Transactions Root 계산
     const transactionsRoot = await this.calculateTransactionsRoot(executedTxs);
 
-    // 7. Block Hash 계산
+    // 7. Receipts Root 계산
+    const receiptsRoot = await this.calculateReceiptsRoot(receipts);
+
+    // 8. Block Hash 계산
     const hash = this.calculateBlockHash(
       blockNumber,
       parentHash,
       timestamp,
       proposer,
       transactionsRoot,
+      receiptsRoot,
       stateRoot,
     );
 
-    // 8. Block 생성
+    // 9. Block 생성
     const block = new Block(
       blockNumber,
       parentHash,
@@ -260,14 +297,23 @@ export class BlockService implements OnApplicationBootstrap {
       executedTxs,
       stateRoot,
       transactionsRoot,
+      receiptsRoot,
       hash,
     );
 
-    // 9. ✅ 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
+    // 10. Receipt에 blockHash 설정
+    for (const receipt of receipts) {
+      receipt.blockHash = hash;
+    }
+
+    // 11. Receipt를 Block에 임시 저장 (나중에 saveBlock에서 사용)
+    (block as any).receipts = receipts;
+
+    // 12. ✅ 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
     // 블록 객체만 반환
 
     this.logger.log(
-      `Block #${blockNumber} created (not saved yet): ${hash} (${executedTxs.length} txs)`,
+      `Block #${blockNumber} created (not saved yet): ${hash} (${executedTxs.length} txs, ${receipts.length} receipts)`,
     );
 
     return block;
@@ -275,13 +321,28 @@ export class BlockService implements OnApplicationBootstrap {
 
   /**
    * 블록 저장
-   * 
+   *
    * BlockProducer에서 2/3 확인 후 호출
-   * 
+   *
    * @param block - 저장할 블록
    */
   async saveBlock(block: Block): Promise<void> {
     await this.repository.save(block);
+
+    // Receipt 저장 (Block에 임시로 저장된 receipts)
+    const receipts = (block as any).receipts as
+      | TransactionReceipt[]
+      | undefined;
+    if (receipts && receipts.length > 0) {
+      const levelDbRepo = this.repository as BlockLevelDBRepository;
+      for (const receipt of receipts) {
+        await levelDbRepo.saveReceipt(receipt);
+      }
+      this.logger.debug(
+        `${receipts.length} receipts saved for block #${block.number}`,
+      );
+    }
+
     this.logger.log(`Block #${block.number} saved: ${block.hash}`);
   }
 
@@ -355,14 +416,16 @@ export class BlockService implements OnApplicationBootstrap {
     timestamp: number,
     proposer: Address,
     transactionsRoot: Hash,
+    receiptsRoot: Hash,
     stateRoot: Hash,
   ): Hash {
     // Header 필드를 배열로 구성 (순서 중요!)
-    // RLP 인코딩: [parentHash, stateRoot, transactionsRoot, number, timestamp, proposer]
+    // RLP 인코딩: [parentHash, stateRoot, transactionsRoot, receiptsRoot, number, timestamp, proposer]
     const headerArray = [
       this.cryptoService.hexToBytes(parentHash), // 이전 블록 해시
       this.cryptoService.hexToBytes(stateRoot), // 상태 루트
       this.cryptoService.hexToBytes(transactionsRoot), // 트랜잭션 루트
+      this.cryptoService.hexToBytes(receiptsRoot), // Receipt 루트
       number, // 블록 번호
       timestamp, // 타임스탬프
       this.cryptoService.hexToBytes(proposer), // 블록 생성자
@@ -482,6 +545,54 @@ export class BlockService implements OnApplicationBootstrap {
         tx.v, // signature v
         this.cryptoService.hexToBytes(tx.r), // signature r
         this.cryptoService.hexToBytes(tx.s), // signature s
+      ]);
+
+      // Trie에 저장
+      await trie.put(key, value);
+    }
+
+    // 4. Root 해시 반환
+    const root = trie.root();
+
+    // Uint8Array → Hex 문자열 변환
+    return this.cryptoService.bytesToHex(root);
+  }
+
+  /**
+   * Receipt Root 계산
+   *
+   * 이더리움:
+   * - Receipt들의 Merkle Patricia Trie 루트 해시
+   * - 각 Receipt를 RLP 인코딩하여 Trie에 저장
+   *
+   * 우리 (현재):
+   * - 단순 해시 (나중에 Merkle Trie로 교체)
+   */
+  private async calculateReceiptsRoot(
+    receipts: TransactionReceipt[],
+  ): Promise<Hash> {
+    // 1. 빈 블록: EMPTY_ROOT 반환
+    if (receipts.length === 0) {
+      return EMPTY_ROOT;
+    }
+
+    // 2. 새 Trie 인스턴스 생성
+    const trie = new Trie();
+
+    // 3. 각 Receipt를 Trie에 삽입
+    for (let i = 0; i < receipts.length; i++) {
+      const receipt = receipts[i];
+
+      // Key: RLP(index) - Receipt 순서
+      const key = this.cryptoService.rlpEncode(i);
+
+      // Value: RLP(receipt) - Receipt 전체 데이터
+      // [status, cumulativeGasUsed, logsBloom, logs]
+      const value = this.cryptoService.rlpEncode([
+        receipt.status, // status (1 or 0)
+        receipt.cumulativeGasUsed, // cumulative gas used
+        this.cryptoService.hexToBytes(receipt.logsBloom), // logs bloom
+        receipt.logs, // logs array
       ]);
 
       // Trie에 저장
