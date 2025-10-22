@@ -17,6 +17,7 @@ export interface BlockHeader {
   proposer: Address;
   stateRoot: Hash;
   transactionsRoot: Hash;
+  receiptsRoot: Hash;
   transactionCount: number;
 }
 
@@ -149,6 +150,19 @@ export class Block {
    */
   transactionsRoot: Hash;
 
+  /**
+   * Receipt 루트 (Receipts Root)
+   *
+   * 이더리움:
+   * - Receipt들의 Merkle Tree 루트
+   * - Header에 포함
+   *
+   * 우리 (현재):
+   * - Receipt 해시들을 모아서 해시
+   * - 나중에 Merkle Tree 추가
+   */
+  receiptsRoot: Hash;
+
   constructor(
     number: number,
     parentHash: Hash,
@@ -157,6 +171,7 @@ export class Block {
     transactions: Transaction[],
     stateRoot: Hash,
     transactionsRoot: Hash,
+    receiptsRoot: Hash,
     hash: Hash,
   ) {
     this.number = number;
@@ -166,6 +181,7 @@ export class Block {
     this.transactions = transactions;
     this.stateRoot = stateRoot;
     this.transactionsRoot = transactionsRoot;
+    this.receiptsRoot = receiptsRoot;
     this.hash = hash;
   }
 
@@ -197,6 +213,7 @@ export class Block {
       transactions: this.transactions.map((tx) => tx.toJSON()),
       stateRoot: this.stateRoot,
       transactionsRoot: this.transactionsRoot,
+      receiptsRoot: this.receiptsRoot,
     };
   }
 
@@ -218,6 +235,7 @@ export class Block {
       transactionCount: this.transactions.length,
       stateRoot: this.stateRoot,
       transactionsRoot: this.transactionsRoot,
+      receiptsRoot: this.receiptsRoot,
     };
   }
 
@@ -248,6 +266,7 @@ export class Block {
       body.transactions,
       header.stateRoot,
       header.transactionsRoot,
+      header.receiptsRoot,
       header.hash,
     );
   }
