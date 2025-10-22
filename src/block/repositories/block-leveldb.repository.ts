@@ -1,21 +1,29 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ClassicLevel } from 'classic-level';
-import { LRUCache } from 'lru-cache';
+import * as LRUCacheModule from 'lru-cache';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { Hash } from '../../common/types/common.types';
 import { Transaction } from '../../transaction/entities/transaction.entity';
 import { Block, BlockBody, BlockHeader } from '../entities/block.entity';
 import { IBlockRepository } from './block.repository.interface';
 
+const LRU = LRUCacheModule.LRUCache || LRUCacheModule;
+type LRUType = typeof LRU;
+
 /**
  * BlockLevelDBRepository (Ethereum Geth 방식)
- * 
+ *
  * Geth의 데이터베이스 구조:
  * - 단일 LevelDB (chaindata/)
  * - Prefix로 데이터 타입 구분
  * - Header/Body 분리 저장
  * - Header는 LRU 캐싱
- * 
+ *
  * 저장 키:
  * - "H" + blockNumber → blockHash (Canonical chain)
  * - "n" + blockHash → blockNumber (역조회)
@@ -24,20 +32,22 @@ import { IBlockRepository } from './block.repository.interface';
  * - "LastBlock" → latestBlockHash
  */
 @Injectable()
-export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, OnModuleDestroy {
+export class BlockLevelDBRepository
+  implements IBlockRepository, OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(BlockLevelDBRepository.name);
   private db: ClassicLevel<string, string>;
-  
+
   // Header 캐싱 (LRU, 최근 10,000개)
-  private headerCache: LRUCache<Hash, BlockHeader>;
-  
+  private headerCache: InstanceType<LRUType>;
+
   constructor(private readonly cryptoService: CryptoService) {
     this.db = new ClassicLevel<string, string>('./data/chaindata', {
       valueEncoding: 'utf8',
     });
-    
+
     // Header 캐시 초기화 (10,000개, 약 2MB)
-    this.headerCache = new LRUCache<Hash, BlockHeader>({
+    this.headerCache = new LRU<Hash, BlockHeader>({
       max: 10000,
       ttl: 1000 * 60 * 60, // 1시간
     });
@@ -55,7 +65,7 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
 
   /**
    * 블록 저장 (Geth 방식)
-   * 
+   *
    * 1. Header 저장 (h + number + hash)
    * 2. Body 저장 (b + number + hash)
    * 3. Canonical 설정 (H + number → hash)
@@ -68,6 +78,12 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
     const body = block.getBody();
 
     try {
+      // DB 상태 확인
+      if (this.db.status !== 'open') {
+        this.logger.warn(`Cannot save block #${block.number}: DB not open yet`);
+        return;
+      }
+
       // 1. Header 저장
       const headerKey = `h${block.number}${block.hash}`;
       await this.db.put(headerKey, this.serializeHeader(header));
@@ -99,30 +115,43 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
 
   /**
    * 블록 번호로 조회
-   * 
+   *
    * 1. Canonical 해시 조회 (H + number)
    * 2. 해시로 블록 조회
    */
   async findByNumber(blockNumber: number): Promise<Block | null> {
     try {
+      // DB 상태 확인
+      if (this.db.status !== 'open') {
+        this.logger.debug('DB not open yet, returning null');
+        return null;
+      }
+
       // 1. Canonical 해시
       const canonicalKey = `H${blockNumber}`;
       const hash = await this.db.get(canonicalKey);
 
+      if (!hash) {
+        return null;
+      }
+
       // 2. 해시로 조회
       return await this.findByHash(hash);
     } catch (error: any) {
-      if (error.code === 'LEVEL_NOT_FOUND') {
+      if (error.code === 'LEVEL_NOT_FOUND' || error.code === 'LEVEL_DATABASE_NOT_OPEN') {
         return null;
       }
-      this.logger.error(`Failed to find block by number ${blockNumber}:`, error);
+      this.logger.error(
+        `Failed to find block by number ${blockNumber}:`,
+        error,
+      );
       throw error;
     }
   }
 
   /**
    * 블록 해시로 조회
-   * 
+   *
    * 1. Header 조회 (캐시 우선)
    * 2. Body 조회 (디스크)
    * 3. Block 재구성
@@ -131,13 +160,24 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
     try {
       // 1. 블록 번호 조회 (역조회)
       const numberKey = `n${hash}`;
-      const blockNumber = parseInt(await this.db.get(numberKey));
+      const blockNumberStr = await this.db.get(numberKey);
+
+      if (!blockNumberStr) {
+        return null;
+      }
+
+      const blockNumber = parseInt(blockNumberStr);
 
       // 2. Header 조회 (캐시 우선)
       let header = this.headerCache.get(hash);
       if (!header) {
         const headerKey = `h${blockNumber}${hash}`;
         const headerData = await this.db.get(headerKey);
+
+        if (!headerData) {
+          return null;
+        }
+
         header = this.deserializeHeader(headerData);
         this.headerCache.set(hash, header);
       }
@@ -145,6 +185,11 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
       // 3. Body 조회 (디스크)
       const bodyKey = `b${blockNumber}${hash}`;
       const bodyData = await this.db.get(bodyKey);
+
+      if (!bodyData) {
+        return null;
+      }
+
       const body = this.deserializeBody(bodyData);
 
       // 4. Block 재구성
@@ -164,6 +209,11 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
   async findLatest(): Promise<Block | null> {
     try {
       const latestHash = await this.db.get('LastBlock');
+
+      if (!latestHash) {
+        return null;
+      }
+
       return await this.findByHash(latestHash);
     } catch (error: any) {
       if (error.code === 'LEVEL_NOT_FOUND') {
@@ -204,8 +254,17 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
   async findAll(): Promise<Block[]> {
     const count = await this.count();
     if (count === 0) return [];
-    
+
     return await this.findByRange(0, count - 1);
+  }
+
+  /**
+   * 모든 블록 삭제 (테스트용)
+   */
+  async clear(): Promise<void> {
+    await this.db.clear();
+    this.headerCache.clear();
+    this.logger.log('All blocks cleared');
   }
 
   // ========== 직렬화/역직렬화 ==========
@@ -236,8 +295,17 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
     try {
       const hexBuffer = Buffer.from(serializedData, 'hex');
       const decoded = this.cryptoService.rlpDecode(hexBuffer);
-      
-      const [number, hash, parentHash, timestamp, proposer, stateRoot, transactionsRoot, transactionCount] = decoded as string[];
+
+      const [
+        number,
+        hash,
+        parentHash,
+        timestamp,
+        proposer,
+        stateRoot,
+        transactionsRoot,
+        transactionCount,
+      ] = decoded as string[];
 
       return {
         number: parseInt(number),
@@ -266,7 +334,7 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
       tx.to,
       tx.value.toString(),
       tx.nonce.toString(),
-      tx.timestamp.toString(),
+      tx.timestamp.getTime().toString(), // Date → timestamp (ms)
       tx.v || '',
       tx.r || '',
       tx.s || '',
@@ -286,14 +354,17 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
 
       const transactions = decoded.map((txData: any[]) => {
         const [hash, from, to, value, nonce, timestamp, v, r, s] = txData;
-        
-        const tx = new Transaction(from, to, BigInt(value));
-        tx.hash = hash;
-        tx.nonce = parseInt(nonce);
-        tx.timestamp = parseInt(timestamp);
-        if (v) tx.v = v;
-        if (r) tx.r = r;
-        if (s) tx.s = s;
+
+        const signature = { v: v || '', r: r || '', s: s || '' };
+        const tx = new Transaction(
+          from,
+          to,
+          BigInt(value),
+          parseInt(nonce),
+          signature,
+          hash,
+        );
+        tx.timestamp = new Date(parseInt(timestamp));
 
         return tx;
       });
@@ -305,4 +376,3 @@ export class BlockLevelDBRepository implements IBlockRepository, OnModuleInit, O
     }
   }
 }
-
