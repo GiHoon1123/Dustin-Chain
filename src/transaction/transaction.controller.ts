@@ -143,4 +143,46 @@ export class TransactionController {
     const tx = this.transactionService.getTransaction(hash);
     return tx.toJSON();
   }
+
+  /**
+   * Receipt 조회
+   *
+   * GET /transaction/:hash/receipt
+   */
+  @Get(':hash/receipt')
+  @ApiOperation({
+    summary: 'Receipt 조회',
+    description:
+      '트랜잭션 해시로 Receipt를 조회합니다. Receipt는 트랜잭션이 블록에 포함된 후에만 조회 가능합니다.',
+  })
+  @ApiParam({
+    name: 'hash',
+    description: '트랜잭션 해시',
+    example:
+      '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt 정보',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found (트랜잭션이 아직 블록에 포함되지 않음)',
+  })
+  async getReceipt(@Param('hash') hash: string) {
+    const receipt = await this.transactionService.getReceipt(hash);
+
+    if (!receipt) {
+      return {
+        success: false,
+        message:
+          'Receipt not found. Transaction may not be included in a block yet.',
+      };
+    }
+
+    return {
+      success: true,
+      receipt: receipt.toJSON(),
+    };
+  }
 }
