@@ -70,14 +70,20 @@ export class BlockLevelDBRepository
   }
 
   /**
-   * 블록 저장 (Geth 방식)
+   * 블록 저장 (Geth 방식 - Batch 사용)
    *
+   * Batch를 사용하여 원자적(Atomic) 저장:
+   * - 모든 작업이 성공하거나 모두 실패
+   * - 중간 상태가 DB에 남지 않음
+   * - 성능 향상 (여러 put → 1번의 write)
+   *
+   * 저장 항목:
    * 1. Header 저장 (h + number + hash)
    * 2. Body 저장 (b + number + hash)
    * 3. Canonical 설정 (H + number → hash)
    * 4. 역조회 설정 (n + hash → number)
    * 5. LastBlock 업데이트
-   * 6. Header 캐싱
+   * 6. Header 캐싱 (DB 저장 성공 후)
    */
   async save(block: Block): Promise<void> {
     const header = block.getHeader();
@@ -90,26 +96,32 @@ export class BlockLevelDBRepository
         return;
       }
 
+      // ✅ Batch 생성 (원자적 작업)
+      const batch = this.db.batch();
+
       // 1. Header 저장
       const headerKey = `h${block.number}${block.hash}`;
-      await this.db.put(headerKey, this.serializeHeader(header));
+      batch.put(headerKey, this.serializeHeader(header));
 
       // 2. Body 저장
       const bodyKey = `b${block.number}${block.hash}`;
-      await this.db.put(bodyKey, this.serializeBody(body));
+      batch.put(bodyKey, this.serializeBody(body));
 
       // 3. Canonical chain 설정
       const canonicalKey = `H${block.number}`;
-      await this.db.put(canonicalKey, block.hash);
+      batch.put(canonicalKey, block.hash);
 
       // 4. 역조회 (hash → number)
       const numberKey = `n${block.hash}`;
-      await this.db.put(numberKey, block.number.toString());
+      batch.put(numberKey, block.number.toString());
 
       // 5. LastBlock 업데이트
-      await this.db.put('LastBlock', block.hash);
+      batch.put('LastBlock', block.hash);
 
-      // 6. Header 캐싱
+      // ✅ 원자적으로 모두 저장 (모두 성공 or 모두 실패)
+      await batch.write();
+
+      // 6. Header 캐싱 (DB 저장 성공 후에만)
       this.headerCache.set(block.hash, header);
 
       this.logger.debug(`Block #${block.number} saved: ${block.hash}`);
