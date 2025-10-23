@@ -139,7 +139,7 @@
 ### 8.1 JSON-RPC 2.0 지원
 
 - 이더리움 표준 RPC 메서드
-- eth*\*, net*_, web3\__ 구현
+- eth*\*, net*\_, web3\_\_ 구현
 
 ### 8.2 WebSocket 지원
 
