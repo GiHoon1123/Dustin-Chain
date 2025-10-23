@@ -42,15 +42,14 @@ export class BlockLevelDBRepository
   implements IBlockRepository, OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(BlockLevelDBRepository.name);
-  private db: ClassicLevel<string, string>;
+  private db: ClassicLevel<string, string | Buffer>; // ✅ Binary 저장 (Geth 방식)
 
   // Header 캐싱 (LRU, 최근 10,000개)
   private headerCache: InstanceType<LRUType>;
 
   constructor(private readonly cryptoService: CryptoService) {
-    this.db = new ClassicLevel<string, string>('./data/chaindata', {
-      valueEncoding: 'utf8',
-    });
+    // ✅ Mixed encoding: lookup keys (string), data values (Buffer)
+    this.db = new ClassicLevel<string, string | Buffer>('./data/chaindata');
 
     // Header 캐시 초기화 (10,000개, 약 2MB)
     this.headerCache = new LRU<Hash, BlockHeader>({
@@ -99,23 +98,23 @@ export class BlockLevelDBRepository
       // ✅ Batch 생성 (원자적 작업)
       const batch = this.db.batch();
 
-      // 1. Header 저장
+      // 1. Header 저장 (Binary)
       const headerKey = `h${block.number}${block.hash}`;
-      batch.put(headerKey, this.serializeHeader(header));
+      batch.put(headerKey, this.serializeHeader(header), { valueEncoding: 'buffer' });
 
-      // 2. Body 저장
+      // 2. Body 저장 (Binary)
       const bodyKey = `b${block.number}${block.hash}`;
-      batch.put(bodyKey, this.serializeBody(body));
+      batch.put(bodyKey, this.serializeBody(body), { valueEncoding: 'buffer' });
 
-      // 3. Canonical chain 설정
+      // 3. Canonical chain 설정 (String - lookup key)
       const canonicalKey = `H${block.number}`;
       batch.put(canonicalKey, block.hash);
 
-      // 4. 역조회 (hash → number)
+      // 4. 역조회 (hash → number, String - lookup key)
       const numberKey = `n${block.hash}`;
       batch.put(numberKey, block.number.toString());
 
-      // 5. LastBlock 업데이트
+      // 5. LastBlock 업데이트 (String - lookup key)
       batch.put('LastBlock', block.hash);
 
       // ✅ 원자적으로 모두 저장 (모두 성공 or 모두 실패)
@@ -147,13 +146,14 @@ export class BlockLevelDBRepository
 
       // 1. Canonical 해시
       const canonicalKey = `H${blockNumber}`;
-      const hash = await this.db.get(canonicalKey);
+      const hashRaw = await this.db.get(canonicalKey);
 
-      if (!hash) {
+      if (!hashRaw) {
         return null;
       }
 
-      // 2. 해시로 조회
+      // 2. 해시로 조회 (lookup key는 string)
+      const hash = this.ensureString(hashRaw);
       return await this.findByHash(hash);
     } catch (error: any) {
       if (
@@ -181,37 +181,39 @@ export class BlockLevelDBRepository
     try {
       // 1. 블록 번호 조회 (역조회)
       const numberKey = `n${hash}`;
-      const blockNumberStr = await this.db.get(numberKey);
+      const blockNumberRaw = await this.db.get(numberKey);
 
-      if (!blockNumberStr) {
+      if (!blockNumberRaw) {
         return null;
       }
 
-      const blockNumber = parseInt(blockNumberStr);
+      const blockNumber = parseInt(this.ensureString(blockNumberRaw));
 
       // 2. Header 조회 (캐시 우선)
       let header = this.headerCache.get(hash);
       if (!header) {
         const headerKey = `h${blockNumber}${hash}`;
-        const headerData = await this.db.get(headerKey);
+        const headerData = await this.db.get(headerKey, { valueEncoding: 'buffer' });
 
         if (!headerData) {
           return null;
         }
 
-        header = this.deserializeHeader(headerData);
+        // Header는 Binary로 저장됨
+        header = this.deserializeHeader(headerData as Buffer);
         this.headerCache.set(hash, header);
       }
 
       // 3. Body 조회 (디스크)
       const bodyKey = `b${blockNumber}${hash}`;
-      const bodyData = await this.db.get(bodyKey);
+      const bodyData = await this.db.get(bodyKey, { valueEncoding: 'buffer' });
 
       if (!bodyData) {
         return null;
       }
 
-      const body = this.deserializeBody(bodyData);
+      // Body는 Binary로 저장됨
+      const body = this.deserializeBody(bodyData as Buffer);
 
       // 4. Block 재구성
       return Block.fromHeaderAndBody(header, body);
@@ -229,12 +231,14 @@ export class BlockLevelDBRepository
    */
   async findLatest(): Promise<Block | null> {
     try {
-      const latestHash = await this.db.get('LastBlock');
+      const latestHashRaw = await this.db.get('LastBlock');
 
-      if (!latestHash) {
+      if (!latestHashRaw) {
         return null;
       }
 
+      // lookup key는 string
+      const latestHash = this.ensureString(latestHashRaw);
       return await this.findByHash(latestHash);
     } catch (error: any) {
       if (error.code === 'LEVEL_NOT_FOUND') {
@@ -291,9 +295,11 @@ export class BlockLevelDBRepository
   // ========== 직렬화/역직렬화 ==========
 
   /**
-   * Header 직렬화 (RLP)
+   * Header 직렬화 (RLP) - Geth 방식
+   * 
+   * Binary로 저장 (Hex String 변환 없음)
    */
-  private serializeHeader(header: BlockHeader): string {
+  private serializeHeader(header: BlockHeader): Buffer {
     const headerArray = [
       header.number.toString(),
       header.hash,
@@ -307,16 +313,16 @@ export class BlockLevelDBRepository
     ];
 
     const rlpEncoded = this.cryptoService.rlpEncode(headerArray);
-    return Buffer.from(rlpEncoded).toString('hex');
+    return Buffer.from(rlpEncoded); // ✅ Binary 그대로 반환
   }
 
   /**
-   * Header 역직렬화 (RLP)
+   * Header 역직렬화 (RLP) - Geth 방식
    */
-  private deserializeHeader(serializedData: string): BlockHeader {
+  private deserializeHeader(serializedData: Buffer): BlockHeader {
     try {
-      const hexBuffer = Buffer.from(serializedData, 'hex');
-      const decoded = this.cryptoService.rlpDecode(hexBuffer);
+      // Binary 그대로 디코딩 (Hex 변환 없음)
+      const decoded = this.cryptoService.rlpDecode(serializedData);
 
       const [
         number,
@@ -361,9 +367,39 @@ export class BlockLevelDBRepository
   }
 
   /**
-   * Body 직렬화 (RLP)
+   * LevelDB에서 가져온 값을 Buffer로 변환
+   * 
+   * @param value - LevelDB get 결과 (string | Buffer)
+   * @returns Buffer
    */
-  private serializeBody(body: BlockBody): string {
+  private ensureBuffer(value: string | Buffer): Buffer {
+    if (Buffer.isBuffer(value)) {
+      return value;
+    }
+    // Hex String → Buffer (Binary 저장된 경우)
+    return Buffer.from(value, 'hex');
+  }
+
+  /**
+   * LevelDB에서 가져온 값을 String으로 변환
+   * 
+   * @param value - LevelDB get 결과 (string | Buffer)
+   * @returns string
+   */
+  private ensureString(value: string | Buffer): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    // Buffer → String (lookup key인 경우)
+    return value.toString('utf8');
+  }
+
+  /**
+   * Body 직렬화 (RLP) - Geth 방식
+   * 
+   * Binary로 저장 (Hex String 변환 없음)
+   */
+  private serializeBody(body: BlockBody): Buffer {
     // 트랜잭션 배열 직렬화
     const txsArray = body.transactions.map((tx) => [
       tx.hash,
@@ -378,16 +414,16 @@ export class BlockLevelDBRepository
     ]);
 
     const rlpEncoded = this.cryptoService.rlpEncode(txsArray);
-    return Buffer.from(rlpEncoded).toString('hex');
+    return Buffer.from(rlpEncoded); // ✅ Binary 그대로 반환
   }
 
   /**
-   * Body 역직렬화 (RLP)
+   * Body 역직렬화 (RLP) - Geth 방식
    */
-  private deserializeBody(serializedData: string): BlockBody {
+  private deserializeBody(serializedData: Buffer): BlockBody {
     try {
-      const hexBuffer = Buffer.from(serializedData, 'hex');
-      const decoded = this.cryptoService.rlpDecode(hexBuffer) as any[];
+      // Binary 그대로 디코딩 (Hex 변환 없음)
+      const decoded = this.cryptoService.rlpDecode(serializedData) as any[];
 
       const transactions = decoded.map((txData: any[]) => {
         const [hash, from, to, value, nonce, timestamp, v, r, s] = txData;
@@ -433,7 +469,7 @@ export class BlockLevelDBRepository
     const key = `r${receipt.transactionHash}`;
     const value = this.serializeReceipt(receipt);
 
-    await this.db.put(key, value);
+    await this.db.put(key, value, { valueEncoding: 'buffer' });
     this.logger.debug(`Receipt saved: ${receipt.transactionHash}`);
   }
 
@@ -451,12 +487,13 @@ export class BlockLevelDBRepository
     const key = `r${txHash}`;
 
     try {
-      const value = await this.db.get(key);
+      const value = await this.db.get(key, { valueEncoding: 'buffer' });
       if (!value) {
         return null;
       }
 
-      return this.deserializeReceipt(value);
+      // Receipt는 Binary로 저장됨
+      return this.deserializeReceipt(value as Buffer);
     } catch (error: any) {
       if (error.code === 'LEVEL_NOT_FOUND') {
         return null;
@@ -466,15 +503,17 @@ export class BlockLevelDBRepository
   }
 
   /**
-   * Receipt RLP 직렬화
+   * Receipt RLP 직렬화 - Geth 방식
    *
    * 이더리움 Receipt RLP:
    * [status, cumulativeGasUsed, logsBloom, logs]
    *
    * 우리 Receipt RLP (확장):
    * [txHash, txIndex, blockHash, blockNumber, from, to, status, gasUsed, cumulativeGasUsed, contractAddress, logs, logsBloom]
+   * 
+   * Binary로 저장 (JSON 사용 안 함)
    */
-  private serializeReceipt(receipt: TransactionReceipt): string {
+  private serializeReceipt(receipt: TransactionReceipt): Buffer {
     const rlpData = [
       receipt.transactionHash,
       receipt.transactionIndex.toString(),
@@ -486,19 +525,21 @@ export class BlockLevelDBRepository
       receipt.gasUsed.toString(),
       receipt.cumulativeGasUsed.toString(),
       receipt.contractAddress || '',
-      JSON.stringify(receipt.logs),
+      JSON.stringify(receipt.logs), // logs는 복잡한 객체이므로 JSON 유지
       receipt.logsBloom,
     ];
 
-    return JSON.stringify(rlpData);
+    const rlpEncoded = this.cryptoService.rlpEncode(rlpData);
+    return Buffer.from(rlpEncoded); // ✅ Binary 그대로 반환
   }
 
   /**
-   * Receipt RLP 역직렬화
+   * Receipt RLP 역직렬화 - Geth 방식
    */
-  private deserializeReceipt(data: string): TransactionReceipt {
+  private deserializeReceipt(data: Buffer): TransactionReceipt {
     try {
-      const rlpData = JSON.parse(data);
+      // Binary 그대로 디코딩 (JSON 사용 안 함)
+      const rlpData = this.cryptoService.rlpDecode(data) as any[];
 
       const [
         transactionHash,
@@ -516,20 +557,20 @@ export class BlockLevelDBRepository
       ] = rlpData;
 
       const receipt = new TransactionReceipt(
-        transactionHash,
-        parseInt(transactionIndex),
-        blockHash,
-        parseInt(blockNumber),
-        from,
-        to,
-        parseInt(status) as 1 | 0,
-        BigInt(gasUsed),
-        BigInt(cumulativeGasUsed),
+        this.ensureHexString(transactionHash),
+        parseInt(transactionIndex.toString()),
+        this.ensureHexString(blockHash),
+        parseInt(blockNumber.toString()),
+        this.ensureHexString(from),
+        this.ensureHexString(to),
+        parseInt(status.toString()) as 1 | 0,
+        BigInt(gasUsed.toString()),
+        BigInt(cumulativeGasUsed.toString()),
       );
 
-      receipt.contractAddress = contractAddress || null;
-      receipt.logs = JSON.parse(logs);
-      receipt.logsBloom = logsBloom;
+      receipt.contractAddress = contractAddress.toString() || null;
+      receipt.logs = JSON.parse(logs.toString());
+      receipt.logsBloom = this.ensureHexString(logsBloom);
 
       return receipt;
     } catch (error: any) {
