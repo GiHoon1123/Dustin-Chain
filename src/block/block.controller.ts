@@ -47,7 +47,7 @@ export class BlockController {
     description: '최신 블록 정보',
     type: BlockDto,
   })
-  async getLatestBlock(): Promise<any> {
+  async getLatestBlock(): Promise<BlockDto> {
     const block = await this.blockService.getLatestBlock();
 
     if (!block) {
@@ -79,7 +79,7 @@ export class BlockController {
     description: '블록 정보',
     type: BlockDto,
   })
-  async getBlockByNumber(@Param('number') number: string): Promise<any> {
+  async getBlockByNumber(@Param('number') number: string): Promise<BlockDto> {
     const blockNumber = parseInt(number, 10);
 
     if (isNaN(blockNumber) || blockNumber < 0) {
@@ -117,7 +117,7 @@ export class BlockController {
     description: '블록 정보',
     type: BlockDto,
   })
-  async getBlockByHash(@Param('hash') hash: string): Promise<any> {
+  async getBlockByHash(@Param('hash') hash: string): Promise<BlockDto> {
     const block = await this.blockService.getBlockByHash(hash);
 
     if (!block) {

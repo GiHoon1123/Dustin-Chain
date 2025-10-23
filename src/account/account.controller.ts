@@ -114,7 +114,7 @@ export class AccountController {
     description: '계정 정보 조회 성공',
     type: AccountDto,
   })
-  async getAccount(@Param('address') address: string): Promise<any> {
+  async getAccount(@Param('address') address: string): Promise<AccountDto> {
     const account = await this.accountService.getOrCreateAccount(address);
     // ✅ toJSON()에서 이미 Ethereum 표준 형식으로 변환됨 (Hex String)
     return account.toJSON();

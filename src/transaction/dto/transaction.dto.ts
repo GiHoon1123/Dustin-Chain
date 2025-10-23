@@ -1,7 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
- * 트랜잭션 정보 응답 DTO
+ * 트랜잭션 정보 응답 DTO - Ethereum JSON-RPC 표준
+ * 
+ * 이더리움 표준:
+ * - value, nonce, v, blockNumber, timestamp: Hex String
  */
 export class TransactionDto {
   @ApiProperty({
@@ -24,22 +27,22 @@ export class TransactionDto {
   to: string;
 
   @ApiProperty({
-    description: '송금 금액 (Wei 단위)',
-    example: '1000000000000000000',
+    description: '송금 금액 (Wei, Hex String)',
+    example: '0xde0b6b3a7640000',
   })
-  value: string;
+  value: string; // ✅ Hex String
 
   @ApiProperty({
-    description: '논스',
-    example: 5,
+    description: '논스 (Hex String)',
+    example: '0x5',
   })
-  nonce: number;
+  nonce: string; // ✅ Hex String
 
   @ApiProperty({
-    description: '서명 v',
-    example: 27,
+    description: '서명 v (Hex String)',
+    example: '0x1b',
   })
-  v: number;
+  v: string; // ✅ Hex String
 
   @ApiProperty({
     description: '서명 r',
@@ -63,15 +66,15 @@ export class TransactionDto {
   status: string;
 
   @ApiProperty({
-    description: '블록 번호 (confirmed 상태인 경우)',
-    example: 123,
+    description: '블록 번호 (confirmed 상태인 경우, Hex String)',
+    example: '0x7b',
     required: false,
   })
-  blockNumber?: number;
+  blockNumber?: string; // ✅ Hex String
 
   @ApiProperty({
-    description: '생성 시간',
-    example: '2025-10-12T12:00:00.000Z',
+    description: '생성 시간 (Unix timestamp, Hex String)',
+    example: '0x617e0f42',
   })
-  timestamp: string;
+  timestamp: string; // ✅ Hex String (Unix timestamp)
 }

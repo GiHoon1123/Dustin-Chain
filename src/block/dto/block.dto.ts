@@ -60,16 +60,19 @@ export class BlockHeaderDto {
 }
 
 /**
- * Block DTO (전체)
+ * Block DTO (전체) - Ethereum JSON-RPC 표준
  *
  * 블록 전체 정보 (트랜잭션 포함)
+ * 
+ * 이더리움 표준:
+ * - 모든 숫자는 Hex String (0x...)
  */
 export class BlockDto {
   @ApiProperty({
-    description: '블록 번호',
-    example: 123,
+    description: '블록 번호 (Hex String)',
+    example: '0x7b',
   })
-  number: number;
+  number: string; // ✅ Hex String
 
   @ApiProperty({
     description: '블록 해시',
@@ -86,10 +89,10 @@ export class BlockDto {
   parentHash: string;
 
   @ApiProperty({
-    description: '블록 생성 시간 (ISO 8601)',
-    example: '2025-10-12T12:00:00.000Z',
+    description: '블록 생성 시간 (Unix timestamp, Hex String)',
+    example: '0x617e0f42',
   })
-  timestamp: string;
+  timestamp: string; // ✅ Hex String (Unix timestamp)
 
   @ApiProperty({
     description: '블록 생성자 주소 (Proposer)',
@@ -98,10 +101,10 @@ export class BlockDto {
   proposer: string;
 
   @ApiProperty({
-    description: '포함된 트랜잭션 개수',
-    example: 5,
+    description: '포함된 트랜잭션 개수 (Hex String)',
+    example: '0x5',
   })
-  transactionCount: number;
+  transactionCount: string; // ✅ Hex String
 
   @ApiProperty({
     description: '트랜잭션 리스트',
@@ -123,6 +126,13 @@ export class BlockDto {
       '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
   })
   transactionsRoot: string;
+
+  @ApiProperty({
+    description: 'Receipt 루트 해시',
+    example:
+      '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+  })
+  receiptsRoot: string;
 }
 
 /**
