@@ -100,7 +100,9 @@ export class BlockLevelDBRepository
 
       // 1. Header 저장 (Binary)
       const headerKey = `h${block.number}${block.hash}`;
-      batch.put(headerKey, this.serializeHeader(header), { valueEncoding: 'buffer' });
+      batch.put(headerKey, this.serializeHeader(header), {
+        valueEncoding: 'buffer',
+      });
 
       // 2. Body 저장 (Binary)
       const bodyKey = `b${block.number}${block.hash}`;
@@ -193,7 +195,9 @@ export class BlockLevelDBRepository
       let header = this.headerCache.get(hash);
       if (!header) {
         const headerKey = `h${blockNumber}${hash}`;
-        const headerData = await this.db.get(headerKey, { valueEncoding: 'buffer' });
+        const headerData = await this.db.get(headerKey, {
+          valueEncoding: 'buffer',
+        });
 
         if (!headerData) {
           return null;
@@ -296,7 +300,7 @@ export class BlockLevelDBRepository
 
   /**
    * Header 직렬화 (RLP) - Geth 방식
-   * 
+   *
    * Binary로 저장 (Hex String 변환 없음)
    */
   private serializeHeader(header: BlockHeader): Buffer {
@@ -368,7 +372,7 @@ export class BlockLevelDBRepository
 
   /**
    * LevelDB에서 가져온 값을 Buffer로 변환
-   * 
+   *
    * @param value - LevelDB get 결과 (string | Buffer)
    * @returns Buffer
    */
@@ -382,7 +386,7 @@ export class BlockLevelDBRepository
 
   /**
    * LevelDB에서 가져온 값을 String으로 변환
-   * 
+   *
    * @param value - LevelDB get 결과 (string | Buffer)
    * @returns string
    */
@@ -396,7 +400,7 @@ export class BlockLevelDBRepository
 
   /**
    * Body 직렬화 (RLP) - Geth 방식
-   * 
+   *
    * Binary로 저장 (Hex String 변환 없음)
    */
   private serializeBody(body: BlockBody): Buffer {
@@ -510,7 +514,7 @@ export class BlockLevelDBRepository
    *
    * 우리 Receipt RLP (확장):
    * [txHash, txIndex, blockHash, blockNumber, from, to, status, gasUsed, cumulativeGasUsed, contractAddress, logs, logsBloom]
-   * 
+   *
    * Binary로 저장 (JSON 사용 안 함)
    */
   private serializeReceipt(receipt: TransactionReceipt): Buffer {
