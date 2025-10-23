@@ -51,3 +51,4 @@ genesis-accounts.json
 
 # LevelDB 데이터 (런타임 생성)
 data/
+.data/

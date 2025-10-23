@@ -48,13 +48,13 @@ export class StateLevelDBRepository
    * 모듈 초기화
    *
    * 동작:
-   * 1. LevelDB 열기 (.data/state)
+   * 1. LevelDB 열기 (data/state)
    * 2. 빈 Trie 생성 (LevelDB 연결)
    * 3. 현재 Root 저장
    */
   async onModuleInit() {
     try {
-      this.db = new ClassicLevel('.data/state');
+      this.db = new ClassicLevel('data/state');
       await this.db.open();
       this.logger.log('State LevelDB opened');
 
