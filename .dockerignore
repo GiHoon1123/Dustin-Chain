@@ -1,0 +1,68 @@
+# 의존성
+node_modules
+npm-debug.log
+yarn-error.log
+
+# 빌드 결과물 (Docker에서 새로 빌드)
+dist
+build
+*.tsbuildinfo
+
+# 테스트
+coverage
+.nyc_output
+*.log
+
+# 환경 설정
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# 블록체인 데이터 (로컬 데이터는 제외, 서버에서 새로 생성)
+data/
+*.ldb
+*.log
+
+# 문서
+README.md
+docs/
+TODO.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+Jenkinsfile
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# 테스트
+test/
+*.spec.ts
+jest.config.js
+
+# 린터/포매터
+.eslintrc.js
+.prettierrc
+eslint.config.mjs
+
+# 기타
+.DS_Store
+*.md
+LICENSE
+scripts/generate-*.ts
+
