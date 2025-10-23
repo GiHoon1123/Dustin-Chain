@@ -109,8 +109,15 @@ export class StateLevelDBRepository
           Buffer.from(value as string, 'hex'),
         ) as any[];
 
-        const nonce = parseInt(decoded[0].toString());
-        const balance = BigInt('0x' + decoded[1].toString('hex'));
+        // RLP decoding: 빈 Buffer는 0으로 처리
+        const nonceBuffer = decoded[0];
+        const nonce =
+          !nonceBuffer || nonceBuffer.length === 0
+            ? 0
+            : parseInt(nonceBuffer.toString('hex'), 16); // ✅ hex로 변환 후 16진수 파싱
+
+        const balanceHex = decoded[1].toString('hex') || '0';
+        const balance = BigInt('0x' + balanceHex);
 
         const account = new Account(address);
         account.nonce = nonce;

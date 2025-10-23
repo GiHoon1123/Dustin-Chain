@@ -392,16 +392,20 @@ export class BlockLevelDBRepository
       const transactions = decoded.map((txData: any[]) => {
         const [hash, from, to, value, nonce, timestamp, v, r, s] = txData;
 
-        const signature = { v: v || '', r: r || '', s: s || '' };
+        const signature = {
+          v: parseInt(v.toString()) || 0, // ✅ number로 변환
+          r: this.ensureHexString(r) || '',
+          s: this.ensureHexString(s) || '',
+        };
         const tx = new Transaction(
-          from,
-          to,
-          BigInt(value),
-          parseInt(nonce),
+          this.ensureHexString(from), // ✅ Buffer → Hex String
+          this.ensureHexString(to), // ✅ Buffer → Hex String
+          BigInt(value.toString()),
+          parseInt(nonce.toString()),
           signature,
-          hash,
+          this.ensureHexString(hash), // ✅ Buffer → Hex String
         );
-        tx.timestamp = new Date(parseInt(timestamp));
+        tx.timestamp = new Date(parseInt(timestamp.toString()));
 
         return tx;
       });
