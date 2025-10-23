@@ -195,14 +195,13 @@ export class TransactionBotService {
    * 무작위 계정 선택
    */
   private selectRandomAccount(excludeAddress?: Address): GenesisAccount {
-    let account: GenesisAccount;
+    // ✅ Modern approach: filter 후 random 선택
+    const candidates = excludeAddress
+      ? this.accounts.filter((acc) => acc.address !== excludeAddress)
+      : this.accounts;
 
-    do {
-      const randomIndex = Math.floor(Math.random() * this.accounts.length);
-      account = this.accounts[randomIndex];
-    } while (excludeAddress && account.address === excludeAddress);
-
-    return account;
+    const randomIndex = Math.floor(Math.random() * candidates.length);
+    return candidates[randomIndex];
   }
 
   /**
