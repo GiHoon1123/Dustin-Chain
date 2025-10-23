@@ -159,19 +159,23 @@ export class TransactionReceipt {
   }
 
   /**
-   * JSON 직렬화
+   * JSON 직렬화 (Ethereum JSON-RPC 표준)
+   * 
+   * 이더리움 표준:
+   * - transactionIndex, blockNumber, status: Hex String
+   * - gasUsed, cumulativeGasUsed: Hex String
    */
   toJSON() {
     return {
       transactionHash: this.transactionHash,
-      transactionIndex: this.transactionIndex,
+      transactionIndex: `0x${this.transactionIndex.toString(16)}`, // ✅ Hex String
       blockHash: this.blockHash,
-      blockNumber: this.blockNumber,
+      blockNumber: `0x${this.blockNumber.toString(16)}`, // ✅ Hex String
       from: this.from,
       to: this.to,
-      status: this.status,
-      gasUsed: this.gasUsed.toString(),
-      cumulativeGasUsed: this.cumulativeGasUsed.toString(),
+      status: `0x${this.status.toString(16)}`, // ✅ Hex String (0x0 or 0x1)
+      gasUsed: `0x${this.gasUsed.toString(16)}`, // ✅ Hex String
+      cumulativeGasUsed: `0x${this.cumulativeGasUsed.toString(16)}`, // ✅ Hex String
       contractAddress: this.contractAddress,
       logs: this.logs,
       logsBloom: this.logsBloom,

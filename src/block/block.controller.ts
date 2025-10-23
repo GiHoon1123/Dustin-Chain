@@ -47,17 +47,15 @@ export class BlockController {
     description: '최신 블록 정보',
     type: BlockDto,
   })
-  async getLatestBlock(): Promise<BlockDto> {
+  async getLatestBlock(): Promise<any> {
     const block = await this.blockService.getLatestBlock();
 
     if (!block) {
       throw new NotFoundException('No blocks found');
     }
 
-    return {
-      ...block.toJSON(),
-      timestamp: new Date(block.timestamp).toISOString(),
-    };
+    // ✅ toJSON()에서 이미 Ethereum 표준 형식으로 변환됨 (Hex String)
+    return block.toJSON();
   }
 
   /**
@@ -81,7 +79,7 @@ export class BlockController {
     description: '블록 정보',
     type: BlockDto,
   })
-  async getBlockByNumber(@Param('number') number: string): Promise<BlockDto> {
+  async getBlockByNumber(@Param('number') number: string): Promise<any> {
     const blockNumber = parseInt(number, 10);
 
     if (isNaN(blockNumber) || blockNumber < 0) {
@@ -94,10 +92,8 @@ export class BlockController {
       throw new NotFoundException(`Block #${blockNumber} not found`);
     }
 
-    return {
-      ...block.toJSON(),
-      timestamp: new Date(block.timestamp).toISOString(),
-    };
+    // ✅ toJSON()에서 이미 Ethereum 표준 형식으로 변환됨 (Hex String)
+    return block.toJSON();
   }
 
   /**
@@ -121,17 +117,15 @@ export class BlockController {
     description: '블록 정보',
     type: BlockDto,
   })
-  async getBlockByHash(@Param('hash') hash: string): Promise<BlockDto> {
+  async getBlockByHash(@Param('hash') hash: string): Promise<any> {
     const block = await this.blockService.getBlockByHash(hash);
 
     if (!block) {
       throw new NotFoundException(`Block ${hash} not found`);
     }
 
-    return {
-      ...block.toJSON(),
-      timestamp: new Date(block.timestamp).toISOString(),
-    };
+    // ✅ toJSON()에서 이미 Ethereum 표준 형식으로 변환됨 (Hex String)
+    return block.toJSON();
   }
 
   /**

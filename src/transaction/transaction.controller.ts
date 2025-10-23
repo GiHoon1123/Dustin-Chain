@@ -139,8 +139,9 @@ export class TransactionController {
     description: '트랜잭션 정보',
     type: TransactionDto,
   })
-  getTransaction(@Param('hash') hash: string): TransactionDto {
+  getTransaction(@Param('hash') hash: string): any {
     const tx = this.transactionService.getTransaction(hash);
+    // ✅ toJSON()에서 이미 Ethereum 표준 형식으로 변환됨 (Hex String)
     return tx.toJSON();
   }
 

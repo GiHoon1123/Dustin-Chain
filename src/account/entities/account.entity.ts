@@ -129,17 +129,21 @@ export class Account {
   }
 
   /**
-   * 계정 정보를 간단한 객체로 변환
+   * 계정 정보를 간단한 객체로 변환 (Ethereum JSON-RPC 표준)
    *
    * 용도:
    * - JSON 직렬화
    * - API 응답
+   * 
+   * 이더리움 표준:
+   * - balance: Hex String
+   * - nonce: Hex String
    */
   toJSON() {
     return {
       address: this.address,
-      balance: this.balance.toString(),
-      nonce: this.nonce,
+      balance: `0x${this.balance.toString(16)}`, // ✅ Hex String
+      nonce: `0x${this.nonce.toString(16)}`, // ✅ Hex String
     };
   }
 }

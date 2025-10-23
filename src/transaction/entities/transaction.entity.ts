@@ -159,21 +159,29 @@ export class Transaction {
   }
 
   /**
-   * JSON 직렬화
+   * JSON 직렬화 (Ethereum JSON-RPC 표준)
+   * 
+   * 이더리움 표준:
+   * - value: Hex String
+   * - nonce: Hex String
+   * - v: Hex String
+   * - blockNumber: Hex String
    */
   toJSON() {
     return {
       hash: this.hash,
       from: this.from,
       to: this.to,
-      value: this.value.toString(),
-      nonce: this.nonce,
-      v: this.v,
+      value: `0x${this.value.toString(16)}`, // ✅ Hex String
+      nonce: `0x${this.nonce.toString(16)}`, // ✅ Hex String
+      v: `0x${this.v.toString(16)}`, // ✅ Hex String
       r: this.r,
       s: this.s,
       status: this.status,
-      blockNumber: this.blockNumber,
-      timestamp: this.timestamp.toISOString(),
+      blockNumber: this.blockNumber
+        ? `0x${this.blockNumber.toString(16)}`
+        : undefined, // ✅ Hex String
+      timestamp: `0x${Math.floor(this.timestamp.getTime() / 1000).toString(16)}`, // ✅ Unix timestamp (Hex)
     };
   }
 }
