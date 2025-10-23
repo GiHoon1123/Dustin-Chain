@@ -8,15 +8,12 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 import { AccountService } from '../account/account.service';
-import {
-  EMPTY_HASH,
-  EMPTY_ROOT,
-} from '../common/constants/blockchain.constants';
+import { EMPTY_ROOT } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address, Hash } from '../common/types/common.types';
 import { StateManager } from '../state/state-manager';
-import { BlockLevelDBRepository } from '../storage/repositories/block-leveldb.repository';
 import { IBlockRepository } from '../storage/repositories/block.repository.interface';
+import { IStateRepository } from '../storage/repositories/state.repository.interface';
 import { TransactionReceipt } from '../transaction/entities/transaction-receipt.entity';
 import { Transaction } from '../transaction/entities/transaction.entity';
 import { TransactionPool } from '../transaction/pool/transaction.pool';
@@ -71,6 +68,8 @@ export class BlockService implements OnApplicationBootstrap {
   constructor(
     @Inject(IBlockRepository)
     private readonly repository: IBlockRepository,
+    @Inject(IStateRepository)
+    private readonly stateRepository: IStateRepository,
     private readonly cryptoService: CryptoService,
     private readonly accountService: AccountService,
     private readonly txPool: TransactionPool,
@@ -81,14 +80,53 @@ export class BlockService implements OnApplicationBootstrap {
    * 애플리케이션 부트스트랩
    *
    * NestJS Lifecycle:
-   * 1. onModuleInit (모든 모듈) - BlockLevelDBRepository DB 열기
-   * 2. onApplicationBootstrap (모든 모듈) - Genesis Block 체크/생성 ✅
+   * 1. onModuleInit (모든 모듈) - BlockLevelDBRepository DB 열기, StateLevelDBRepository DB 열기
+   * 2. onApplicationBootstrap (모든 모듈) - Genesis Block 체크/생성, State 복원 ✅
    *
-   * 이 시점에는 BlockLevelDBRepository의 LevelDB가 이미 열린 상태 보장
+   * 이 시점에는 모든 LevelDB가 이미 열린 상태 보장
    */
   async onApplicationBootstrap(): Promise<void> {
     this.logger.log('Checking Genesis Block...');
     await this.createGenesisBlock();
+
+    // State 복원
+    await this.restoreState();
+  }
+
+  /**
+   * State 복원 (서버 재시작 시)
+   *
+   * 동작:
+   * 1. 최신 블록 조회
+   * 2. 최신 블록의 stateRoot로 State Trie 연결
+   * 3. 이제 모든 계정 상태 복원 완료
+   *
+   * 이더리움에서:
+   * - 최신 블록의 stateRoot로 State Trie 연결
+   * - LevelDB에서 해당 root의 노드들을 자동으로 로드
+   * - 모든 계정 상태가 복원됨
+   */
+  private async restoreState(): Promise<void> {
+    try {
+      const latestBlock = await this.repository.findLatest();
+
+      if (!latestBlock) {
+        this.logger.log(
+          'No blocks found - State will be initialized from Genesis',
+        );
+        return;
+      }
+
+      // 최신 블록의 stateRoot로 State Trie 연결
+      await this.stateRepository.setStateRoot(latestBlock.stateRoot);
+
+      this.logger.log(
+        `State restored from block #${latestBlock.number} (stateRoot: ${latestBlock.stateRoot})`,
+      );
+    } catch (error: any) {
+      this.logger.error('Failed to restore state:', error);
+      throw error;
+    }
   }
 
   /**
@@ -127,7 +165,7 @@ export class BlockService implements OnApplicationBootstrap {
     const timestamp = Date.now();
     const parentHash = '0x' + '0'.repeat(64);
 
-    const stateRoot = await this.calculateStateRoot();
+    const stateRoot = this.calculateStateRoot();
     const transactionsRoot = await this.calculateTransactionsRoot([]);
     const receiptsRoot = await this.calculateReceiptsRoot([]);
 
@@ -232,7 +270,7 @@ export class BlockService implements OnApplicationBootstrap {
     for (let i = 0; i < pendingTxs.length; i++) {
       const tx = pendingTxs[i];
       let status: 1 | 0 = 1; // 성공
-      let gasUsed = BigInt(21000); // 기본 Gas (이더리움 기본 전송 Gas)
+      const gasUsed = BigInt(21000); // 기본 Gas (이더리움 기본 전송 Gas)
 
       try {
         await this.executeTransaction(tx);
@@ -269,7 +307,7 @@ export class BlockService implements OnApplicationBootstrap {
     // 4. (보상은 BlockProducer에서 처리)
 
     // 5. State Root 계산
-    const stateRoot = await this.calculateStateRoot();
+    const stateRoot = this.calculateStateRoot();
 
     // 6. Transactions Root 계산
     const transactionsRoot = await this.calculateTransactionsRoot(executedTxs);
@@ -334,9 +372,11 @@ export class BlockService implements OnApplicationBootstrap {
       | TransactionReceipt[]
       | undefined;
     if (receipts && receipts.length > 0) {
-      const levelDbRepo = this.repository as BlockLevelDBRepository;
       for (const receipt of receipts) {
-        await levelDbRepo.saveReceipt(receipt);
+        // IBlockRepository에 saveReceipt 메서드가 있다고 가정
+        if ('saveReceipt' in this.repository) {
+          await (this.repository as any).saveReceipt(receipt);
+        }
       }
       this.logger.debug(
         `${receipts.length} receipts saved for block #${block.number}`,
@@ -458,38 +498,23 @@ export class BlockService implements OnApplicationBootstrap {
    *
    * @returns State Root 해시 (32 bytes, "0x...")
    */
-  private async calculateStateRoot(): Promise<Hash> {
-    // 1. 새 Trie 인스턴스 생성
-    const trie = new Trie();
-
-    // 2. 모든 계정 조회
-    const accounts = await this.accountService.getAllAccounts();
-
-    // 3. 각 계정을 Trie에 삽입
-    for (const account of accounts) {
-      // Key: keccak256(address)
-      const key = this.cryptoService.hexToBytes(
-        this.cryptoService.hashHex(account.address),
-      );
-
-      // Value: RLP([nonce, balance, storageRoot, codeHash])
-      // 이더리움 계정의 4가지 필드
-      const value = this.cryptoService.rlpEncode([
-        account.nonce, // nonce
-        account.balance, // balance (BigInt)
-        this.cryptoService.hexToBytes(EMPTY_ROOT), // storageRoot (스마트 컨트랙트 없음)
-        this.cryptoService.hexToBytes(EMPTY_HASH), // codeHash (스마트 컨트랙트 없음)
-      ]);
-
-      // Trie에 저장
-      await trie.put(key, value);
-    }
-
-    // 4. Root 해시 반환
-    const root = trie.root();
-
-    // Uint8Array → Hex 문자열 변환
-    return this.cryptoService.bytesToHex(root);
+  /**
+   * State Root 계산
+   *
+   * 변경사항 (State Trie 도입):
+   * - 기존: 메모리의 모든 계정을 새 Trie에 넣어 계산
+   * - 현재: IStateRepository에서 현재 State Root 가져오기
+   * - State Trie는 계정 저장 시마다 자동으로 Root 업데이트
+   *
+   * 이더리움에서:
+   * - StateDB가 State Trie를 관리
+   * - 계정 변경 시마다 Trie 업데이트
+   * - Root는 자동으로 계산됨
+   */
+  private calculateStateRoot(): Hash {
+    // IStateRepository에서 현재 State Root 가져오기
+    // (StateManager.commitBlock()에서 이미 업데이트됨)
+    return this.stateRepository.getStateRoot();
   }
 
   /**

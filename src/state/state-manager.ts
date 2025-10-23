@@ -4,15 +4,26 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { Level } from 'level';
 import { Account } from '../account/entities/account.entity';
-import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
+import { IStateRepository } from '../storage/repositories/state.repository.interface';
 
+/**
+ * StateManager
+ *
+ * 역할:
+ * - 트랜잭션 실행 중 임시 상태 관리 (저널링)
+ * - 블록 커밋 시 IStateRepository에 저장
+ * - 캐시 관리 (성능 최적화)
+ *
+ * 변경사항 (State Trie 도입):
+ * - 기존: 자체 LevelDB 관리
+ * - 현재: IStateRepository 사용 (State Trie + LevelDB)
+ * - 저널링은 그대로 유지 (트랜잭션 원자성)
+ */
 @Injectable()
 export class StateManager implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StateManager.name);
-  private db: Level<string, string>;
 
   // 캐시: 최근 접근한 계정들
   private cache: Map<Address, Account> = new Map();
@@ -23,32 +34,20 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
   // 캐시 크기 제한
   private readonly CACHE_SIZE_LIMIT = 1000;
 
-  constructor(private readonly cryptoService: CryptoService) {}
+  constructor(private readonly stateRepository: IStateRepository) {}
 
   async onModuleInit(): Promise<void> {
-    try {
-      // LevelDB 초기화
-      this.db = new Level('./data/state', {
-        valueEncoding: 'utf8',
-        createIfMissing: true,
-      });
-
-      this.logger.log('StateManager initialized with LevelDB');
-    } catch (error) {
-      this.logger.error('Failed to initialize StateManager:', error);
-      throw error;
-    }
+    // IStateRepository가 이미 초기화됨 (Global Module)
+    this.logger.log('StateManager initialized');
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.db) {
-      await this.db.close();
-      this.logger.log('StateManager closed');
-    }
+    // IStateRepository는 StorageModule에서 관리
+    this.logger.log('StateManager closed');
   }
 
   /**
-   * 계정 조회: 저널 -> 캐시 -> DB 순서로 찾기
+   * 계정 조회: 저널 -> 캐시 -> StateRepository 순서로 찾기
    * 계정이 없으면 null 반환 (새로 생성하지 않음)
    */
   async getAccount(address: Address): Promise<Account | null> {
@@ -62,40 +61,20 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
       return this.cache.get(address)!;
     }
 
-    // 3. DB에서 찾기 (DB가 열려있을 때만)
+    // 3. StateRepository에서 찾기 (State Trie + LevelDB)
     try {
-      if (this.db.status === 'open') {
-        const accountData = await this.db.get(`account:${address}`);
-        if (accountData) {
-          // Ethereum 2.0 방식: RLP 디코딩 후 Account 객체로 변환
-          const account = this.deserializeAccount(accountData);
+      const account = await this.stateRepository.getAccount(address);
 
-          // 캐시에 추가 (크기 제한 확인)
-          this.addToCache(address, account);
+      if (account) {
+        // 캐시에 추가 (크기 제한 확인)
+        this.addToCache(address, account);
+      }
 
-          return account;
-        }
-      } else {
-        // DB가 아직 열리지 않았으면 캐시에서만 조회
-        this.logger.debug(
-          'DB not open yet, returning null for account:',
-          address,
-        );
-        return null;
-      }
-    } catch (error) {
-      // DB에 없으면 null 반환
-      if (
-        error.code === 'LEVEL_NOT_FOUND' ||
-        error.code === 'LEVEL_DATABASE_NOT_OPEN'
-      ) {
-        return null;
-      }
-      this.logger.error('Failed to get account from DB:', error);
+      return account;
+    } catch (error: any) {
+      this.logger.error('Failed to get account from StateRepository:', error);
       throw error;
     }
-
-    return null;
   }
 
   /**
@@ -123,27 +102,20 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 블록 커밋: 저널의 변경사항을 DB에 저장
+   * 블록 커밋: 저널의 변경사항을 StateRepository에 저장
    */
   async commitBlock(): Promise<void> {
     for (const [address, account] of this.journal.entries()) {
       if (account === null) {
-        // 계정 삭제
-        try {
-          await this.db.del(`account:${address}`);
-          this.cache.delete(address);
-          this.logger.debug(`Account ${address} deleted from DB`);
-        } catch (error) {
-          if (error.code !== 'LEVEL_NOT_FOUND') {
-            throw error;
-          }
-        }
+        // 계정 삭제는 현재 지원하지 않음 (이더리움도 마찬가지)
+        // 잔액 0인 계정도 State Trie에 남음
+        this.cache.delete(address);
+        this.logger.debug(`Account ${address} marked for deletion (skipped)`);
       } else {
-        // 계정 저장 - Ethereum 2.0 방식: RLP 인코딩
-        const serializedAccount = this.serializeAccount(account);
-        await this.db.put(`account:${address}`, serializedAccount);
+        // 계정 저장 - State Trie에 저장
+        await this.stateRepository.saveAccount(account);
         this.addToCache(address, account);
-        this.logger.debug(`Account ${address} committed to DB`);
+        this.logger.debug(`Account ${address} committed to StateRepository`);
       }
     }
 
@@ -173,47 +145,6 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 계정을 Ethereum 2.0 방식으로 직렬화 (RLP 인코딩)
-   */
-  private serializeAccount(account: Account): string {
-    // Ethereum 2.0 계정 구조: [nonce, balance, storageRoot, codeHash]
-    const accountData = [
-      account.nonce.toString(),
-      account.balance.toString(),
-      '0x0000000000000000000000000000000000000000000000000000000000000000', // storageRoot (EOA는 빈 해시)
-      '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470', // codeHash (EOA는 빈 해시)
-    ];
-
-    // RLP 인코딩 후 hex 문자열로 변환
-    const rlpEncoded = this.cryptoService.rlpEncode(accountData);
-    return Buffer.from(rlpEncoded).toString('hex');
-  }
-
-  /**
-   * Ethereum 2.0 방식으로 역직렬화 (RLP 디코딩)
-   */
-  private deserializeAccount(serializedData: string): Account {
-    try {
-      // hex 문자열을 Uint8Array로 변환 후 RLP 디코딩
-      const hexBuffer = Buffer.from(serializedData, 'hex');
-      const decoded = this.cryptoService.rlpDecode(hexBuffer);
-
-      // Ethereum 2.0 계정 구조: [nonce, balance, storageRoot, codeHash]
-      const [nonce, balance] = decoded as [string, string];
-
-      // Account 객체 생성 (address는 키에서 추출)
-      const account = new Account(''); // address는 나중에 설정
-      account.nonce = parseInt(nonce);
-      account.balance = BigInt(balance);
-
-      return account;
-    } catch (error) {
-      this.logger.error('Failed to deserialize account:', error);
-      throw new Error('Invalid account data in database');
-    }
-  }
-
-  /**
    * 캐시 통계
    */
   getCacheStats(): { size: number; limit: number } {
@@ -234,107 +165,14 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
 
   /**
    * DB 통계 (대략적인 계정 수)
+   *
+   * 주의: State Trie는 전체 조회를 지원하지 않음
+   * 캐시와 저널의 크기만 반환
    */
-  async getDBStats(): Promise<{ accountCount: number }> {
-    let accountCount = 0;
-
-    for await (const key of this.db.keys({
-      gte: 'account:',
-      lt: 'account:~',
-    })) {
-      accountCount++;
-    }
-
-    return { accountCount };
-  }
-
-  /**
-   * 에포크 체크포인트 저장 (32블록마다 - Ethereum 2.0 방식)
-   */
-  async saveEpochCheckpoint(
-    epoch: number,
-    blockNumber: number,
-    stateRoot: string,
-  ): Promise<void> {
-    await this.db.put(
-      `epoch:${epoch}`,
-      JSON.stringify({
-        epoch,
-        blockNumber,
-        stateRoot,
-        timestamp: Date.now(),
-      }),
-    );
-
-    this.logger.log(
-      `Epoch checkpoint saved: epoch=${epoch}, block=${blockNumber}`,
-    );
-  }
-
-  /**
-   * 마지막 에포크 체크포인트 로드
-   */
-  async loadLastEpochCheckpoint(): Promise<{
-    epoch: number;
-    blockNumber: number;
-    stateRoot: string;
-  } | null> {
-    try {
-      const keys: string[] = [];
-      for await (const key of this.db.keys({
-        gt: 'epoch:',
-        lt: 'epoch:~',
-      })) {
-        keys.push(key);
-      }
-
-      if (keys.length === 0) return null;
-
-      const lastKey = keys[keys.length - 1];
-      const data = await this.db.get(lastKey);
-      return JSON.parse(data);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  /**
-   * 특정 에포크 체크포인트 로드
-   */
-  async loadEpochCheckpoint(
-    epoch: number,
-  ): Promise<{ epoch: number; blockNumber: number; stateRoot: string } | null> {
-    try {
-      const data = await this.db.get(`epoch:${epoch}`);
-      return JSON.parse(data);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  /**
-   * 에포크 체크포인트 복구 (서버 재시작 시)
-   */
-  async recoverFromCheckpoint(): Promise<{
-    epoch: number;
-    blockNumber: number;
-    stateRoot: string;
-  } | null> {
-    const checkpoint = await this.loadLastEpochCheckpoint();
-
-    if (checkpoint) {
-      this.logger.log(
-        `Recovering from checkpoint: epoch=${checkpoint.epoch}, block=${checkpoint.blockNumber}`,
-      );
-
-      // 캐시 초기화
-      this.cache.clear();
-      this.journal.clear();
-
-      return checkpoint;
-    }
-
-    this.logger.log('No checkpoint found - starting from genesis');
-    return null;
+  async getDBStats(): Promise<{ cacheSize: number; journalSize: number }> {
+    return {
+      cacheSize: this.cache.size,
+      journalSize: this.journal.size,
+    };
   }
 }

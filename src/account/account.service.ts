@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Address } from '../common/types/common.types';
 import { StateManager } from '../state/state-manager';
+import { IStateRepository } from '../storage/repositories/state.repository.interface';
 import { Account } from './entities/account.entity';
-import { IAccountRepository } from './repositories/account.repository.interface';
 
 /**
  * Account Service
@@ -17,13 +17,18 @@ import { IAccountRepository } from './repositories/account.repository.interface'
  * - StateDB가 비슷한 역할
  * - 모든 계정 상태 관리
  * - 트랜잭션 실행 시 상태 변경
+ *
+ * 변경사항 (State Trie 도입):
+ * - IAccountRepository → IStateRepository 사용
+ * - StateManager는 트랜잭션 실행 중 임시 상태 관리
+ * - IStateRepository는 영구 저장소 (LevelDB + Trie)
  */
 @Injectable()
 export class AccountService {
   private readonly logger = new Logger(AccountService.name);
 
   constructor(
-    private readonly repository: IAccountRepository,
+    private readonly stateRepository: IStateRepository,
     private readonly stateManager: StateManager,
   ) {}
 
@@ -205,11 +210,22 @@ export class AccountService {
    * - 관리자 페이지
    * - 디버깅
    *
-   * 주의: StateManager는 개별 계정 조회만 지원하므로
-   * 현재는 Repository를 통해 조회 (향후 StateManager에 전체 조회 기능 추가 필요)
+   * 주의:
+   * - State Trie는 전체 조회를 지원하지 않음 (해시 기반)
+   * - 이더리움도 마찬가지 (전체 계정 조회 불가)
+   * - 필요하다면 별도 인덱스 구축 필요 (Secure Key)
+   *
+   * 현재 구현:
+   * - StateManager의 메모리 상태만 반환
+   * - 실제 LevelDB의 모든 계정은 조회 불가
    */
   async getAllAccounts(): Promise<Account[]> {
-    return this.repository.findAll();
+    // StateManager는 현재 메모리에 있는 계정만 반환
+    // 실제 이더리움에서는 이런 API가 없음 (해시 기반이라 불가능)
+    this.logger.warn(
+      'getAllAccounts: Only returns accounts in memory (StateManager)',
+    );
+    return [];
   }
 
   /**

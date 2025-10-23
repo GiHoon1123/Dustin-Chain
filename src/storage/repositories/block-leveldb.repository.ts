@@ -328,23 +328,36 @@ export class BlockLevelDBRepository
         transactionsRoot,
         receiptsRoot,
         transactionCount,
-      ] = decoded as string[];
+      ] = decoded as any[];
 
       return {
-        number: parseInt(number),
-        hash,
-        parentHash,
-        timestamp: parseInt(timestamp),
-        proposer,
-        stateRoot,
-        transactionsRoot,
-        receiptsRoot,
-        transactionCount: parseInt(transactionCount),
+        number: parseInt(number.toString()),
+        hash: this.ensureHexString(hash),
+        parentHash: this.ensureHexString(parentHash),
+        timestamp: parseInt(timestamp.toString()),
+        proposer: this.ensureHexString(proposer),
+        stateRoot: this.ensureHexString(stateRoot),
+        transactionsRoot: this.ensureHexString(transactionsRoot),
+        receiptsRoot: this.ensureHexString(receiptsRoot),
+        transactionCount: parseInt(transactionCount.toString()),
       };
     } catch (error: any) {
       this.logger.error('Failed to deserialize header:', error);
       throw new Error('Invalid header data in database');
     }
+  }
+
+  /**
+   * Buffer 또는 Uint8Array를 Hex 문자열로 변환
+   */
+  private ensureHexString(value: any): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value instanceof Uint8Array || Buffer.isBuffer(value)) {
+      return this.cryptoService.bytesToHex(value);
+    }
+    return value.toString();
   }
 
   /**

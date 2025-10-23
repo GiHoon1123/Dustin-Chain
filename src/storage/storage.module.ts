@@ -1,6 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { BlockLevelDBRepository } from './repositories/block-leveldb.repository';
 import { IBlockRepository } from './repositories/block.repository.interface';
+import { StateLevelDBRepository } from './repositories/state-leveldb.repository';
+import { IStateRepository } from './repositories/state.repository.interface';
 
 /**
  * Storage Module (Global)
@@ -13,13 +15,18 @@ import { IBlockRepository } from './repositories/block.repository.interface';
  * - 다른 모듈에서 import 불필요
  *
  * 책임:
- * - LevelDB 연결 관리 (data/chaindata/)
- * - Block 저장/조회 (Header + Body 분리)
- * - Receipt 저장/조회 (트랜잭션 실행 결과)
- * - Canonical Chain 관리 (블록 번호 → 해시 매핑)
- * - 저장소 추상화 (IBlockRepository)
+ * 1. Block Storage (data/chaindata/):
+ *    - Block 저장/조회 (Header + Body 분리)
+ *    - Receipt 저장/조회 (트랜잭션 실행 결과)
+ *    - Canonical Chain 관리 (블록 번호 → 해시 매핑)
+ *
+ * 2. State Storage (data/state/):
+ *    - State Trie 관리 (Merkle Patricia Trie)
+ *    - 계정 상태 저장/조회 (nonce, balance)
+ *    - State Root 관리
  *
  * 저장 구조 (Ethereum Geth 방식):
+ * Block DB:
  * - "H" + blockNumber → blockHash (Canonical chain)
  * - "h" + blockNumber + blockHash → Block Header (RLP)
  * - "b" + blockNumber + blockHash → Block Body (RLP)
@@ -27,8 +34,13 @@ import { IBlockRepository } from './repositories/block.repository.interface';
  * - "n" + blockHash → blockNumber (역조회)
  * - "LastBlock" → latestBlockHash
  *
+ * State DB:
+ * - Trie Node → Trie Node (Merkle Patricia Trie)
+ * - Key: keccak256(address) → Value: RLP([nonce, balance, storageRoot, codeHash])
+ *
  * Export:
- * - IBlockRepository: 전역에서 주입 가능
+ * - IBlockRepository: 블록 데이터 저장소
+ * - IStateRepository: 계정 상태 저장소
  */
 @Global()
 @Module({
@@ -37,7 +49,11 @@ import { IBlockRepository } from './repositories/block.repository.interface';
       provide: IBlockRepository,
       useClass: BlockLevelDBRepository,
     },
+    {
+      provide: IStateRepository,
+      useClass: StateLevelDBRepository,
+    },
   ],
-  exports: [IBlockRepository],
+  exports: [IBlockRepository, IStateRepository],
 })
 export class StorageModule {}
