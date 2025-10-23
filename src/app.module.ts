@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AccountModule } from './account/account.module';
 import { BlockModule } from './block/block.module';
+import { BotModule } from './bot/bot.module';
 import { CommonModule } from './common/common.module';
 import { ConsensusModule } from './consensus/consensus.module';
 import { StateModule } from './state/state.module';
@@ -24,6 +25,7 @@ import { ValidatorModule } from './validator/validator.module';
  * - ValidatorModule: Validator 관리 (Proposer/Committee 선택)
  * - ConsensusModule: POS 합의 (Attestation, Epoch)
  * - BlockModule: 블록 생성 및 관리 (자동 생성)
+ * - BotModule: 트랜잭션 자동 생성 (네트워크 활성화)
  */
 @Module({
   imports: [
@@ -38,6 +40,7 @@ import { ValidatorModule } from './validator/validator.module';
     ValidatorModule,
     ConsensusModule,
     BlockModule,
+    BotModule, // 트랜잭션 자동 생성
   ],
   controllers: [],
   providers: [],
