@@ -73,10 +73,10 @@ export const COMMITTEE_SIZE = 128;
  * - 창시자 계정: 10,000,000 DSTN
  * - 테스트 계정들: 각 100,000 DSTN
  */
-export const GENESIS_BALANCE = {
+export const GENESIS_BALANCE = Object.freeze({
   FOUNDER: 10_000_000, // 창시자
   TEST_ACCOUNT: 100_000, // 테스트 계정
-};
+});
 
 /**
  * CHAIN_ID: 체인 식별자

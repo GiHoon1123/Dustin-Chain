@@ -107,6 +107,11 @@ export function addHexPrefix(hex: string): string {
  * @param byteLength - 예상되는 바이트 길이 (선택, 예: 32 = 64 hex chars)
  */
 export function isHexString(value: string, byteLength?: number): boolean {
+  // null/undefined 체크
+  if (!value || typeof value !== 'string') {
+    return false;
+  }
+
   if (!value.match(/^0x[0-9a-fA-F]*$/)) {
     return false;
   }
