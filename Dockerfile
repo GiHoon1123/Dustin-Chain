@@ -8,8 +8,9 @@ WORKDIR /app
 # 패키지 파일만 먼저 복사 (캐시 활용)
 COPY package*.json ./
 
-# 프로덕션 의존성만 설치
-RUN npm ci --only=production && \
+# 프로덕션 의존성 설치 (전체 설치 후 devDep 제거)
+RUN npm ci && \
+    npm prune --production && \
     npm cache clean --force
 
 # ==========================================
