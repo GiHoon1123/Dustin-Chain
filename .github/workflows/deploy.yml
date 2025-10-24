@@ -68,11 +68,14 @@ jobs:
             
             echo "🚀 Start new container..."
             mkdir -p /var/dustin-chain/data
+            mkdir -p /var/dustin-chain/config
             docker run -d \
               --name dustin-chain-app \
               --restart unless-stopped \
               -p 3000:3000 \
               -v /var/dustin-chain/data:/app/data \
+              -v /var/dustin-chain/config/genesis.json:/app/genesis.json \
+              -v /var/dustin-chain/config/genesis-accounts.json:/app/genesis-accounts.json \
               -e NODE_ENV=production \
               $IMAGE
             
