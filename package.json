@@ -36,6 +36,7 @@
     "elliptic": "^6.6.1",
     "keccak": "^3.0.4",
     "level": "^10.0.0",
+    "lru-cache": "^11.2.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
