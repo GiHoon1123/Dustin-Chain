@@ -51,7 +51,8 @@ function generateAccounts(): GenesisAccount[] {
 }
 
 function saveToFile(accounts: GenesisAccount[], filename: string): void {
-  const rootDir = path.resolve(__dirname, '..');
+  // 프로젝트 루트에 저장 (/app/, dist가 아닌)
+  const rootDir = path.resolve(__dirname, '../..');
   const outputPath = path.join(rootDir, filename);
   const jsonContent = JSON.stringify(accounts, null, 2);
 

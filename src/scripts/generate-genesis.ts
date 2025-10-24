@@ -40,8 +40,8 @@ const INITIAL_BALANCE = '50000000000000000000'; // 50 DSTN in Wei
 function generateGenesis(): void {
   console.log('=== Dustin-Chain Genesis Generator ===\n');
 
-  // 1. genesis-accounts.json 읽기
-  const rootDir = path.resolve(__dirname, '..');
+  // 1. genesis-accounts.json 읽기 (프로젝트 루트에서)
+  const rootDir = path.resolve(__dirname, '../..');
   const accountsPath = path.join(rootDir, ACCOUNTS_FILE);
 
   if (!fs.existsSync(accountsPath)) {
