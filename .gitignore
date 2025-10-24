@@ -54,3 +54,6 @@ genesis-accounts.json
 # LevelDB 데이터 (런타임 생성)
 data/
 .data/
+
+# 백업 폴더 (AWS Genesis 백업)
+backup/
