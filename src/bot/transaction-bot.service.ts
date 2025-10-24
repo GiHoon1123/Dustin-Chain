@@ -227,6 +227,18 @@ export class TransactionBotService {
   }
 
   /**
+   * 봇 상태 조회 (API용)
+   */
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      accountCount: this.accounts.length,
+      minBalance: this.MIN_BALANCE.toString(),
+      targetRate: '4-5 tx/sec',
+    };
+  }
+
+  /**
    * 봇 중지 (필요시)
    */
   stop() {

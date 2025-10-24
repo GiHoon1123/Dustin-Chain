@@ -1,4 +1,10 @@
-import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BlockService } from './block.service';
 import { BlockDto, ChainStatsDto } from './dto/block.dto';
@@ -163,5 +169,75 @@ export class BlockController {
   })
   getProducerStatus() {
     return this.blockProducer.getStatus();
+  }
+
+  /**
+   * 블록 생성 시작
+   *
+   * POST /block/mining/start
+   */
+  @Post('mining/start')
+  @ApiOperation({
+    summary: '블록 생성 시작',
+    description: '블록 생성을 시작합니다. (테스트/개발용)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '블록 생성 시작 성공',
+    schema: {
+      example: {
+        success: true,
+        message: 'Block mining started',
+        status: {
+          isRunning: true,
+          genesisTime: '2025-10-23T00:00:00.000Z',
+          currentSlot: 100,
+          blockTime: 12,
+        },
+      },
+    },
+  })
+  startMining() {
+    this.blockProducer.start();
+    return {
+      success: true,
+      message: 'Block mining started',
+      status: this.blockProducer.getStatus(),
+    };
+  }
+
+  /**
+   * 블록 생성 중지
+   *
+   * POST /block/mining/stop
+   */
+  @Post('mining/stop')
+  @ApiOperation({
+    summary: '블록 생성 중지',
+    description: '블록 생성을 중지합니다. (테스트/개발용)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '블록 생성 중지 성공',
+    schema: {
+      example: {
+        success: true,
+        message: 'Block mining stopped',
+        status: {
+          isRunning: false,
+          genesisTime: '2025-10-23T00:00:00.000Z',
+          currentSlot: 100,
+          blockTime: 12,
+        },
+      },
+    },
+  })
+  stopMining() {
+    this.blockProducer.stop();
+    return {
+      success: true,
+      message: 'Block mining stopped',
+      status: this.blockProducer.getStatus(),
+    };
   }
 }
