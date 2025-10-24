@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { CryptoService } from '../src/common/crypto/crypto.service';
+import { CryptoService } from '../common/crypto/crypto.service';
 
 /**
  * Genesis 계정 생성 스크립트
