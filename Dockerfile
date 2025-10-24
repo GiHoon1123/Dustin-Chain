@@ -28,18 +28,8 @@ RUN npm ci
 # 소스 코드 복사
 COPY . .
 
-# TypeScript 빌드
+# TypeScript 빌드 (scripts도 함께 빌드됨)
 RUN npm run build
-
-# Genesis 파일 생성 (없을 경우)
-RUN if [ ! -f "genesis-accounts.json" ]; then \
-      echo "📝 Generating genesis-accounts.json..." && \
-      npm run generate:accounts; \
-    fi && \
-    if [ ! -f "genesis.json" ]; then \
-      echo "📝 Generating genesis.json..." && \
-      npm run generate:genesis; \
-    fi
 
 # ==========================================
 # Stage 3: Runner (Production)
@@ -55,15 +45,15 @@ RUN addgroup --system --gid 1001 nodejs && \
 # 프로덕션 의존성 복사
 COPY --from=deps --chown=nestjs:nodejs /app/node_modules ./node_modules
 
-# 빌드된 파일 복사
+# 빌드된 파일 복사 (dist/scripts 포함)
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
-
-# Genesis 파일들 복사 (블록체인 초기화에 필요)
-COPY --from=builder --chown=nestjs:nodejs /app/genesis.json ./genesis.json
-COPY --from=builder --chown=nestjs:nodejs /app/genesis-accounts.json ./genesis-accounts.json
 
 # 패키지 파일 복사
 COPY --from=builder --chown=nestjs:nodejs /app/package*.json ./
+
+# Entrypoint 스크립트 복사
+COPY --chown=nestjs:nodejs entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 # 데이터 디렉토리 생성 (LevelDB 저장소)
 RUN mkdir -p /app/data/chaindata && \
@@ -84,6 +74,6 @@ ENV NODE_ENV=production \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/api', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# 실행
-CMD ["node", "dist/main.js"]
+# Entrypoint 실행 (genesis 파일 체크 후 앱 시작)
+CMD ["sh", "./entrypoint.sh"]
 
