@@ -30,7 +30,7 @@ interface GenesisAccount {
 @Injectable()
 export class TransactionBotService {
   private readonly logger = new Logger(TransactionBotService.name);
-  private readonly MIN_BALANCE = BigInt(50) * BigInt(10 ** 18); // 50 DSTN
+  private readonly MIN_BALANCE = BigInt(1) * BigInt(10 ** 18); // 1 DSTN (최소 잔액)
   private readonly MIN_INDEX = 100;
   private readonly MAX_INDEX = 255;
   private accounts: GenesisAccount[] = [];
@@ -148,7 +148,7 @@ export class TransactionBotService {
 
       if (balance < totalCost + this.MIN_BALANCE) {
         this.logger.debug(
-          `Account ${fromAccount.address.slice(0, 10)}... cannot afford tx (needs ${this.formatDSTN(totalCost)} + 50 DSTN reserve)`,
+          `Account ${fromAccount.address.slice(0, 10)}... cannot afford tx (needs ${this.formatDSTN(totalCost)} + 1 DSTN reserve)`,
         );
         return;
       }
