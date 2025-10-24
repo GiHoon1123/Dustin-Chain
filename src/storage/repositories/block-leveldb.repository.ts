@@ -220,7 +220,7 @@ export class BlockLevelDBRepository
       const body = this.deserializeBody(bodyData as Buffer);
 
       // 4. Block 재구성
-      return Block.fromHeaderAndBody(header, body);
+      return Block.fromHeaderAndBody(header as any, body as any);
     } catch (error: any) {
       if (error.code === 'LEVEL_NOT_FOUND') {
         return null;
