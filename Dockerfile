@@ -57,8 +57,10 @@ RUN chmod +x ./entrypoint.sh
 
 # 데이터 디렉토리 생성 (LevelDB 저장소)
 RUN mkdir -p /app/data/chaindata && \
-    mkdir -p /app/data/state && \
-    chown -R nestjs:nodejs /app/data
+    mkdir -p /app/data/state
+
+# /app 디렉토리 전체 권한 부여 (genesis 파일 생성 위해)
+RUN chown -R nestjs:nodejs /app
 
 # non-root 유저로 전환
 USER nestjs
