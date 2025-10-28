@@ -144,7 +144,12 @@ export class TransactionController {
   }
 
   /**
-   * Receipt 조회
+   * Receipt 조회 (Ethereum JSON-RPC 표준)
+   *
+   * 이더리움:
+   * - eth_getTransactionReceipt
+   * - Receipt 있으면: Receipt 객체 직접 반환
+   * - Receipt 없으면: null 반환
    *
    * GET /transaction/:hash/receipt
    */
@@ -152,7 +157,7 @@ export class TransactionController {
   @ApiOperation({
     summary: 'Receipt 조회',
     description:
-      '트랜잭션 해시로 Receipt를 조회합니다. Receipt는 트랜잭션이 블록에 포함된 후에만 조회 가능합니다.',
+      '트랜잭션 해시로 Receipt를 조회합니다. Receipt는 트랜잭션이 블록에 포함된 후에만 조회 가능합니다. (Ethereum JSON-RPC 표준)',
   })
   @ApiParam({
     name: 'hash',
@@ -162,26 +167,17 @@ export class TransactionController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Receipt 정보',
+    description: 'Receipt 정보 (이더리움 표준 형식)',
   })
-  @ApiResponse({
-    status: 404,
-    description: 'Receipt not found (트랜잭션이 아직 블록에 포함되지 않음)',
-  })
-  async getReceipt(@Param('hash') hash: string) {
+  async getReceipt(@Param('hash') hash: string): Promise<any> {
     const receipt = await this.transactionService.getReceipt(hash);
 
+    // 이더리움 표준: Receipt 없으면 null 반환
     if (!receipt) {
-      return {
-        success: false,
-        message:
-          'Receipt not found. Transaction may not be included in a block yet.',
-      };
+      return null;
     }
 
-    return {
-      success: true,
-      receipt: receipt.toJSON(),
-    };
+    // 이더리움 표준: Receipt 객체 직접 반환 (래퍼 없음)
+    return receipt.toJSON();
   }
 }
