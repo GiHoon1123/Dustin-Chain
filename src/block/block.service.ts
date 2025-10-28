@@ -274,19 +274,30 @@ export class BlockService implements OnApplicationBootstrap {
 
       try {
         await this.executeTransaction(tx);
-        tx.confirm(blockNumber);
-        executedTxs.push(tx);
-        this.txPool.remove(tx.hash);
+        status = 1; // 성공
         this.logger.debug(`Transaction executed: ${tx.hash}`);
       } catch (error) {
         // 트랜잭션 실행 실패 (잔액 부족, nonce 불일치 등)
+        // 이더리움 표준: 실패해도 블록에 포함하고 Gas는 차감
         this.logger.warn(
           `Transaction execution failed: ${tx.hash} - ${error.message}`,
         );
-        tx.fail();
-        this.txPool.remove(tx.hash);
         status = 0; // 실패
+
+        // Gas fee 차감 (실패해도 채굴자에게 보상)
+        try {
+          await this.accountService.subtractBalance(tx.from, gasUsed);
+          await this.accountService.incrementNonce(tx.from);
+        } catch (gasError) {
+          this.logger.error(
+            `Failed to deduct gas fee for failed tx ${tx.hash}: ${gasError.message}`,
+          );
+        }
       }
+
+      // 이더리움 표준: 성공/실패 관계없이 모두 블록에 포함
+      executedTxs.push(tx);
+      this.txPool.remove(tx.hash);
 
       // Receipt 생성
       cumulativeGasUsed += gasUsed;
