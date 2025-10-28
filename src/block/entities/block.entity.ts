@@ -201,7 +201,7 @@ export class Block {
 
   /**
    * JSON 직렬화 (Ethereum JSON-RPC 표준)
-   * 
+   *
    * 이더리움 표준:
    * - 모든 숫자는 Hex String ("0x...")
    * - 주소/해시도 Hex String
