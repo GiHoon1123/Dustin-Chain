@@ -35,6 +35,7 @@ type LRUType = typeof LRU;
  * - "h" + blockNumber + blockHash → Block Header (RLP)
  * - "b" + blockNumber + blockHash → Block Body (RLP)
  * - "r" + txHash → Transaction Receipt (RLP)
+ * - "l" + txHash → Transaction Lookup (RLP: [blockHash, blockNumber, txIndex])
  * - "LastBlock" → latestBlockHash
  */
 @Injectable()
@@ -118,6 +119,14 @@ export class BlockLevelDBRepository
 
       // 5. LastBlock 업데이트 (String - lookup key)
       batch.put('LastBlock', block.hash);
+
+      // 6. Transaction Lookup 인덱스 저장 (Geth 방식)
+      for (let i = 0; i < block.transactions.length; i++) {
+        const tx = block.transactions[i];
+        const lookupKey = `l${tx.hash}`;
+        const lookupValue = this.serializeTxLookup(block.hash, block.number, i);
+        batch.put(lookupKey, lookupValue, { valueEncoding: 'buffer' });
+      }
 
       // ✅ 원자적으로 모두 저장 (모두 성공 or 모두 실패)
       await batch.write();
@@ -535,6 +544,86 @@ export class BlockLevelDBRepository
 
     const rlpEncoded = this.cryptoService.rlpEncode(rlpData);
     return Buffer.from(rlpEncoded); // ✅ Binary 그대로 반환
+  }
+
+  /**
+   * Transaction Lookup 직렬화 (Geth 방식)
+   *
+   * Geth: RLP([blockHash, blockNumber, txIndex])
+   *
+   * @param blockHash - 블록 해시
+   * @param blockNumber - 블록 번호
+   * @param txIndex - 트랜잭션 인덱스
+   * @returns RLP 인코딩된 Buffer
+   */
+  private serializeTxLookup(
+    blockHash: Hash,
+    blockNumber: number,
+    txIndex: number,
+  ): Buffer {
+    const rlpData = [blockHash, blockNumber.toString(), txIndex.toString()];
+    const rlpEncoded = this.cryptoService.rlpEncode(rlpData);
+    return Buffer.from(rlpEncoded);
+  }
+
+  /**
+   * Transaction Lookup 역직렬화 (Geth 방식)
+   *
+   * @param data - RLP 인코딩된 Buffer
+   * @returns {blockHash, blockNumber, txIndex}
+   */
+  private deserializeTxLookup(data: Buffer): {
+    blockHash: Hash;
+    blockNumber: number;
+    txIndex: number;
+  } {
+    try {
+      const rlpData = this.cryptoService.rlpDecode(data) as any[];
+      const [blockHash, blockNumber, txIndex] = rlpData;
+
+      return {
+        blockHash: this.ensureHexString(blockHash),
+        blockNumber: parseInt(blockNumber.toString()),
+        txIndex: parseInt(txIndex.toString()),
+      };
+    } catch (error: any) {
+      this.logger.error('Failed to deserialize tx lookup:', error);
+      throw new Error('Invalid tx lookup data in database');
+    }
+  }
+
+  /**
+   * Transaction Lookup 조회 (Geth 방식)
+   *
+   * txHash로 해당 트랜잭션이 포함된 블록 정보 조회
+   *
+   * @param txHash - 트랜잭션 해시
+   * @returns {blockHash, blockNumber, txIndex} 또는 null
+   */
+  async findTxLookup(txHash: Hash): Promise<{
+    blockHash: Hash;
+    blockNumber: number;
+    txIndex: number;
+  } | null> {
+    if (this.db.status !== 'open') {
+      return null;
+    }
+
+    const key = `l${txHash}`;
+
+    try {
+      const value = await this.db.get(key, { valueEncoding: 'buffer' });
+      if (!value) {
+        return null;
+      }
+
+      return this.deserializeTxLookup(value as Buffer);
+    } catch (error: any) {
+      if (error.code === 'LEVEL_NOT_FOUND') {
+        return null;
+      }
+      throw error;
+    }
   }
 
   /**

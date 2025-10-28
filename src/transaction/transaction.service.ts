@@ -263,20 +263,53 @@ export class TransactionService {
   }
 
   /**
-   * 트랜잭션 조회
+   * 트랜잭션 조회 (Geth 방식)
+   *
+   * 이더리움 방식:
+   * 1. txPool에서 찾기 (pending)
+   * 2. 없으면 txLookup 인덱스에서 블록 정보 찾기
+   * 3. 해당 블록에서 트랜잭션 추출
+   * 4. 블록 정보 추가하여 반환
    *
    * @param hash - 트랜잭션 해시
-   * @returns 트랜잭션
+   * @returns 트랜잭션 (blockHash, blockNumber, txIndex 포함)
    * @throws {NotFoundException} 트랜잭션 없음
    */
-  getTransaction(hash: Hash): Transaction {
-    const tx = this.txPool.get(hash);
+  async getTransaction(hash: Hash): Promise<any> {
+    // 1. Pool에서 찾기 (pending 트랜잭션)
+    const poolTx = this.txPool.get(hash);
+    if (poolTx) {
+      return poolTx.toJSON();
+    }
 
-    if (!tx) {
+    // 2. txLookup 인덱스에서 블록 정보 찾기
+    const levelDbRepo = this.blockRepository as BlockLevelDBRepository;
+    const lookup = await levelDbRepo.findTxLookup(hash);
+
+    if (!lookup) {
       throw new NotFoundException(`Transaction not found: ${hash}`);
     }
 
-    return tx;
+    // 3. 해당 블록에서 트랜잭션 추출
+    const block = await this.blockRepository.findByHash(lookup.blockHash);
+    if (!block) {
+      throw new NotFoundException(
+        `Block not found for transaction: ${lookup.blockHash}`,
+      );
+    }
+
+    const tx = block.transactions[lookup.txIndex];
+    if (!tx) {
+      throw new NotFoundException(`Transaction not found in block: ${hash}`);
+    }
+
+    // 4. 블록 정보 추가하여 반환 (이더리움 JSON-RPC 표준)
+    return {
+      ...tx.toJSON(),
+      blockHash: lookup.blockHash,
+      blockNumber: `0x${lookup.blockNumber.toString(16)}`,
+      transactionIndex: `0x${lookup.txIndex.toString(16)}`,
+    };
   }
 
   /**
