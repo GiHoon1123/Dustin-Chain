@@ -99,7 +99,7 @@ export class StateLevelDBRepository
 
       // LevelDB에서 직접 조회
       const dbKey = `account:${address}`;
-      
+
       try {
         const value = await this.db.get(dbKey);
         if (!value) {
@@ -114,10 +114,15 @@ export class StateLevelDBRepository
         const nonce =
           !nonceBuffer || nonceBuffer.length === 0
             ? 0
-            : parseInt(nonceBuffer.toString('hex'), 16); // ✅ hex로 변환 후 16진수 파싱
+            : parseInt(nonceBuffer.toString('hex'), 16);
 
-        const balanceHex = decoded[1].toString('hex') || '0';
-        const balance = BigInt('0x' + balanceHex);
+        // ✅ Balance: RLP는 bigint를 Buffer로 인코딩함
+        const balanceBuffer = decoded[1];
+        let balance = 0n;
+        if (balanceBuffer && balanceBuffer.length > 0) {
+          const balanceHex = balanceBuffer.toString('hex');
+          balance = BigInt('0x' + balanceHex);
+        }
 
         const account = new Account(address);
         account.nonce = nonce;
@@ -162,9 +167,10 @@ export class StateLevelDBRepository
       }
 
       // Value: RLP([nonce, balance, storageRoot, codeHash])
+      // ✅ bigint를 그대로 전달 (RLP가 자동으로 최소 바이트로 변환)
       const value = this.cryptoService.rlpEncode([
         account.nonce,
-        account.balance.toString(16), // hex string
+        account.balance, // ✅ bigint 그대로 (이더리움 표준)
         this.cryptoService.hexToBytes(EMPTY_ROOT), // 스마트 컨트랙트 없음
         this.cryptoService.hexToBytes(EMPTY_HASH), // 코드 없음
       ]);
@@ -231,10 +237,10 @@ export class StateLevelDBRepository
   async setStateRoot(root: Hash): Promise<void> {
     try {
       this.currentRoot = this.cryptoService.hexToBytes(root);
-      
+
       // LevelDB에서 모든 계정을 읽어서 Trie 재구성
       this.trie = new Trie();
-      
+
       for await (const [key, value] of this.db.iterator({
         gte: 'account:',
         lt: 'account:~',
@@ -246,10 +252,12 @@ export class StateLevelDBRepository
         );
         await this.trie.put(trieKey, Buffer.from(value, 'hex'));
       }
-      
+
       this.currentRoot = this.trie.root();
 
-      this.logger.log(`State Root restored to: ${this.cryptoService.bytesToHex(this.currentRoot)}`);
+      this.logger.log(
+        `State Root restored to: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
+      );
     } catch (error: any) {
       this.logger.error(`Failed to set State Root to ${root}:`, error);
       throw error;
