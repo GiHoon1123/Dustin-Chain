@@ -304,8 +304,11 @@ export class TransactionService {
     }
 
     // 4. 블록 정보 추가하여 반환 (이더리움 JSON-RPC 표준)
+    const { status, ...txJson } = tx.toJSON();
+    // status 필드 제거 (이더리움 표준에는 없음)
+    
     return {
-      ...tx.toJSON(),
+      ...txJson,
       blockHash: lookup.blockHash,
       blockNumber: `0x${lookup.blockNumber.toString(16)}`,
       transactionIndex: `0x${lookup.txIndex.toString(16)}`,

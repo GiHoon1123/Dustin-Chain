@@ -201,12 +201,13 @@ export class Block {
 
   /**
    * JSON 직렬화 (Ethereum JSON-RPC 표준)
-   *
+   * 
    * 이더리움 표준:
    * - 모든 숫자는 Hex String ("0x...")
    * - 주소/해시도 Hex String
    * - Timestamp는 Unix timestamp (Hex)
    * - 트랜잭션에 blockHash, blockNumber, transactionIndex 추가
+   * - status 필드는 제거 (이더리움에는 없음, Receipt에만 success/failure 있음)
    */
   toJSON() {
     return {
@@ -216,12 +217,16 @@ export class Block {
       timestamp: `0x${this.timestamp.toString(16)}`,
       proposer: this.proposer,
       transactionCount: `0x${this.transactions.length.toString(16)}`,
-      transactions: this.transactions.map((tx, index) => ({
-        ...tx.toJSON(),
-        blockHash: this.hash,
-        blockNumber: `0x${this.number.toString(16)}`,
-        transactionIndex: `0x${index.toString(16)}`,
-      })),
+      transactions: this.transactions.map((tx, index) => {
+        const { status, ...txJson } = tx.toJSON();
+        // status 필드 제거 (이더리움 표준에는 없음)
+        return {
+          ...txJson,
+          blockHash: this.hash,
+          blockNumber: `0x${this.number.toString(16)}`,
+          transactionIndex: `0x${index.toString(16)}`,
+        };
+      }),
       stateRoot: this.stateRoot,
       transactionsRoot: this.transactionsRoot,
       receiptsRoot: this.receiptsRoot,
