@@ -18,9 +18,9 @@ interface GenesisAccount {
  * Transaction Bot Service
  *
  * 역할:
- * - 초당 4-5개 트랜잭션 자동 생성 (3초마다 실행)
+ * - 10초마다 4-5개 트랜잭션 자동 생성
  * - 인덱스 100-255 계정 간 무작위 송금
- * - 최소 잔액 체크 (50 DSTN)
+ * - 최소 잔액 체크 (1 DSTN)
  *
  * 목적:
  * - 네트워크 활성화
@@ -48,7 +48,7 @@ export class TransactionBotService {
     this.logger.log(
       `🤖 TransactionBot started (${this.accounts.length} accounts active)`,
     );
-    this.logger.log(`📊 Target: 4-5 tx/sec, ~50 tx/block, ~15,000 tx/hour`);
+    this.logger.log(`📊 Target: 0.4-0.5 tx/sec, ~24-30 tx/block (60s), ~1,440-1,800 tx/hour`);
   }
 
   /**
@@ -93,13 +93,13 @@ export class TransactionBotService {
   }
 
   /**
-   * 3초마다 4-5개 트랜잭션 생성
+   * 10초마다 4-5개 트랜잭션 생성
    *
    * 결과:
-   * - 12초(1블록) = 16-20개 × 3회 = 48-60개 트랜잭션
-   * - 시간당 = 14,400-18,000개 트랜잭션
+   * - 60초(1블록) = 4-5개 × 6회 = 24-30개 트랜잭션
+   * - 시간당 = 1,440-1,800개 트랜잭션
    */
-  @Interval(3000)
+  @Interval(10000)
   async generateTransactions() {
     if (!this.isRunning || this.accounts.length === 0) {
       return;
@@ -219,10 +219,10 @@ export class TransactionBotService {
     return {
       isRunning: this.isRunning,
       activeAccounts: this.accounts.length,
-      minBalance: '50 DSTN',
-      targetRate: '4-5 tx/sec',
-      expectedTxPerBlock: '48-60',
-      expectedTxPerHour: '14,400-18,000',
+      minBalance: '1 DSTN',
+      targetRate: '0.4-0.5 tx/sec',
+      expectedTxPerBlock: '24-30',
+      expectedTxPerHour: '1,440-1,800',
     };
   }
 
@@ -234,7 +234,7 @@ export class TransactionBotService {
       isRunning: this.isRunning,
       accountCount: this.accounts.length,
       minBalance: this.MIN_BALANCE.toString(),
-      targetRate: '4-5 tx/sec',
+      targetRate: '0.4-0.5 tx/sec',
     };
   }
 

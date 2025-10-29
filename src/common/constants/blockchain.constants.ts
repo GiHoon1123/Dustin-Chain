@@ -10,11 +10,15 @@
  * - 12초 (1 slot)
  * - 일정한 간격으로 블록 생성
  *
+ * Dustin-Chain:
+ * - 60초 (1분)
+ * - 트랜잭션이 충분히 쌓이도록 조정
+ *
  * 왜 이 값인가:
  * - 너무 짧으면: 네트워크 부하, 포크 발생 가능성 증가
  * - 너무 길면: 트랜잭션 확인 시간 지연
  */
-export const BLOCK_TIME = 12000; // milliseconds (12 seconds)
+export const BLOCK_TIME = 60000; // milliseconds (60 seconds)
 
 /**
  * EPOCH_SIZE: 한 에포크당 슬롯(블록) 수
