@@ -214,7 +214,7 @@ export class Block {
       number: `0x${this.number.toString(16)}`,
       hash: this.hash,
       parentHash: this.parentHash,
-      timestamp: `0x${this.timestamp.toString(16)}`,
+      timestamp: `0x${Math.floor(this.timestamp / 1000).toString(16)}`, // Unix timestamp (seconds)
       proposer: this.proposer,
       transactionCount: `0x${this.transactions.length.toString(16)}`,
       transactions: this.transactions.map((tx, index) => {
