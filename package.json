@@ -23,8 +23,11 @@
   },
   "dependencies": {
     "@ethereumjs/rlp": "^10.0.0",
+    "@ethereumjs/statemanager": "^10.0.0",
     "@ethereumjs/trie": "^6.2.1",
+    "@ethereumjs/tx": "^10.0.0",
     "@ethereumjs/util": "^10.0.0",
+    "@ethereumjs/vm": "^10.0.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
