@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 /**
  * 트랜잭션 서명 요청 DTO (테스트용)
@@ -47,6 +47,43 @@ export class SignTransactionRequestDto {
     message: 'value must be a positive integer string',
   })
   value: string;
+
+  @ApiProperty({
+    description: '가스 가격 (Wei)',
+    example: '1000000000',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^[1-9]\d*$/, {
+    message: 'gasPrice must be a positive integer string',
+  })
+  gasPrice?: string;
+
+  @ApiProperty({
+    description: '가스 한도',
+    example: '21000',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^[1-9]\d*$/, {
+    message: 'gasLimit must be a positive integer string',
+  })
+  gasLimit?: string;
+
+  @ApiProperty({
+    description: '데이터 필드 (Hex String, 0x 접두사)',
+    example: '0x',
+    required: false,
+    default: '0x',
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^0x[0-9a-fA-F]*$/, {
+    message: 'data must be a hex string with 0x prefix',
+  })
+  data?: string;
 }
 
 /**
@@ -105,4 +142,22 @@ export class SignTransactionResponseDto {
       '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
   })
   s: string;
+
+  @ApiProperty({
+    description: '가스 가격 (Wei)',
+    example: '1000000000',
+  })
+  gasPrice: string;
+
+  @ApiProperty({
+    description: '가스 한도',
+    example: '21000',
+  })
+  gasLimit: string;
+
+  @ApiProperty({
+    description: '데이터 필드 (Hex String)',
+    example: '0x',
+  })
+  data: string;
 }

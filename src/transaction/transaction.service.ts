@@ -10,6 +10,9 @@ import { TransactionReceipt } from './entities/transaction-receipt.entity';
 import { Transaction } from './entities/transaction.entity';
 import { TransactionPool } from './pool/transaction.pool';
 
+const DEFAULT_GAS_PRICE = BigInt('1000000000'); // 1 Gwei 기본 가스 가격
+const DEFAULT_GAS_LIMIT = BigInt(21000); // 단순 송금 기본 가스 한도
+
 /**
  * Transaction Service
  *
@@ -55,8 +58,13 @@ export class TransactionService {
    */
   async signTransaction(
     privateKey: string,
-    to: Address,
+    to: Address | null,
     value: bigint,
+    options?: {
+      data?: string;
+      gasPrice?: bigint;
+      gasLimit?: bigint;
+    },
   ): Promise<Transaction> {
     // 1. 발신자 주소 도출
     const from = this.cryptoService.privateKeyToAddress(privateKey);
@@ -64,12 +72,19 @@ export class TransactionService {
     // 2. 현재 nonce 조회
     const nonce = await this.accountService.getNonce(from);
 
+    const gasPrice = options?.gasPrice ?? DEFAULT_GAS_PRICE;
+    const gasLimit = options?.gasLimit ?? DEFAULT_GAS_LIMIT;
+    const data = this.normalizeData(options?.data);
+
     // 3. 트랜잭션 해시 계산 (서명 대상)
     const txData = {
       from,
       to,
       value: value.toString(),
       nonce,
+      gasPrice: gasPrice.toString(),
+      gasLimit: gasLimit.toString(),
+      data,
       chainId: CHAIN_ID,
     };
     const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
@@ -91,7 +106,17 @@ export class TransactionService {
     const finalHash = this.cryptoService.hashUtf8(JSON.stringify(finalData));
 
     // 6. Transaction 객체 생성
-    const tx = new Transaction(from, to, value, nonce, signature, finalHash);
+    const tx = new Transaction(
+      from,
+      to,
+      value,
+      nonce,
+      signature,
+      finalHash,
+      data,
+      gasPrice,
+      gasLimit,
+    );
 
     this.logger.debug(
       `Transaction signed: ${finalHash} (${from} -> ${to}, ${value} Wei, nonce: ${nonce})`,
@@ -110,12 +135,20 @@ export class TransactionService {
    * @throws {Error} 서명 불일치
    */
   verifySignature(tx: Transaction): boolean {
+    const normalizedData = this.normalizeData(tx.data);
+    if (normalizedData !== tx.data) {
+      tx.data = normalizedData;
+    }
+
     // 트랜잭션 해시 재계산 (서명 제외)
     const txData = {
       from: tx.from,
       to: tx.to,
       value: tx.value.toString(),
       nonce: tx.nonce,
+      gasPrice: tx.gasPrice.toString(),
+      gasLimit: tx.gasLimit.toString(),
+      data: normalizedData,
       chainId: CHAIN_ID,
     };
     const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
@@ -135,7 +168,6 @@ export class TransactionService {
       );
     }
 
-    this.logger.debug(`Signature verified for ${tx.hash}`);
     return true;
   }
 
@@ -170,14 +202,42 @@ export class TransactionService {
   async validateBalance(tx: Transaction): Promise<void> {
     const balance = await this.accountService.getBalance(tx.from);
 
-    if (balance < tx.value) {
+    const required = tx.value + tx.gasPrice * tx.gasLimit;
+
+    if (balance < required) {
       throw new Error(
-        `Insufficient balance: ${balance} Wei, required: ${tx.value} Wei`,
+        `Insufficient balance: ${balance} Wei, required: ${required} Wei (value + gas fee)`,
       );
     }
 
     this.logger.debug(
-      `Balance validated for ${tx.hash}: ${balance} >= ${tx.value}`,
+      `Balance validated for ${tx.hash}: ${balance} >= ${required}`,
+    );
+  }
+
+  /**
+   * 가스 필드 검증
+   *
+   * - gasPrice/gasLimit은 0보다 커야 함
+   * - data 필드는 Hex 문자열이어야 함
+   */
+  validateGasParameters(tx: Transaction): void {
+    if (tx.gasPrice <= BigInt(0)) {
+      throw new Error('Gas price must be greater than zero');
+    }
+
+    if (tx.gasLimit <= BigInt(0)) {
+      throw new Error('Gas limit must be greater than zero');
+    }
+
+    // data 형식 검증 및 정규화 (서명 검증과 동일한 형식 유지)
+    const normalizedData = this.normalizeData(tx.data);
+    if (normalizedData !== tx.data) {
+      tx.data = normalizedData;
+    }
+
+    this.logger.debug(
+      `Gas parameters validated for ${tx.hash}: price=${tx.gasPrice}, limit=${tx.gasLimit}`,
     );
   }
 
@@ -198,7 +258,10 @@ export class TransactionService {
     // 2. Nonce 검증
     await this.validateNonce(tx);
 
-    // 3. 잔액 검증
+    // 3. 가스 파라미터 검증
+    this.validateGasParameters(tx);
+
+    // 4. 잔액 검증 (전송 금액 + 가스 비용)
     await this.validateBalance(tx);
 
     this.logger.log(`Transaction validated: ${tx.hash}`);
@@ -219,17 +282,29 @@ export class TransactionService {
    */
   async submitTransaction(
     from: Address,
-    to: Address,
+    to: Address | null,
     value: bigint,
     nonce: number,
     signature: Signature,
+    options?: {
+      gasPrice?: bigint;
+      gasLimit?: bigint;
+      data?: string;
+    },
   ): Promise<Transaction> {
+    const gasPrice = options?.gasPrice ?? DEFAULT_GAS_PRICE;
+    const gasLimit = options?.gasLimit ?? DEFAULT_GAS_LIMIT;
+    const data = this.normalizeData(options?.data);
+
     // 1. 트랜잭션 해시 계산
     const txData = {
       from,
       to,
       value: value.toString(),
       nonce,
+      gasPrice: gasPrice.toString(),
+      gasLimit: gasLimit.toString(),
+      data,
       chainId: CHAIN_ID,
     };
     const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
@@ -244,7 +319,17 @@ export class TransactionService {
     const finalHash = this.cryptoService.hashUtf8(JSON.stringify(finalData));
 
     // 3. Transaction 객체 생성
-    const tx = new Transaction(from, to, value, nonce, signature, finalHash);
+    const tx = new Transaction(
+      from,
+      to,
+      value,
+      nonce,
+      signature,
+      finalHash,
+      data,
+      gasPrice,
+      gasLimit,
+    );
 
     // 4. 검증
     await this.validateTransaction(tx);
@@ -346,7 +431,34 @@ export class TransactionService {
       return null;
     }
 
-    this.logger.debug(`Receipt found: ${hash}`);
     return receipt;
+  }
+
+  /**
+   * data 필드를 이더리움 표준 형태(0x 접두사, Hex)로 정규화
+   */
+  private normalizeData(data?: string | null): string {
+    if (!data || data === '0x' || data === '0X') {
+      return '0x';
+    }
+
+    const trimmed = data.trim();
+
+    if (trimmed.length === 0) {
+      return '0x';
+    }
+
+    if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) {
+      if (!/^0x[0-9a-fA-F]*$/.test(trimmed)) {
+        throw new Error('Transaction data must be a valid hex string');
+      }
+      return `0x${trimmed.slice(2).toLowerCase()}`;
+    }
+
+    if (!/^[0-9a-fA-F]*$/.test(trimmed)) {
+      throw new Error('Transaction data must be a valid hex string');
+    }
+
+    return `0x${trimmed.toLowerCase()}`;
   }
 }

@@ -52,12 +52,17 @@ export class TransactionController {
   async signTransaction(
     @Body() body: SignTransactionRequestDto,
   ): Promise<SignTransactionResponseDto> {
-    const { privateKey, to, value } = body;
+    const { privateKey, to, value, gasPrice, gasLimit, data } = body;
 
     const tx = await this.transactionService.signTransaction(
       privateKey,
       to,
       BigInt(value),
+      {
+        gasPrice: gasPrice ? BigInt(gasPrice) : undefined,
+        gasLimit: gasLimit ? BigInt(gasLimit) : undefined,
+        data,
+      },
     );
 
     return {
@@ -69,6 +74,9 @@ export class TransactionController {
       v: tx.v,
       r: tx.r,
       s: tx.s,
+      gasPrice: tx.gasPrice.toString(),
+      gasLimit: tx.gasLimit.toString(),
+      data: tx.data,
     };
   }
 
@@ -100,7 +108,7 @@ export class TransactionController {
   async sendTransaction(
     @Body() body: SendTransactionRequestDto,
   ): Promise<SendTransactionResponseDto> {
-    const { from, to, value, nonce, v, r, s } = body;
+    const { from, to, value, nonce, gasPrice, gasLimit, data, v, r, s } = body;
 
     const tx = await this.transactionService.submitTransaction(
       from,
@@ -108,6 +116,11 @@ export class TransactionController {
       BigInt(value),
       nonce,
       { v, r, s },
+      {
+        gasPrice: gasPrice ? BigInt(gasPrice) : undefined,
+        gasLimit: gasLimit ? BigInt(gasLimit) : undefined,
+        data,
+      },
     );
 
     return {

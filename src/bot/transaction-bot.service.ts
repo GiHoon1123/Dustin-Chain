@@ -3,6 +3,7 @@ import { Interval } from '@nestjs/schedule';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AccountService } from '../account/account.service';
+import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
 import { TransactionService } from '../transaction/transaction.service';
@@ -157,12 +158,16 @@ export class TransactionBotService {
       const nonce = await this.accountService.getNonce(fromAccount.address);
 
       // 7. 트랜잭션 해시 계산 (TransactionService와 동일한 방식)
+      const data = '0x';
       const txData = {
         from: fromAccount.address,
         to: toAccount.address,
         value: amount.toString(),
         nonce,
-        chainId: 999, // CHAIN_ID
+        gasPrice: gasPrice.toString(),
+        gasLimit: gasLimit.toString(),
+        data,
+        chainId: CHAIN_ID,
       };
       const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
 
@@ -170,7 +175,7 @@ export class TransactionBotService {
       const signature = this.cryptoService.signTransaction(
         txHash,
         fromAccount.privateKey,
-        999, // CHAIN_ID
+        CHAIN_ID,
       );
 
       // 9. 트랜잭션 제출
@@ -180,6 +185,11 @@ export class TransactionBotService {
         amount,
         nonce,
         signature,
+        {
+          gasPrice,
+          gasLimit,
+          data,
+        },
       );
 
       this.logger.debug(
