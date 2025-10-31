@@ -412,6 +412,11 @@ export class BlockService implements OnApplicationBootstrap {
    * @param tx - 실행할 트랜잭션
    */
   private async executeTransaction(tx: Transaction): Promise<void> {
+    // 컨트랙트 배포 트랜잭션인 경우 처리 (EVM 통합 전까지는 에러)
+    if (!tx.to) {
+      throw new Error('Contract deployment not yet supported. EVM integration required.');
+    }
+
     // 송금 실행
     await this.accountService.transfer(tx.from, tx.to, tx.value);
 
@@ -573,9 +578,11 @@ export class BlockService implements OnApplicationBootstrap {
 
       // Value: RLP(transaction) - 트랜잭션 전체 데이터
       // [nonce, to, value, from, v, r, s]
+      // EVM 통합: to가 null인 경우 빈 바이트 배열 (컨트랙트 배포)
+      const toBytes = tx.to ? this.cryptoService.hexToBytes(tx.to) : Buffer.from([]);
       const value = this.cryptoService.rlpEncode([
         tx.nonce, // nonce
-        this.cryptoService.hexToBytes(tx.to), // to address
+        toBytes, // to address (null인 경우 빈 배열)
         tx.value, // value (BigInt)
         this.cryptoService.hexToBytes(tx.from), // from address
         tx.v, // signature v

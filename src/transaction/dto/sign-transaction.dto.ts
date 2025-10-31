@@ -67,10 +67,12 @@ export class SignTransactionResponseDto {
   from: string;
 
   @ApiProperty({
-    description: '수신자 주소',
+    description: '수신자 주소 (컨트랙트 배포 시 null)',
     example: '0x742d35cc6634c0532925a3b844bc9e7595f0beb0',
+    required: false,
+    nullable: true,
   })
-  to: string;
+  to: string | null;
 
   @ApiProperty({
     description: '송금 금액 (Wei 단위)',
