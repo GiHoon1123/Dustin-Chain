@@ -1,4 +1,5 @@
 import { Account as EthAccount, createAccount } from '@ethereumjs/util';
+import { DefaultStateManager } from '@ethereumjs/statemanager';
 import { Injectable } from '@nestjs/common';
 import { Account } from '../account/entities/account.entity';
 import {
@@ -19,12 +20,18 @@ import { StateManager } from './state-manager';
  * - 컨트랙트 관련 기능은 점진적으로 확장 (현재는 EOA 전송 중심 최소 구현)
  */
 @Injectable()
-export class CustomStateManager {
+export class CustomStateManager extends DefaultStateManager {
+  // 임시 저장 (DB 연동 전 과도기)
+  private codeKV: Map<string, Uint8Array> = new Map();
+  private storageKV: Map<string, Uint8Array> = new Map();
+
   constructor(
     private readonly stateManager: StateManager,
     private readonly stateRepository: IStateRepository,
     private readonly crypto: CryptoService,
-  ) {}
+  ) {
+    super();
+  }
 
   /**
    * EVM이 기대하는 형태로 계정 조회
@@ -57,6 +64,7 @@ export class CustomStateManager {
    * EVM 체크포인트 시작 → 저널 시작과 매핑
    */
   async checkpoint(): Promise<void> {
+    await super.checkpoint();
     await this.stateManager.startBlock();
   }
 
@@ -64,6 +72,7 @@ export class CustomStateManager {
    * EVM 커밋 → 저널 커밋과 매핑 (Trie/LevelDB 반영)
    */
   async commit(): Promise<void> {
+    await super.commit();
     await this.stateManager.commitBlock();
   }
 
@@ -71,6 +80,7 @@ export class CustomStateManager {
    * EVM 리버트 → 저널 롤백과 매핑
    */
   async revert(): Promise<void> {
+    await super.revert();
     await this.stateManager.rollbackBlock();
   }
 
@@ -78,16 +88,19 @@ export class CustomStateManager {
    * 컨트랙트 코드 조회 (최소 구현: 없으면 빈 코드)
    */
   async getContractCode(_address: Address): Promise<Uint8Array> {
-    // 추후: code:<address> 또는 code:<codeHash> 키로 LevelDB에서 조회
-    return new Uint8Array();
+    // TODO: DB 연동 (code:codeHash)
+    // 현재 단계: 주소 기반 임시 네임스페이스
+    const key = `code:${_address.toLowerCase()}`;
+    return this.codeKV.get(key) ?? new Uint8Array();
   }
 
   /**
    * 컨트랙트 코드 저장 (최소 구현: no-op)
    */
   async putContractCode(_address: Address, _code: Uint8Array): Promise<void> {
-    // 추후: codeHash 계산 후 LevelDB에 저장하고, 계정의 codeHash 업데이트
-    return;
+    // TODO: codeHash = keccak(code) 계산 후 DB 저장 및 계정 codeHash 갱신
+    const key = `code:${_address.toLowerCase()}`;
+    this.codeKV.set(key, _code);
   }
 
   /**
@@ -97,8 +110,10 @@ export class CustomStateManager {
     _address: Address,
     _key: Uint8Array,
   ): Promise<Uint8Array> {
-    // 추후: storage:<address>:<slot> 키로 LevelDB/Trie에서 조회
-    return new Uint8Array();
+    // TODO: storageRoot 기반 트라이 연동
+    const slot = Buffer.from(_key).toString('hex');
+    const k = `storage:${_address.toLowerCase()}:${slot}`;
+    return this.storageKV.get(k) ?? new Uint8Array();
   }
 
   /**
@@ -109,8 +124,10 @@ export class CustomStateManager {
     _key: Uint8Array,
     _value: Uint8Array,
   ): Promise<void> {
-    // 추후: storage 트라이에 반영하고 stateRoot 갱신 경로로 연결
-    return;
+    // TODO: storage 트라이 및 storageRoot 반영
+    const slot = Buffer.from(_key).toString('hex');
+    const k = `storage:${_address.toLowerCase()}:${slot}`;
+    this.storageKV.set(k, _value);
   }
 
   /**
