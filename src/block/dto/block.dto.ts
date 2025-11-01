@@ -63,7 +63,7 @@ export class BlockHeaderDto {
  * Block DTO (전체) - Ethereum JSON-RPC 표준
  *
  * 블록 전체 정보 (트랜잭션 포함)
- * 
+ *
  * 이더리움 표준:
  * - 모든 숫자는 Hex String (0x...)
  */

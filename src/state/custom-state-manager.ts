@@ -1,6 +1,6 @@
 import { Account as EthAccount, createAccount } from '@ethereumjs/util';
-import { DefaultStateManager } from '@ethereumjs/statemanager';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ClassicLevel } from 'classic-level';
 import { Account } from '../account/entities/account.entity';
 import {
   EMPTY_HASH,
@@ -20,17 +20,25 @@ import { StateManager } from './state-manager';
  * - 컨트랙트 관련 기능은 점진적으로 확장 (현재는 EOA 전송 중심 최소 구현)
  */
 @Injectable()
-export class CustomStateManager extends DefaultStateManager {
-  // 임시 저장 (DB 연동 전 과도기)
-  private codeKV: Map<string, Uint8Array> = new Map();
-  private storageKV: Map<string, Uint8Array> = new Map();
+export class CustomStateManager {
+  private readonly logger = new Logger(CustomStateManager.name);
+  // 코드/스토리지 영속 저장용 LevelDB (네임스페이스 키 사용)
+  private kv?: ClassicLevel<string, string>;
 
   constructor(
     private readonly stateManager: StateManager,
     private readonly stateRepository: IStateRepository,
     private readonly crypto: CryptoService,
-  ) {
-    super();
+  ) {}
+
+  private async ensureDB(): Promise<void> {
+    if (!this.kv) {
+      const opts: any = { keyEncoding: 'utf8', valueEncoding: 'utf8' };
+      const db = new ClassicLevel<string, string>('data/state', opts);
+      await db.open();
+      this.kv = db;
+      this.logger.log('CustomStateManager KV opened (data/state)');
+    }
   }
 
   /**
@@ -38,9 +46,11 @@ export class CustomStateManager extends DefaultStateManager {
    * - 우리 Account → @ethereumjs/util.Account 변환
    */
   async getAccount(address: Address): Promise<EthAccount> {
+    this.logger.debug(`getAccount(${address})`);
     const our = await this.stateManager.getAccount(address);
     if (!our) {
       // 존재하지 않는 계정은 nonce=0, balance=0, 빈 storage/code로 반환
+      this.logger.debug(`getAccount(${address}) → not found, returning empty`);
       return createAccount({
         nonce: 0n,
         balance: 0n,
@@ -48,6 +58,9 @@ export class CustomStateManager extends DefaultStateManager {
         codeHash: this.crypto.hexToBytes(EMPTY_HASH),
       });
     }
+    this.logger.debug(
+      `getAccount(${address}) → nonce=${our.nonce}, balance=${our.balance}`,
+    );
     return this.toEthAccount(our);
   }
 
@@ -58,76 +71,122 @@ export class CustomStateManager extends DefaultStateManager {
   async putAccount(address: Address, eth: EthAccount): Promise<void> {
     const our = this.toOurAccount(address, eth);
     await this.stateManager.setAccount(address, our);
+    this.logger.debug(
+      `putAccount(${address}) nonce=${our.nonce}, balance=${our.balance}`,
+    );
   }
 
   /**
-   * EVM 체크포인트 시작 → 저널 시작과 매핑
+   * 체크포인트/커밋/리버트는 우리 StateManager 저널과 매핑
    */
   async checkpoint(): Promise<void> {
-    await super.checkpoint();
     await this.stateManager.startBlock();
+    this.logger.debug('checkpoint()');
   }
 
-  /**
-   * EVM 커밋 → 저널 커밋과 매핑 (Trie/LevelDB 반영)
-   */
   async commit(): Promise<void> {
-    await super.commit();
     await this.stateManager.commitBlock();
+    this.logger.debug('commit()');
   }
 
-  /**
-   * EVM 리버트 → 저널 롤백과 매핑
-   */
   async revert(): Promise<void> {
-    await super.revert();
     await this.stateManager.rollbackBlock();
+    this.logger.debug('revert()');
   }
 
   /**
-   * 컨트랙트 코드 조회 (최소 구현: 없으면 빈 코드)
+   * 컨트랙트 코드 조회 (codeHash 기반이 이상적이나, 현재는 주소 네임스페이스 + codeHash 보조)
    */
   async getContractCode(_address: Address): Promise<Uint8Array> {
-    // TODO: DB 연동 (code:codeHash)
-    // 현재 단계: 주소 기반 임시 네임스페이스
-    const key = `code:${_address.toLowerCase()}`;
-    return this.codeKV.get(key) ?? new Uint8Array();
+    await this.ensureDB();
+    const address = _address.toLowerCase();
+    const codeHashKey = `account_codehash:${address}`;
+    const storedHash = await this.kv!.get(codeHashKey).catch(() => undefined);
+    let key: string | undefined;
+    if (storedHash) key = `code:${storedHash}`;
+    // Fallback: 주소 네임스페이스
+    if (!key) key = `code:addr:${address}`;
+    const hex = await this.kv!.get(key).catch(() => '');
+    const bytes = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
+    this.logger.debug(
+      `getContractCode(${_address}) → ${bytes.byteLength} bytes (key=${key})`,
+    );
+    return bytes;
   }
 
   /**
-   * 컨트랙트 코드 저장 (최소 구현: no-op)
+   * 컨트랙트 코드 저장: codeHash 계산 후 저장 + 계정.codeHash 갱신
    */
   async putContractCode(_address: Address, _code: Uint8Array): Promise<void> {
-    // TODO: codeHash = keccak(code) 계산 후 DB 저장 및 계정 codeHash 갱신
-    const key = `code:${_address.toLowerCase()}`;
-    this.codeKV.set(key, _code);
+    await this.ensureDB();
+    const address = _address.toLowerCase();
+    const codeHash = this.crypto.hashBuffer(Buffer.from(_code));
+    const codeKey = `code:${codeHash}`;
+    await this.kv!.put(codeKey, Buffer.from(_code).toString('hex'));
+    await this.kv!.put(`account_codehash:${address}`, codeHash);
+    // 계정의 codeHash 갱신
+    const acc =
+      (await this.stateManager.getAccount(address)) || new Account(address);
+    acc.codeHash = codeHash;
+    await this.stateManager.setAccount(address, acc);
+    this.logger.debug(
+      `putContractCode(${_address}) ← ${_code.byteLength} bytes (codeHash=${codeHash})`,
+    );
   }
 
   /**
-   * 컨트랙트 스토리지 조회 (최소 구현: 없으면 0)
+   * 컨트랙트 스토리지 조회 (slot 키는 keccak(slot) 대신 원시 슬롯 바이트를 그대로 네임스페이스 키로 저장)
    */
   async getContractStorage(
     _address: Address,
     _key: Uint8Array,
   ): Promise<Uint8Array> {
-    // TODO: storageRoot 기반 트라이 연동
+    await this.ensureDB();
     const slot = Buffer.from(_key).toString('hex');
     const k = `storage:${_address.toLowerCase()}:${slot}`;
-    return this.storageKV.get(k) ?? new Uint8Array();
+    const hex = await this.kv!.get(k).catch(() => '');
+    const val = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
+    this.logger.debug(
+      `getContractStorage(${_address}) slot=0x${slot} → ${val.byteLength} bytes`,
+    );
+    return val;
   }
 
   /**
-   * 컨트랙트 스토리지 저장 (최소 구현: no-op)
+   * 컨트랙트 스토리지 저장 (간이 루트 갱신: storageRoot = keccak(prevRoot || 0x00 || keccak(address||slot||value)))
    */
   async putContractStorage(
     _address: Address,
     _key: Uint8Array,
     _value: Uint8Array,
   ): Promise<void> {
-    // TODO: storage 트라이 및 storageRoot 반영
+    await this.ensureDB();
+    const address = _address.toLowerCase();
     const slot = Buffer.from(_key).toString('hex');
-    const k = `storage:${_address.toLowerCase()}:${slot}`;
-    this.storageKV.set(k, _value);
+    const k = `storage:${address}:${slot}`;
+    await this.kv!.put(k, Buffer.from(_value).toString('hex'));
+
+    // storageRoot 간이 갱신
+    const acc =
+      (await this.stateManager.getAccount(address)) || new Account(address);
+    const prevRootBytes =
+      acc.storageRoot && acc.storageRoot !== EMPTY_ROOT
+        ? Buffer.from(this.crypto.hexToBytes(acc.storageRoot))
+        : Buffer.alloc(0);
+    const mix = Buffer.concat([
+      Buffer.from(address.replace(/^0x/, ''), 'hex'),
+      Buffer.from(slot, 'hex'),
+      Buffer.from(_value),
+    ]);
+    const delta = Buffer.from(this.crypto.hashBuffer(mix).slice(2), 'hex');
+    const combined = Buffer.concat([prevRootBytes, delta]);
+    const newRoot = this.crypto.hashBuffer(combined);
+    acc.storageRoot = newRoot;
+    await this.stateManager.setAccount(address, acc);
+
+    this.logger.debug(
+      `putContractStorage(${_address}) slot=0x${slot} ← ${_value.byteLength} bytes, storageRoot=${newRoot}`,
+    );
   }
 
   /**
@@ -138,8 +197,8 @@ export class CustomStateManager extends DefaultStateManager {
     return createAccount({
       nonce: BigInt(our.nonce),
       balance: our.balance,
-      storageRoot: this.crypto.hexToBytes(EMPTY_ROOT),
-      codeHash: this.crypto.hexToBytes(EMPTY_HASH),
+      storageRoot: this.crypto.hexToBytes(our.storageRoot || EMPTY_ROOT),
+      codeHash: this.crypto.hexToBytes(our.codeHash || EMPTY_HASH),
     });
   }
 
@@ -152,6 +211,7 @@ export class CustomStateManager extends DefaultStateManager {
     // nonce는 number 범위를 가정 (우리 구현 기준)
     acc.nonce = Number(eth.nonce ?? 0n);
     acc.balance = eth.balance ?? 0n;
+    // storageRoot/codeHash는 유지 (EVM이 수정 시 별도 경로에서 갱신)
     return acc;
   }
 }

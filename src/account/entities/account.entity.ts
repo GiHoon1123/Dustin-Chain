@@ -1,3 +1,7 @@
+import {
+  EMPTY_HASH,
+  EMPTY_ROOT,
+} from '../../common/constants/blockchain.constants';
 import { Address } from '../../common/types/common.types';
 
 /**
@@ -67,10 +71,24 @@ export class Account {
    */
   nonce: number;
 
+  /**
+   * 컨트랙트 스토리지 루트 (MPT root)
+   * - EOA는 EMPTY_ROOT
+   */
+  storageRoot: string;
+
+  /**
+   * 컨트랙트 코드 해시 (keccak256(runtime bytecode))
+   * - EOA는 EMPTY_HASH
+   */
+  codeHash: string;
+
   constructor(address: Address) {
     this.address = address;
     this.balance = 0n; // bigint 0
     this.nonce = 0;
+    this.storageRoot = EMPTY_ROOT;
+    this.codeHash = EMPTY_HASH;
   }
 
   /**
@@ -134,7 +152,7 @@ export class Account {
    * 용도:
    * - JSON 직렬화
    * - API 응답
-   * 
+   *
    * 이더리움 표준:
    * - balance: Hex String
    * - nonce: Hex String
@@ -144,6 +162,8 @@ export class Account {
       address: this.address,
       balance: `0x${this.balance.toString(16)}`, // ✅ Hex String
       nonce: `0x${this.nonce.toString(16)}`, // ✅ Hex String
+      storageRoot: this.storageRoot,
+      codeHash: this.codeHash,
     };
   }
 }

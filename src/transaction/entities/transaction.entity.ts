@@ -227,7 +227,7 @@ export class Transaction {
       else dataHex = d.startsWith('0x') ? d : `0x${d}`;
     } else if (d && typeof d === 'object' && (d as any).buffer) {
       // Buffer 또는 Uint8Array로 간주
-      const bytes = Buffer.isBuffer(d) ? (d as Buffer) : Buffer.from(d as Uint8Array);
+      const bytes = Buffer.isBuffer(d) ? d : Buffer.from(d as Uint8Array);
       dataHex = bytes.length ? `0x${bytes.toString('hex')}` : '0x';
     } else {
       dataHex = '0x';
