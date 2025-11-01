@@ -1,5 +1,8 @@
 import { Trie } from '@ethereumjs/trie';
+import type { TxData } from '@ethereumjs/tx';
+import { TransactionFactory } from '@ethereumjs/tx';
 import { VM } from '@ethereumjs/vm';
+// NOTE: @ethereumjs/tx v10에는 TransactionFactory가 없어 임시로 미사용 처리
 import {
   Inject,
   Injectable,
@@ -55,6 +58,15 @@ interface GenesisConfig {
  * - onApplicationBootstrap: 모든 모듈의 onModuleInit이 완료된 후 실행
  * - BlockLevelDBRepository.onModuleInit()이 먼저 완료되어 DB가 열린 상태 보장
  */
+// VM 실행 결과 요약 타입 (Receipt 매핑용)
+interface ExecutionResultSummary {
+  status: 1 | 0;
+  gasUsed: bigint;
+  contractAddress: Address | null;
+  logs: { address: Address; topics: Hash[]; data: string }[];
+  logsBloom: string;
+}
+
 @Injectable()
 export class BlockService implements OnApplicationBootstrap {
   private readonly logger = new Logger(BlockService.name);
@@ -100,10 +112,11 @@ export class BlockService implements OnApplicationBootstrap {
 
     // VM 초기화 (기본 설정). 추후 common(체인/하드포크) 및 CustomStateManager 연동 예정
     try {
-      const vmOpts = {
-        stateManager: this.evmState,
-      } as unknown as ConstructorParameters<typeof VM>[0];
-      this.vm = new VM(vmOpts);
+      // VM은 v6 계열: VM.create(opts)로 생성 (constructor는 protected)
+      // State 접근은 CustomStateManager를 주입
+      const vmOpts = { stateManager: this.evmState } as unknown;
+      const VMCreate = VM as unknown as { create: (o: unknown) => Promise<VM> };
+      this.vm = await VMCreate.create(vmOpts);
       this.logger.log('VM initialized for execution');
     } catch (e: unknown) {
       this.logger.error(`Failed to initialize VM: ${String(e)}`);
@@ -287,12 +300,21 @@ export class BlockService implements OnApplicationBootstrap {
 
     for (let i = 0; i < pendingTxs.length; i++) {
       const tx = pendingTxs[i];
-      let status: 1 | 0 = 1; // 성공
-      const gasUsed = BigInt(21000); // 기본 Gas (이더리움 기본 전송 Gas)
+      let status: 1 | 0 = 1; // 기본 성공 가정
+      let gasUsed = BigInt(21000); // 기본값 (VM 미사용 시)
+      let contractAddress: Address | null = null;
+      let logs: { address: Address; topics: Hash[]; data: string }[] = [];
+      let logsBloom = '0x' + '0'.repeat(512);
 
       try {
-        await this.executeTransaction(tx);
-        status = 1; // 성공
+        const exec = await this.executeTransaction(tx);
+        if (exec) {
+          status = exec.status;
+          gasUsed = exec.gasUsed;
+          contractAddress = exec.contractAddress;
+          logs = exec.logs;
+          logsBloom = exec.logsBloom;
+        }
         this.logger.debug(`Transaction executed: ${tx.hash}`);
       } catch (error: unknown) {
         // 트랜잭션 실행 실패 (잔액 부족, nonce 불일치 등)
@@ -302,16 +324,18 @@ export class BlockService implements OnApplicationBootstrap {
         );
         status = 0; // 실패
 
-        // Gas fee 차감 (실패해도 채굴자에게 보상)
-        try {
-          await this.accountService.subtractBalance(tx.from, gasUsed);
-          await this.accountService.incrementNonce(tx.from);
-        } catch (gasError: unknown) {
-          this.logger.error(
-            `Failed to deduct gas fee for failed tx ${tx.hash}: ${String(
-              gasError,
-            )}`,
-          );
+        // Gas fee 차감 (실패해도 차감) - VM 미사용 경로에서만 필요
+        if (!this.vm) {
+          try {
+            await this.accountService.subtractBalance(tx.from, gasUsed);
+            await this.accountService.incrementNonce(tx.from);
+          } catch (gasError: unknown) {
+            this.logger.error(
+              `Failed to deduct gas fee for failed tx ${tx.hash}: ${String(
+                gasError,
+              )}`,
+            );
+          }
         }
       }
 
@@ -332,6 +356,21 @@ export class BlockService implements OnApplicationBootstrap {
         gasUsed,
         cumulativeGasUsed,
       );
+      receipt.contractAddress = contractAddress;
+      // 로그를 Receipt.Log 타입으로 보강
+      const enrichedLogs = logs.map((l, idx) => ({
+        address: l.address,
+        topics: l.topics,
+        data: l.data,
+        blockNumber,
+        transactionHash: tx.hash,
+        transactionIndex: i,
+        blockHash: '',
+        logIndex: idx,
+        removed: false,
+      }));
+      receipt.logs = enrichedLogs;
+      receipt.logsBloom = logsBloom;
       receipts.push(receipt);
     }
 
@@ -379,7 +418,7 @@ export class BlockService implements OnApplicationBootstrap {
     type BlockWithReceipts = Block & { receipts?: TransactionReceipt[] };
     (block as BlockWithReceipts).receipts = receipts;
 
-    // 12. ✅ 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
+    // 12. 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
     // 블록 객체만 반환
 
     this.logger.log(
@@ -433,23 +472,88 @@ export class BlockService implements OnApplicationBootstrap {
    *
    * @param tx - 실행할 트랜잭션
    */
-  private async executeTransaction(tx: Transaction): Promise<void> {
-    // 컨트랙트 배포 트랜잭션인 경우 처리 (EVM 통합 전까지는 에러)
-    if (!tx.to) {
-      throw new Error(
-        'Contract deployment not yet supported. EVM integration required.',
+  private async executeTransaction(
+    tx: Transaction,
+  ): Promise<ExecutionResultSummary | void> {
+    // VM이 있으면: 모든 트랜잭션을 runTx로 실행 (배포/호출/송금 공통)
+    // - 이유: 가스/리버트/로그/스토리지/코드 저장 등 EVM 규칙을 일관 적용하기 위함
+    if (this.vm) {
+      // EVM이 기대하는 Buffer 타입으로 정규화
+      const toBytes = tx.to ? this.cryptoService.hexToBytes(tx.to) : undefined;
+      const toBuffer = toBytes ? Buffer.from(toBytes) : undefined;
+      const dataBytes =
+        typeof tx.data === 'string'
+          ? this.cryptoService.hexToBytes(tx.data)
+          : (tx.data as unknown as Uint8Array);
+      const dataBuffer = Buffer.from(dataBytes ?? new Uint8Array());
+
+      // runTx에 투입할 서명된 트랜잭션 데이터 (Legacy/EIP-1559 등 팩토리가 판단)
+      const txData: TxData = {
+        nonce: BigInt(tx.nonce),
+        gasPrice: tx.gasPrice,
+        gasLimit: tx.gasLimit,
+        to: toBuffer,
+        value: tx.value,
+        data: dataBuffer,
+        v: BigInt(tx.v),
+        r: Buffer.from(this.cryptoService.hexToBytes(tx.r)),
+        s: Buffer.from(this.cryptoService.hexToBytes(tx.s)),
+      };
+      // 일부 버전 조합에서 팩토리 타입이 엄격해지는 경우가 있어 안전한 래퍼로 호출
+      const txFactory = TransactionFactory as unknown as {
+        fromTxData: (d: unknown) => unknown;
+      };
+      const ethTx = txFactory.fromTxData(txData);
+
+      // runTx 타입 최소 정의 (필요한 필드만)
+      type RunTxExecResult = {
+        exceptionError?: { error: string };
+        gasUsed?: bigint;
+        logs?: [Uint8Array, Uint8Array[], Uint8Array][];
+      };
+      type RunTxResult = {
+        gasUsed?: bigint;
+        execResult: RunTxExecResult;
+        createdAddress?: { buf: () => Uint8Array };
+      };
+
+      const vmRunner = this.vm as unknown as {
+        runTx: (o: { tx: unknown }) => Promise<RunTxResult>;
+      };
+      const result = await vmRunner.runTx({ tx: ethTx });
+
+      const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+      const gasUsed: bigint =
+        result.gasUsed ?? result.execResult.gasUsed ?? BigInt(21000);
+      const created = result.createdAddress;
+      const contractAddress = created
+        ? this.cryptoService.bytesToHex(created.buf())
+        : null;
+
+      // EVM 로그를 Receipt.Log 형태로 변환
+      const logs = (result.execResult.logs || []).map(
+        (l: [Uint8Array, Uint8Array[], Uint8Array]) => {
+          const [addr, topics, data] = l;
+          return {
+            address: this.cryptoService.bytesToHex(addr),
+            topics: topics.map((t: Uint8Array) =>
+              this.cryptoService.bytesToHex(t),
+            ),
+            data: this.cryptoService.bytesToHex(data),
+          };
+        },
       );
+      const logsBloom = '0x' + '0'.repeat(512);
+
+      return { status, gasUsed, contractAddress, logs, logsBloom };
     }
 
-    // 현재 단계: VM 경로는 초기화만, 실제 상태 변경은 기존 로직 유지
-    // 향후 단계에서 VM과 CustomStateManager를 연결해 상태 반영 예정
-
-    // 송금 실행 (우리 상태 반영)
+    // VM 미존재 시: EOA 송금만 처리
+    if (!tx.to) {
+      throw new Error('Contract deployment requires VM');
+    }
     await this.accountService.transfer(tx.from, tx.to, tx.value);
-
-    // Nonce 증가
     await this.accountService.incrementNonce(tx.from);
-
     this.logger.debug(
       `Transaction executed: ${tx.from} -> ${tx.to} (${tx.value} Wei)`,
     );

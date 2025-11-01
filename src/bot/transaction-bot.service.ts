@@ -49,7 +49,9 @@ export class TransactionBotService {
     this.logger.log(
       `🤖 TransactionBot started (${this.accounts.length} accounts active)`,
     );
-    this.logger.log(`📊 Target: 0.4-0.5 tx/sec, ~24-30 tx/block (60s), ~1,440-1,800 tx/hour`);
+    this.logger.log(
+      `📊 Target: 0.4-0.5 tx/sec, ~24-30 tx/block (60s), ~1,440-1,800 tx/hour`,
+    );
   }
 
   /**
