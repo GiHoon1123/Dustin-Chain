@@ -56,7 +56,7 @@ export class TransactionController {
 
     const tx = await this.transactionService.signTransaction(
       privateKey,
-      to,
+      to ?? null,
       BigInt(value),
       {
         gasPrice: gasPrice ? BigInt(gasPrice) : undefined,
@@ -112,7 +112,7 @@ export class TransactionController {
 
     const tx = await this.transactionService.submitTransaction(
       from,
-      to,
+      to ?? null,
       BigInt(value),
       nonce,
       { v, r, s },
@@ -130,6 +130,14 @@ export class TransactionController {
       message: 'Transaction submitted to mempool',
     };
   }
+
+  /**
+   * 임시: 검증 우회 전송 (컨트랙트 배포용 to=null 허용)
+   *
+   * - class-validator를 거치지 않고 body를 직접 파싱
+   * - 배포 트랜잭션(to=null) 테스트를 위한 임시 엔드포인트
+   */
+  // 임시 send-raw 엔드포인트 제거됨
 
   /**
    * 트랜잭션 조회
