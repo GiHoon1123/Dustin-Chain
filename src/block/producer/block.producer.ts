@@ -61,7 +61,7 @@ export class BlockProducer implements OnApplicationBootstrap {
    * NestJS Lifecycle:
    * 1. BlockLevelDBRepository.onModuleInit() - DB 열기
    * 2. BlockService.onApplicationBootstrap() - Genesis Block 체크/생성
-   * 3. BlockProducer.onApplicationBootstrap() - 블록 생성 시작 ✅
+   * 3. BlockProducer.onApplicationBootstrap() - 블록 생성 시작
    *
    * 주의: onApplicationBootstrap은 모든 서비스에서 동시 실행됨
    * BlockService가 Genesis Block을 생성할 때까지 대기 필요
@@ -79,11 +79,11 @@ export class BlockProducer implements OnApplicationBootstrap {
       if (block) {
         genesisBlock = block;
       } else {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
         attempts++;
       }
     }
-    
+
     if (!genesisBlock) {
       throw new Error('Genesis Block not found after waiting 10 seconds');
     }

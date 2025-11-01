@@ -1,4 +1,5 @@
 import { Trie } from '@ethereumjs/trie';
+import { VM } from '@ethereumjs/vm';
 import {
   Inject,
   Injectable,
@@ -11,6 +12,7 @@ import { AccountService } from '../account/account.service';
 import { EMPTY_ROOT } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address, Hash } from '../common/types/common.types';
+import { CustomStateManager } from '../state/custom-state-manager';
 import { StateManager } from '../state/state-manager';
 import { IBlockRepository } from '../storage/repositories/block.repository.interface';
 import { IStateRepository } from '../storage/repositories/state.repository.interface';
@@ -57,6 +59,9 @@ interface GenesisConfig {
 export class BlockService implements OnApplicationBootstrap {
   private readonly logger = new Logger(BlockService.name);
 
+  // EVM 실행 엔진 인스턴스 (초기 통합)
+  private vm: VM | null = null;
+
   /**
    * Genesis Proposer
    *
@@ -74,6 +79,7 @@ export class BlockService implements OnApplicationBootstrap {
     private readonly accountService: AccountService,
     private readonly txPool: TransactionPool,
     private readonly stateManager: StateManager,
+    private readonly evmState: CustomStateManager,
   ) {}
 
   /**
@@ -81,7 +87,7 @@ export class BlockService implements OnApplicationBootstrap {
    *
    * NestJS Lifecycle:
    * 1. onModuleInit (모든 모듈) - BlockLevelDBRepository DB 열기, StateLevelDBRepository DB 열기
-   * 2. onApplicationBootstrap (모든 모듈) - Genesis Block 체크/생성, State 복원 ✅
+   * 2. onApplicationBootstrap (모든 모듈) - Genesis Block 체크/생성, State 복원
    *
    * 이 시점에는 모든 LevelDB가 이미 열린 상태 보장
    */
@@ -91,6 +97,18 @@ export class BlockService implements OnApplicationBootstrap {
 
     // State 복원
     await this.restoreState();
+
+    // VM 초기화 (기본 설정). 추후 common(체인/하드포크) 및 CustomStateManager 연동 예정
+    try {
+      const vmOpts = {
+        stateManager: this.evmState,
+      } as unknown as ConstructorParameters<typeof VM>[0];
+      this.vm = new VM(vmOpts);
+      this.logger.log('VM initialized for execution');
+    } catch (e: unknown) {
+      this.logger.error(`Failed to initialize VM: ${String(e)}`);
+      // VM 없이도 기존 경로로 동작하도록 계속 진행
+    }
   }
 
   /**
@@ -123,7 +141,7 @@ export class BlockService implements OnApplicationBootstrap {
       this.logger.log(
         `State restored from block #${latestBlock.number} (stateRoot: ${latestBlock.stateRoot})`,
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error('Failed to restore state:', error);
       throw error;
     }
@@ -219,7 +237,7 @@ export class BlockService implements OnApplicationBootstrap {
     for (const filePath of possiblePaths) {
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, 'utf8');
-        return JSON.parse(content);
+        return JSON.parse(content) as GenesisConfig;
       }
     }
 
@@ -276,11 +294,11 @@ export class BlockService implements OnApplicationBootstrap {
         await this.executeTransaction(tx);
         status = 1; // 성공
         this.logger.debug(`Transaction executed: ${tx.hash}`);
-      } catch (error) {
+      } catch (error: unknown) {
         // 트랜잭션 실행 실패 (잔액 부족, nonce 불일치 등)
         // 이더리움 표준: 실패해도 블록에 포함하고 Gas는 차감
         this.logger.warn(
-          `Transaction execution failed: ${tx.hash} - ${error.message}`,
+          `Transaction execution failed: ${tx.hash} - ${String(error)}`,
         );
         status = 0; // 실패
 
@@ -288,9 +306,11 @@ export class BlockService implements OnApplicationBootstrap {
         try {
           await this.accountService.subtractBalance(tx.from, gasUsed);
           await this.accountService.incrementNonce(tx.from);
-        } catch (gasError) {
+        } catch (gasError: unknown) {
           this.logger.error(
-            `Failed to deduct gas fee for failed tx ${tx.hash}: ${gasError.message}`,
+            `Failed to deduct gas fee for failed tx ${tx.hash}: ${String(
+              gasError,
+            )}`,
           );
         }
       }
@@ -356,7 +376,8 @@ export class BlockService implements OnApplicationBootstrap {
     }
 
     // 11. Receipt를 Block에 임시 저장 (나중에 saveBlock에서 사용)
-    (block as any).receipts = receipts;
+    type BlockWithReceipts = Block & { receipts?: TransactionReceipt[] };
+    (block as BlockWithReceipts).receipts = receipts;
 
     // 12. ✅ 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
     // 블록 객체만 반환
@@ -379,14 +400,15 @@ export class BlockService implements OnApplicationBootstrap {
     await this.repository.save(block);
 
     // Receipt 저장 (Block에 임시로 저장된 receipts)
-    const receipts = (block as any).receipts as
-      | TransactionReceipt[]
-      | undefined;
+    type BlockWithReceipts = Block & { receipts?: TransactionReceipt[] };
+    const receipts = (block as BlockWithReceipts).receipts;
     if (receipts && receipts.length > 0) {
+      const repoWithReceipts = this.repository as unknown as {
+        saveReceipt: (r: TransactionReceipt) => Promise<void>;
+      };
       for (const receipt of receipts) {
-        // IBlockRepository에 saveReceipt 메서드가 있다고 가정
         if ('saveReceipt' in this.repository) {
-          await (this.repository as any).saveReceipt(receipt);
+          await repoWithReceipts.saveReceipt(receipt);
         }
       }
       this.logger.debug(
@@ -414,10 +436,15 @@ export class BlockService implements OnApplicationBootstrap {
   private async executeTransaction(tx: Transaction): Promise<void> {
     // 컨트랙트 배포 트랜잭션인 경우 처리 (EVM 통합 전까지는 에러)
     if (!tx.to) {
-      throw new Error('Contract deployment not yet supported. EVM integration required.');
+      throw new Error(
+        'Contract deployment not yet supported. EVM integration required.',
+      );
     }
 
-    // 송금 실행
+    // 현재 단계: VM 경로는 초기화만, 실제 상태 변경은 기존 로직 유지
+    // 향후 단계에서 VM과 CustomStateManager를 연결해 상태 반영 예정
+
+    // 송금 실행 (우리 상태 반영)
     await this.accountService.transfer(tx.from, tx.to, tx.value);
 
     // Nonce 증가
@@ -579,7 +606,9 @@ export class BlockService implements OnApplicationBootstrap {
       // Value: RLP(transaction) - 트랜잭션 전체 데이터
       // [nonce, to, value, from, v, r, s]
       // EVM 통합: to가 null인 경우 빈 바이트 배열 (컨트랙트 배포)
-      const toBytes = tx.to ? this.cryptoService.hexToBytes(tx.to) : Buffer.from([]);
+      const toBytes = tx.to
+        ? this.cryptoService.hexToBytes(tx.to)
+        : Buffer.from([]);
       const value = this.cryptoService.rlpEncode([
         tx.nonce, // nonce
         toBytes, // to address (null인 경우 빈 배열)
