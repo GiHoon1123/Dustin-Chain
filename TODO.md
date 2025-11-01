@@ -2,7 +2,7 @@
 
 ## 📋 현재 진행 상황
 
-### ✅ 완료된 작업들
+### 완료된 작업들
 
 #### 1단계: StateManager 기반 아키텍처 구축
 
@@ -40,10 +40,10 @@
 
 ### 🔄 현재 상태
 
-- **AccountService**: StateManager 사용하여 정상 동작 ✅
-- **StateManager**: DB 상태 확인 후 안전한 접근 ✅
-- **LevelDB**: 오류 없이 정상 동작 ✅
-- **Genesis 계정**: 정상적으로 잔액 보유 (50+ DSTN) ✅
+- **AccountService**: StateManager 사용하여 정상 동작
+- **StateManager**: DB 상태 확인 후 안전한 접근
+- **LevelDB**: 오류 없이 정상 동작
+- **Genesis 계정**: 정상적으로 잔액 보유 (50+ DSTN)
 - **저널링 시스템**: 변경사항 추적 중 (아직 `commitBlock()` 호출 안됨)
 
 ---
@@ -121,7 +121,7 @@
 
 ## 📊 진행률
 
-- **1단계 (StateManager 기반 아키텍처)**: 100% 완료 ✅
+- **1단계 (StateManager 기반 아키텍처)**: 100% 완료
 - **2단계 (BlockService 연동)**: 0% (다음 작업)
 - **3단계 (나머지 서비스 연동)**: 0%
 - **4단계 (정리 및 최적화)**: 0%
