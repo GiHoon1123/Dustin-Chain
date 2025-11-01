@@ -219,13 +219,18 @@ export class Transaction {
    * - to: Address 또는 null (컨트랙트 배포 시 null)
    */
   toJSON() {
-    // data 필드를 Hex String으로 변환 (빈 문자열인 경우 "0x")
-    let dataHex = this.data;
-    if (!dataHex) {
+    // data 필드를 Hex String으로 변환 (Buffer/Uint8Array 안전 처리)
+    let dataHex: string;
+    const d: unknown = this.data as unknown;
+    if (typeof d === 'string') {
+      if (d.length === 0) dataHex = '0x';
+      else dataHex = d.startsWith('0x') ? d : `0x${d}`;
+    } else if (d && typeof d === 'object' && (d as any).buffer) {
+      // Buffer 또는 Uint8Array로 간주
+      const bytes = Buffer.isBuffer(d) ? (d as Buffer) : Buffer.from(d as Uint8Array);
+      dataHex = bytes.length ? `0x${bytes.toString('hex')}` : '0x';
+    } else {
       dataHex = '0x';
-    } else if (!dataHex.startsWith('0x')) {
-      // 이미 Hex String이 아니면 0x 접두사 추가
-      dataHex = `0x${dataHex}`;
     }
 
     return {
