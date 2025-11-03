@@ -109,7 +109,7 @@ export class BlockService implements OnApplicationBootstrap {
       },
       Mainnet,
       {
-        hardfork: Hardfork.London,
+        hardfork: Hardfork.Cancun,
       },
     );
   }
@@ -622,7 +622,7 @@ export class BlockService implements OnApplicationBootstrap {
               },
               Mainnet,
               {
-                hardfork: Hardfork.London,
+                hardfork: Hardfork.Cancun,
               },
             );
 
@@ -840,16 +840,51 @@ export class BlockService implements OnApplicationBootstrap {
 
       const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
 
+      const gasUsed: bigint =
+        result.gasUsed ?? result.execResult.gasUsed ?? BigInt(21000);
+
+      // 생성자 실행 결과 확인 (컨트랙트 배포인 경우)
+      if (tx.to === null) {
+        const returnValue = result.execResult.returnValue || new Uint8Array();
+        const returnValueHex = this.cryptoService.bytesToHex(returnValue);
+        this.logger.warn(
+          `[VM] Contract deployment: createdAddress=${result.createdAddress || 'null'}, returnValue length=${returnValue.length} bytes, status=${status}, gasUsed=${gasUsed}`,
+        );
+        if (result.execResult.exceptionError) {
+          const err = result.execResult.exceptionError;
+          this.logger.error(
+            `[VM] Constructor failed: ${JSON.stringify({
+              error: err.error?.toString(),
+              errorType: err.errorType,
+              reason: err.reason,
+            })}`,
+          );
+        }
+        if (returnValue.length > 0) {
+          this.logger.warn(
+            `[VM] Return value (first 200 chars): ${returnValueHex.slice(0, 200)}...`,
+          );
+        }
+      }
+
       // 실패 시 에러 메시지 로깅
       if (result.execResult.exceptionError) {
         const errorInfo = result.execResult.exceptionError;
         this.logger.error(
           `[VM] Transaction failed: ${tx.hash} - Error: ${errorInfo.error || 'Unknown error'}`,
         );
+        // 상세 에러 정보 로깅
+        if (errorInfo.error) {
+          this.logger.error(
+            `[VM] Exception error details: ${JSON.stringify({
+              error: errorInfo.error.toString(),
+              errorType: errorInfo.errorType,
+              reason: errorInfo.reason,
+            })}`,
+          );
+        }
       }
 
-      const gasUsed: bigint =
-        result.gasUsed ?? result.execResult.gasUsed ?? BigInt(21000);
       const created = result.createdAddress;
       // VM 10.x: createdAddress는 Address 타입 (string 또는 Address 객체)
       let contractAddress: Address | null = null;
@@ -1198,5 +1233,16 @@ export class BlockService implements OnApplicationBootstrap {
       totalTransactions: totalTxs,
       genesisProposer: this.GENESIS_PROPOSER,
     };
+  }
+
+  /**
+   * VM 인스턴스 조회
+   *
+   * 다른 모듈에서 VM 접근이 필요할 때 사용
+   *
+   * @returns VM 인스턴스 또는 null
+   */
+  getVM(): VM | null {
+    return this.vm;
   }
 }
