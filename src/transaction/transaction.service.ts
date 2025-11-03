@@ -40,6 +40,18 @@ export class TransactionService {
   ) {}
 
   /**
+   * BigInt를 RLP 버퍼로 변환 (빅엔디안 바이트 배열)
+   */
+  private toRlpBuffer(value: bigint): Buffer {
+    if (value === 0n) {
+      return Buffer.alloc(0);
+    }
+    const hex = value.toString(16);
+    const hexPadded = hex.length % 2 === 0 ? hex : '0' + hex;
+    return Buffer.from(hexPadded, 'hex');
+  }
+
+  /**
    * 트랜잭션 서명 생성 (테스트용)
    *
    * ⚠️ 주의:
@@ -76,34 +88,55 @@ export class TransactionService {
     const gasLimit = options?.gasLimit ?? DEFAULT_GAS_LIMIT;
     const data = this.normalizeData(options?.data);
 
-    // 3. 트랜잭션 해시 계산 (서명 대상)
-    const txData = {
-      from,
-      to,
-      value: value.toString(),
-      nonce,
-      gasPrice: gasPrice.toString(),
-      gasLimit: gasLimit.toString(),
-      data,
-      chainId: CHAIN_ID,
-    };
-    const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
+    // 3. 트랜잭션을 RLP로 직렬화하여 해시 계산 (이더리움 표준)
+    // 서명 대상: RLP([nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0])
+    const toBytes = to ? this.cryptoService.hexToBytes(to) : new Uint8Array(0);
+    const toBuffer = Buffer.from(toBytes);
+    const dataBytes = this.cryptoService.hexToBytes(data || '0x');
+    const dataBuffer = Buffer.from(dataBytes);
+
+    // RLP 배열 구성 (서명 대상 - chainId 포함, r=0, s=0)
+    const signArray = [
+      this.toRlpBuffer(BigInt(nonce)),
+      this.toRlpBuffer(gasPrice),
+      this.toRlpBuffer(gasLimit),
+      toBuffer,
+      this.toRlpBuffer(value),
+      dataBuffer,
+      this.toRlpBuffer(BigInt(CHAIN_ID)),
+      Buffer.alloc(0), // r = 0
+      Buffer.alloc(0), // s = 0
+    ];
+    
+    const signRlp = this.cryptoService.rlpEncode(signArray);
+    const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
 
     // 4. EIP-155 서명
     const signature = this.cryptoService.signTransaction(
-      txHash,
+      txHash, // hashBuffer는 이미 Hash (string) 반환
       privateKey,
       CHAIN_ID,
     );
 
     // 5. 최종 트랜잭션 해시 (서명 포함)
-    const finalData = {
-      ...txData,
-      v: signature.v,
-      r: signature.r,
-      s: signature.s,
-    };
-    const finalHash = this.cryptoService.hashUtf8(JSON.stringify(finalData));
+    // RLP([nonce, gasPrice, gasLimit, to, value, data, v, r, s])
+    const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
+    const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
+    
+    const finalArray = [
+      this.toRlpBuffer(BigInt(nonce)),
+      this.toRlpBuffer(gasPrice),
+      this.toRlpBuffer(gasLimit),
+      toBuffer,
+      this.toRlpBuffer(value),
+      dataBuffer,
+      this.toRlpBuffer(BigInt(signature.v)),
+      rValue,
+      sValue,
+    ];
+    
+    const finalRlp = this.cryptoService.rlpEncode(finalArray);
+    const finalHash = this.cryptoService.hashBuffer(Buffer.from(finalRlp)); // hashBuffer는 이미 Hash (string) 반환
 
     // 6. Transaction 객체 생성
     const tx = new Transaction(
@@ -140,22 +173,31 @@ export class TransactionService {
       tx.data = normalizedData;
     }
 
-    // 트랜잭션 해시 재계산 (서명 제외)
-    const txData = {
-      from: tx.from,
-      to: tx.to,
-      value: tx.value.toString(),
-      nonce: tx.nonce,
-      gasPrice: tx.gasPrice.toString(),
-      gasLimit: tx.gasLimit.toString(),
-      data: normalizedData,
-      chainId: CHAIN_ID,
-    };
-    const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
+    // 트랜잭션 해시 재계산 (서명 제외) - RLP 기반
+    // 서명 대상: RLP([nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0])
+    const toBytes = tx.to ? this.cryptoService.hexToBytes(tx.to) : new Uint8Array(0);
+    const toBuffer = Buffer.from(toBytes);
+    const dataBytes = this.cryptoService.hexToBytes(normalizedData || '0x');
+    const dataBuffer = Buffer.from(dataBytes);
+
+    const signArray = [
+      this.toRlpBuffer(BigInt(tx.nonce)),
+      this.toRlpBuffer(tx.gasPrice),
+      this.toRlpBuffer(tx.gasLimit),
+      toBuffer,
+      this.toRlpBuffer(tx.value),
+      dataBuffer,
+      this.toRlpBuffer(BigInt(CHAIN_ID)),
+      Buffer.alloc(0), // r = 0
+      Buffer.alloc(0), // s = 0
+    ];
+    
+    const signRlp = this.cryptoService.rlpEncode(signArray);
+    const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
 
     // 서명으로부터 주소 복구
     const recoveredAddress = this.cryptoService.recoverAddress(
-      txHash,
+      txHash, // hashBuffer는 이미 Hash (string) 반환
       tx.getSignature(),
     );
 
@@ -296,27 +338,29 @@ export class TransactionService {
     const gasLimit = options?.gasLimit ?? DEFAULT_GAS_LIMIT;
     const data = this.normalizeData(options?.data);
 
-    // 1. 트랜잭션 해시 계산
-    const txData = {
-      from,
-      to,
-      value: value.toString(),
-      nonce,
-      gasPrice: gasPrice.toString(),
-      gasLimit: gasLimit.toString(),
-      data,
-      chainId: CHAIN_ID,
-    };
-    const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
-
-    // 2. 최종 해시 (서명 포함)
-    const finalData = {
-      ...txData,
-      v: signature.v,
-      r: signature.r,
-      s: signature.s,
-    };
-    const finalHash = this.cryptoService.hashUtf8(JSON.stringify(finalData));
+    // 1. 트랜잭션 해시 계산 - RLP 기반
+    // 최종 해시: RLP([nonce, gasPrice, gasLimit, to, value, data, v, r, s])
+    const toBytes = to ? this.cryptoService.hexToBytes(to) : new Uint8Array(0);
+    const toBuffer = Buffer.from(toBytes);
+    const dataBytes = this.cryptoService.hexToBytes(data || '0x');
+    const dataBuffer = Buffer.from(dataBytes);
+    const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
+    const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
+    
+    const finalArray = [
+      this.toRlpBuffer(BigInt(nonce)),
+      this.toRlpBuffer(gasPrice),
+      this.toRlpBuffer(gasLimit),
+      toBuffer,
+      this.toRlpBuffer(value),
+      dataBuffer,
+      this.toRlpBuffer(BigInt(signature.v)),
+      rValue,
+      sValue,
+    ];
+    
+    const finalRlp = this.cryptoService.rlpEncode(finalArray);
+    const finalHash = this.cryptoService.hashBuffer(Buffer.from(finalRlp)); // hashBuffer는 이미 Hash (string) 반환
 
     // 3. Transaction 객체 생성
     const tx = new Transaction(

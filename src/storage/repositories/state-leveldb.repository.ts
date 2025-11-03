@@ -1,4 +1,4 @@
-import { Trie } from '@ethereumjs/trie';
+import { createMPT, MerklePatriciaTrie } from '@ethereumjs/mpt';
 import {
   Injectable,
   Logger,
@@ -39,7 +39,7 @@ export class StateLevelDBRepository
 {
   private readonly logger = new Logger(StateLevelDBRepository.name);
   private db: ClassicLevel;
-  private trie: Trie;
+  private trie: MerklePatriciaTrie;
   private currentRoot: Uint8Array;
 
   constructor(private readonly cryptoService: CryptoService) {}
@@ -59,7 +59,7 @@ export class StateLevelDBRepository
       this.logger.log('State LevelDB opened');
 
       // 메모리 Trie 생성 (계정 저장 시 LevelDB에도 직접 저장)
-      this.trie = new Trie();
+      this.trie = await createMPT();
       this.currentRoot = this.trie.root();
 
       this.logger.log(
@@ -251,7 +251,7 @@ export class StateLevelDBRepository
       this.currentRoot = this.cryptoService.hexToBytes(root);
 
       // LevelDB에서 모든 계정을 읽어서 Trie 재구성
-      this.trie = new Trie();
+      this.trie = await createMPT();
 
       for await (const [key, value] of this.db.iterator({
         gte: 'account:',

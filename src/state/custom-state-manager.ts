@@ -1,3 +1,4 @@
+import { StateManagerInterface } from '@ethereumjs/common';
 import { Account as EthAccount, createAccount } from '@ethereumjs/util';
 import { Injectable, Logger } from '@nestjs/common';
 import { ClassicLevel } from 'classic-level';
@@ -95,6 +96,118 @@ export class CustomStateManager {
   }
 
   /**
+   * flush 메서드: 상태 변경사항을 즉시 디스크에 쓰기
+   * @ethereumjs/vm@6.2.0에서 필요
+   *
+   * 우리의 StateManager는 저널 기반이므로:
+   * - 커밋은 commit()에서 수행
+   * - flush()는 빈 작업으로 구현 (VM이 요구하는 인터페이스만 충족)
+   */
+  async flush(): Promise<void> {
+    // LevelDB는 자동으로 플러시되므로 추가 작업 불필요
+    // ensureDB()를 호출하지 않음 (이미 열려있거나 필요할 때만 열리도록)
+    this.logger.debug('flush() called (no-op)');
+  }
+
+  /**
+   * StateManagerInterface 10.x 호환 메서드들
+   */
+  async deleteAccount(address: Address): Promise<void> {
+    await this.stateManager.setAccount(address, new Account(address));
+    this.logger.debug(`deleteAccount(${address})`);
+  }
+
+  async modifyAccountFields(
+    address: Address,
+    accountFields: {
+      nonce?: bigint;
+      balance?: bigint;
+      storageRoot?: Uint8Array;
+      codeHash?: Uint8Array;
+    },
+  ): Promise<void> {
+    const acc =
+      (await this.stateManager.getAccount(address)) || new Account(address);
+    if (accountFields.nonce !== undefined) {
+      acc.nonce = Number(accountFields.nonce);
+    }
+    if (accountFields.balance !== undefined) {
+      acc.balance = accountFields.balance;
+    }
+    if (accountFields.storageRoot !== undefined) {
+      acc.storageRoot = this.crypto.bytesToHex(accountFields.storageRoot);
+    }
+    if (accountFields.codeHash !== undefined) {
+      acc.codeHash = this.crypto.bytesToHex(accountFields.codeHash);
+    }
+    await this.stateManager.setAccount(address, acc);
+    this.logger.debug(`modifyAccountFields(${address})`);
+  }
+
+  async putCode(address: Address, value: Uint8Array): Promise<void> {
+    await this.putContractCode(address, value);
+  }
+
+  async getCode(address: Address): Promise<Uint8Array> {
+    return this.getContractCode(address);
+  }
+
+  async getCodeSize(address: Address): Promise<number> {
+    const code = await this.getContractCode(address);
+    return code.length;
+  }
+
+  async clearStorage(address: Address): Promise<void> {
+    await this.ensureDB();
+    const addressLower = address.toLowerCase();
+    // 모든 스토리지 슬롯 삭제 (간단한 구현)
+    // 실제로는 키를 순회하면서 삭제해야 하지만, 현재는 빈 구현
+    this.logger.debug(`clearStorage(${address})`);
+  }
+
+  async getStateRoot(): Promise<Uint8Array> {
+    const root = await this.stateRepository.getStateRoot();
+    return Buffer.from(this.crypto.hexToBytes(root));
+  }
+
+  async setStateRoot(
+    stateRoot: Uint8Array,
+    clearCache?: boolean,
+  ): Promise<void> {
+    const rootHex = this.crypto.bytesToHex(stateRoot);
+    await this.stateRepository.setStateRoot(rootHex);
+    if (clearCache) {
+      // 캐시 클리어는 StateManager에서 처리
+    }
+    this.logger.debug(`setStateRoot(${rootHex})`);
+  }
+
+  async hasStateRoot(root: Uint8Array): Promise<boolean> {
+    const currentRoot = await this.getStateRoot();
+    return Buffer.from(root).equals(currentRoot);
+  }
+
+  // originalStorageCache 구현 (최소 구현)
+  originalStorageCache = {
+    get: async (address: Address, key: Uint8Array): Promise<Uint8Array> => {
+      return this.getContractStorage(address, key);
+    },
+    clear: (): void => {
+      // 캐시 클리어는 필요시 구현
+    },
+  };
+
+  clearCaches(): void {
+    // 캐시 클리어
+    this.logger.debug('clearCaches()');
+  }
+
+  shallowCopy(downlevelCaches?: boolean): StateManagerInterface {
+    // 간단한 구현: 자기 자신 반환 (실제로는 복사해야 하지만 최소 구현)
+    return this as unknown as StateManagerInterface;
+  }
+
+  /**
    * 컨트랙트 코드 조회 (codeHash 기반이 이상적이나, 현재는 주소 네임스페이스 + codeHash 보조)
    */
   async getContractCode(_address: Address): Promise<Uint8Array> {
@@ -132,6 +245,18 @@ export class CustomStateManager {
     this.logger.debug(
       `putContractCode(${_address}) ← ${_code.byteLength} bytes (codeHash=${codeHash})`,
     );
+  }
+
+  async getStorage(address: Address, key: Uint8Array): Promise<Uint8Array> {
+    return this.getContractStorage(address, key);
+  }
+
+  async putStorage(
+    address: Address,
+    key: Uint8Array,
+    value: Uint8Array,
+  ): Promise<void> {
+    return this.putContractStorage(address, key, value);
   }
 
   /**

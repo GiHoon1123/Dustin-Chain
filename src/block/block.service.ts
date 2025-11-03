@@ -1,7 +1,13 @@
-import { Trie } from '@ethereumjs/trie';
-import type { TxData } from '@ethereumjs/tx';
-import { TransactionFactory } from '@ethereumjs/tx';
-import { VM } from '@ethereumjs/vm';
+import {
+  Common,
+  createCustomCommon,
+  Hardfork,
+  Mainnet,
+  StateManagerInterface,
+} from '@ethereumjs/common';
+import { createMPT } from '@ethereumjs/mpt';
+import { createTxFromRLP } from '@ethereumjs/tx';
+import { createVM, VM } from '@ethereumjs/vm';
 // NOTE: @ethereumjs/tx v10에는 TransactionFactory가 없어 임시로 미사용 처리
 import {
   Inject,
@@ -12,7 +18,7 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 import { AccountService } from '../account/account.service';
-import { EMPTY_ROOT } from '../common/constants/blockchain.constants';
+import { CHAIN_ID, EMPTY_ROOT } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address, Hash } from '../common/types/common.types';
 import { CustomStateManager } from '../state/custom-state-manager';
@@ -74,6 +80,9 @@ export class BlockService implements OnApplicationBootstrap {
   // EVM 실행 엔진 인스턴스 (초기 통합)
   private vm: VM | null = null;
 
+  // Common 객체 (체인 파라미터)
+  private readonly common: Common;
+
   /**
    * Genesis Proposer
    *
@@ -92,7 +101,18 @@ export class BlockService implements OnApplicationBootstrap {
     private readonly txPool: TransactionPool,
     private readonly stateManager: StateManager,
     private readonly evmState: CustomStateManager,
-  ) {}
+  ) {
+    // Common 객체 초기화 (체인 파라미터)
+    this.common = createCustomCommon(
+      {
+        chainId: CHAIN_ID,
+      },
+      Mainnet,
+      {
+        hardfork: Hardfork.London,
+      },
+    );
+  }
 
   /**
    * 애플리케이션 부트스트랩
@@ -110,14 +130,18 @@ export class BlockService implements OnApplicationBootstrap {
     // State 복원
     await this.restoreState();
 
-    // VM 초기화 (기본 설정). 추후 common(체인/하드포크) 및 CustomStateManager 연동 예정
+    // VM 초기화 (VM 10.x: createVM 사용)
     try {
-      // VM은 v6 계열: VM.create(opts)로 생성 (constructor는 protected)
+      // VM 10.x: createVM으로 생성 (async 초기화)
       // State 접근은 CustomStateManager를 주입
-      const vmOpts = { stateManager: this.evmState } as unknown;
-      const VMCreate = VM as unknown as { create: (o: unknown) => Promise<VM> };
-      this.vm = await VMCreate.create(vmOpts);
-      this.logger.log('VM initialized for execution');
+      // 타입 호환성을 위해 단언 사용 (Address 타입이 다름)
+      this.vm = await createVM({
+        stateManager: this.evmState as unknown as StateManagerInterface,
+        common: this.common,
+      });
+      this.logger.log(
+        `VM initialized for execution (chainId=${this.common.chainId()})`,
+      );
     } catch (e: unknown) {
       this.logger.error(`Failed to initialize VM: ${String(e)}`);
       // VM 없이도 기존 경로로 동작하도록 계속 진행
@@ -459,6 +483,29 @@ export class BlockService implements OnApplicationBootstrap {
   }
 
   /**
+   * BigInt를 RLP 버퍼로 변환 (빅엔디안 바이트 배열)
+   */
+  private toRlpBuffer(value: bigint): Buffer {
+    if (value === 0n) {
+      return Buffer.alloc(0);
+    }
+    const hex = value.toString(16);
+    const hexPadded = hex.length % 2 === 0 ? hex : '0' + hex;
+    return Buffer.from(hexPadded, 'hex');
+  }
+
+  /**
+   * RLP 버퍼에서 BigInt 추출 (빅엔디안 바이트 배열)
+   */
+  private fromRlpBuffer(buffer: Buffer | Uint8Array): bigint {
+    if (!buffer || buffer.length === 0) {
+      return 0n;
+    }
+    const hex = Buffer.from(buffer).toString('hex');
+    return hex ? BigInt('0x' + hex) : 0n;
+  }
+
+  /**
    * 트랜잭션 실행
    *
    * 이더리움:
@@ -487,23 +534,116 @@ export class BlockService implements OnApplicationBootstrap {
           : (tx.data as unknown as Uint8Array);
       const dataBuffer = Buffer.from(dataBytes ?? new Uint8Array());
 
-      // runTx에 투입할 서명된 트랜잭션 데이터 (Legacy/EIP-1559 등 팩토리가 판단)
-      const txData: TxData = {
-        nonce: BigInt(tx.nonce),
-        gasPrice: tx.gasPrice,
-        gasLimit: tx.gasLimit,
-        to: toBuffer,
-        value: tx.value,
-        data: dataBuffer,
-        v: BigInt(tx.v),
-        r: Buffer.from(this.cryptoService.hexToBytes(tx.r)),
-        s: Buffer.from(this.cryptoService.hexToBytes(tx.s)),
+      // 트랜잭션을 RLP로 직렬화해서 원본 서명을 유지
+      // 이더리움 Legacy 트랜잭션 RLP 형식: [nonce, gasPrice, gasLimit, to, value, data, v, r, s]
+      const gasPrice =
+        typeof tx.gasPrice === 'bigint' ? tx.gasPrice : BigInt(tx.gasPrice);
+      const gasLimit =
+        typeof tx.gasLimit === 'bigint' ? tx.gasLimit : BigInt(tx.gasLimit);
+      const value = typeof tx.value === 'bigint' ? tx.value : BigInt(tx.value);
+
+      // RLP 배열 구성 (Buffer 배열)
+      // 이더리움 Legacy 트랜잭션 RLP 형식: [nonce, gasPrice, gasLimit, to, value, data, v, r, s]
+      const rlpArray = [
+        this.toRlpBuffer(BigInt(tx.nonce)), // nonce
+        this.toRlpBuffer(gasPrice), // gasPrice
+        this.toRlpBuffer(gasLimit), // gasLimit
+        toBuffer || Buffer.alloc(0), // to (null이면 빈 버퍼)
+        this.toRlpBuffer(value), // value
+        dataBuffer, // data
+        this.toRlpBuffer(BigInt(tx.v)), // v
+        Buffer.from(this.cryptoService.hexToBytes(tx.r)), // r
+        Buffer.from(this.cryptoService.hexToBytes(tx.s)), // s
+      ];
+
+      // RLP 인코딩
+      const rlpEncoded = this.cryptoService.rlpEncode(rlpArray);
+
+      // 트랜잭션의 v 값에서 chainId 추출 (EIP-155)
+      let txChainId: number;
+      if (tx.v >= 35) {
+        txChainId = Math.floor((Number(tx.v) - 35) / 2);
+        if (
+          txChainId > 0 &&
+          (txChainId * 2 + 35 === Number(tx.v) ||
+            txChainId * 2 + 36 === Number(tx.v))
+        ) {
+          this.logger.debug(
+            `[VM] Extracted chainId from tx.v=${tx.v}: ${txChainId}`,
+          );
+        } else {
+          txChainId = CHAIN_ID;
+        }
+      } else {
+        txChainId = CHAIN_ID;
+      }
+
+      // Common 객체 생성
+      const txCommon =
+        txChainId === Number(this.common.chainId())
+          ? this.common
+          : createCustomCommon(
+              {
+                chainId: txChainId,
+              },
+              Mainnet,
+              {
+                hardfork: Hardfork.London,
+              },
+            );
+
+      // RLP로 인코딩된 트랜잭션을 createTxFromRLP로 파싱
+      const rlpBuffer = Buffer.from(rlpEncoded);
+      const ethTx = createTxFromRLP(rlpBuffer, { common: txCommon });
+
+      // 트랜잭션에서 발신자 주소 추출 및 검증
+      const ethTxWithSender = ethTx as unknown as {
+        getSenderAddress?: () => Address | Buffer | Uint8Array;
+        hash?: () => Buffer | Uint8Array;
       };
-      // 일부 버전 조합에서 팩토리 타입이 엄격해지는 경우가 있어 안전한 래퍼로 호출
-      const txFactory = TransactionFactory as unknown as {
-        fromTxData: (d: unknown) => unknown;
-      };
-      const ethTx = txFactory.fromTxData(txData);
+
+      if (ethTxWithSender.getSenderAddress) {
+        try {
+          const senderResult = ethTxWithSender.getSenderAddress();
+          let senderAddress: string;
+          if (typeof senderResult === 'string') {
+            senderAddress = senderResult;
+          } else {
+            senderAddress = this.cryptoService.bytesToHex(
+              Buffer.from(senderResult),
+            );
+          }
+          this.logger.debug(
+            `[VM] Transaction sender extracted: ${senderAddress} (expected: ${tx.from})`,
+          );
+
+          if (senderAddress.toLowerCase() !== tx.from.toLowerCase()) {
+            this.logger.warn(
+              `[VM] Sender address mismatch! Expected ${tx.from}, got ${senderAddress}`,
+            );
+          }
+        } catch (senderError: unknown) {
+          this.logger.warn(
+            `[VM] Failed to extract sender address: ${String(senderError)}`,
+          );
+        }
+      }
+
+      if (ethTxWithSender.hash) {
+        try {
+          const txHashResult = ethTxWithSender.hash();
+          const txHash = this.cryptoService.bytesToHex(
+            Buffer.from(txHashResult),
+          );
+          this.logger.debug(
+            `[VM] Transaction hash from VM: ${txHash} (expected: ${tx.hash})`,
+          );
+        } catch (hashError: unknown) {
+          this.logger.warn(
+            `[VM] Failed to get transaction hash: ${String(hashError)}`,
+          );
+        }
+      }
 
       // runTx 타입 최소 정의 (필요한 필드만)
       type RunTxExecResult = {
@@ -520,9 +660,30 @@ export class BlockService implements OnApplicationBootstrap {
       const vmRunner = this.vm as unknown as {
         runTx: (o: { tx: unknown }) => Promise<RunTxResult>;
       };
-      const result = await vmRunner.runTx({ tx: ethTx });
+
+      let result: RunTxResult;
+      try {
+        result = await vmRunner.runTx({ tx: ethTx });
+      } catch (vmError: unknown) {
+        const errorMsg =
+          vmError instanceof Error ? vmError.message : String(vmError);
+        this.logger.error(
+          `[VM] runTx failed for ${tx.hash}: ${errorMsg}`,
+          vmError instanceof Error ? vmError.stack : undefined,
+        );
+        throw vmError;
+      }
 
       const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+
+      // 실패 시 에러 메시지 로깅
+      if (result.execResult.exceptionError) {
+        const errorInfo = result.execResult.exceptionError;
+        this.logger.error(
+          `[VM] Transaction failed: ${tx.hash} - Error: ${errorInfo.error || 'Unknown error'}`,
+        );
+      }
+
       const gasUsed: bigint =
         result.gasUsed ?? result.execResult.gasUsed ?? BigInt(21000);
       const created = result.createdAddress;
@@ -698,7 +859,7 @@ export class BlockService implements OnApplicationBootstrap {
     }
 
     // 2. 새 Trie 인스턴스 생성
-    const trie = new Trie();
+    const trie = await createMPT();
 
     // 3. 각 트랜잭션을 Trie에 삽입
     for (let i = 0; i < transactions.length; i++) {
@@ -753,7 +914,7 @@ export class BlockService implements OnApplicationBootstrap {
     }
 
     // 2. 새 Trie 인스턴스 생성
-    const trie = new Trie();
+    const trie = await createMPT();
 
     // 3. 각 Receipt를 Trie에 삽입
     for (let i = 0; i < receipts.length; i++) {
