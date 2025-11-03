@@ -46,12 +46,12 @@ export class TransactionBotService {
   async onApplicationBootstrap() {
     this.loadAccounts();
     this.isRunning = true;
-    this.logger.log(
-      `🤖 TransactionBot started (${this.accounts.length} accounts active)`,
-    );
-    this.logger.log(
-      `📊 Target: 0.4-0.5 tx/sec, ~24-30 tx/block (60s), ~1,440-1,800 tx/hour`,
-    );
+    // this.logger.log(
+    //   `🤖 TransactionBot started (${this.accounts.length} accounts active)`,
+    // );
+    // this.logger.log(
+    //   `📊 Target: 0.4-0.5 tx/sec, ~24-30 tx/block (60s), ~1,440-1,800 tx/hour`,
+    // );
   }
 
   /**
@@ -73,7 +73,7 @@ export class TransactionBotService {
         (acc) => acc.index >= this.MIN_INDEX && acc.index <= this.MAX_INDEX,
       );
 
-      this.logger.log(`Loaded ${this.accounts.length} bot accounts`);
+      // this.logger.log(`Loaded ${this.accounts.length} bot accounts`);
     } catch (error: any) {
       this.logger.error(`Failed to load accounts: ${error.message}`);
     }
@@ -131,9 +131,9 @@ export class TransactionBotService {
       // 2. 잔액 체크
       const balance = await this.accountService.getBalance(fromAccount.address);
       if (balance < this.MIN_BALANCE) {
-        this.logger.debug(
-          `Account ${fromAccount.address.slice(0, 10)}... has insufficient balance (${this.formatDSTN(balance)} DSTN)`,
-        );
+        // this.logger.debug(
+        //   `Account ${fromAccount.address.slice(0, 10)}... has insufficient balance (${this.formatDSTN(balance)} DSTN)`,
+        // );
         return;
       }
 
@@ -150,9 +150,9 @@ export class TransactionBotService {
       const totalCost = amount + gasPrice * gasLimit;
 
       if (balance < totalCost + this.MIN_BALANCE) {
-        this.logger.debug(
-          `Account ${fromAccount.address.slice(0, 10)}... cannot afford tx (needs ${this.formatDSTN(totalCost)} + 1 DSTN reserve)`,
-        );
+        // this.logger.debug(
+        //   `Account ${fromAccount.address.slice(0, 10)}... cannot afford tx (needs ${this.formatDSTN(totalCost)} + 1 DSTN reserve)`,
+        // );
         return;
       }
 
@@ -194,12 +194,12 @@ export class TransactionBotService {
         },
       );
 
-      this.logger.debug(
-        `✅ Bot TX: ${fromAccount.address.slice(0, 8)}...→${toAccount.address.slice(0, 8)}... (${this.formatDSTN(amount)} DSTN)`,
-      );
+      // this.logger.debug(
+      //   `✅ Bot TX: ${fromAccount.address.slice(0, 8)}...→${toAccount.address.slice(0, 8)}... (${this.formatDSTN(amount)} DSTN)`,
+      // );
     } catch (error: any) {
       // 에러는 조용히 무시 (Nonce 충돌 등)
-      this.logger.debug(`Bot TX failed: ${error.message}`);
+      // this.logger.debug(`Bot TX failed: ${error.message}`);
     }
   }
 
@@ -255,7 +255,7 @@ export class TransactionBotService {
    */
   stop() {
     this.isRunning = false;
-    this.logger.log('🛑 TransactionBot stopped');
+    // this.logger.log('🛑 TransactionBot stopped');
   }
 
   /**
@@ -263,6 +263,6 @@ export class TransactionBotService {
    */
   start() {
     this.isRunning = true;
-    this.logger.log('🚀 TransactionBot restarted');
+    // this.logger.log('🚀 TransactionBot restarted');
   }
 }

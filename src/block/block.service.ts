@@ -124,7 +124,7 @@ export class BlockService implements OnApplicationBootstrap {
    * 이 시점에는 모든 LevelDB가 이미 열린 상태 보장
    */
   async onApplicationBootstrap(): Promise<void> {
-    this.logger.log('Checking Genesis Block...');
+    // this.logger.log('Checking Genesis Block...');
     await this.createGenesisBlock();
 
     // State 복원
@@ -172,7 +172,7 @@ export class BlockService implements OnApplicationBootstrap {
         }
         return new util.Address(addr);
       }.bind(this.vm.evm);
-      this.logger.debug('[VM] _generateAddress 패치 적용 완료');
+      // this.logger.debug('[VM] _generateAddress 패치 적용 완료');
       this.logger.log(
         `VM initialized for execution (chainId=${this.common.chainId()})`,
       );
@@ -200,18 +200,18 @@ export class BlockService implements OnApplicationBootstrap {
       const latestBlock = await this.repository.findLatest();
 
       if (!latestBlock) {
-        this.logger.log(
-          'No blocks found - State will be initialized from Genesis',
-        );
+        // this.logger.log(
+        //   'No blocks found - State will be initialized from Genesis',
+        // );
         return;
       }
 
       // 최신 블록의 stateRoot로 State Trie 연결
       await this.stateRepository.setStateRoot(latestBlock.stateRoot);
 
-      this.logger.log(
-        `State restored from block #${latestBlock.number} (stateRoot: ${latestBlock.stateRoot})`,
-      );
+      // this.logger.log(
+      //   `State restored from block #${latestBlock.number} (stateRoot: ${latestBlock.stateRoot})`,
+      // );
     } catch (error: unknown) {
       this.logger.error('Failed to restore state:', error);
       throw error;
@@ -229,11 +229,11 @@ export class BlockService implements OnApplicationBootstrap {
   async createGenesisBlock(): Promise<Block> {
     const existing = await this.repository.findByNumber(0);
     if (existing) {
-      this.logger.log('Genesis Block already exists');
+      // this.logger.log('Genesis Block already exists');
       return existing;
     }
 
-    this.logger.log('Creating Genesis Block...');
+    // this.logger.log('Creating Genesis Block...');
 
     // genesis.json 로드
     const genesis = this.loadGenesisConfig();
@@ -247,9 +247,9 @@ export class BlockService implements OnApplicationBootstrap {
     // 첫 번째 계정을 Genesis Proposer로 설정
     this.GENESIS_PROPOSER = addresses[0];
 
-    this.logger.log(
-      `Initialized ${addresses.length} genesis accounts from genesis.json`,
-    );
+    // this.logger.log(
+    //   `Initialized ${addresses.length} genesis accounts from genesis.json`,
+    // );
 
     const timestamp = Date.now();
     const parentHash = '0x' + '0'.repeat(64);
@@ -282,7 +282,7 @@ export class BlockService implements OnApplicationBootstrap {
 
     // ✅ 저널의 Genesis 계정들을 LevelDB에 커밋
     await this.stateManager.commitBlock();
-    this.logger.log('Genesis accounts committed to LevelDB');
+    // this.logger.log('Genesis accounts committed to LevelDB');
 
     // 블록 저장
     await this.repository.save(genesisBlock);
@@ -347,9 +347,9 @@ export class BlockService implements OnApplicationBootstrap {
     // 2. Mempool에서 pending 트랜잭션 가져오기
     const pendingTxs = this.txPool.getPending();
 
-    this.logger.log(
-      `Creating Block #${blockNumber} with ${pendingTxs.length} transactions`,
-    );
+    // this.logger.log(
+    //   `Creating Block #${blockNumber} with ${pendingTxs.length} transactions`,
+    // );
 
     // 3. 트랜잭션 실행 및 Receipt 생성
     const executedTxs: Transaction[] = [];
@@ -373,7 +373,7 @@ export class BlockService implements OnApplicationBootstrap {
           logs = exec.logs;
           logsBloom = exec.logsBloom;
         }
-        this.logger.debug(`Transaction executed: ${tx.hash}`);
+        // this.logger.debug(`Transaction executed: ${tx.hash}`);
       } catch (error: unknown) {
         // 트랜잭션 실행 실패 (잔액 부족, nonce 불일치 등)
         // 이더리움 표준: 실패해도 블록에 포함하고 Gas는 차감
@@ -479,9 +479,9 @@ export class BlockService implements OnApplicationBootstrap {
     // 12. 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
     // 블록 객체만 반환
 
-    this.logger.log(
-      `Block #${blockNumber} created (not saved yet): ${hash} (${executedTxs.length} txs, ${receipts.length} receipts)`,
-    );
+    // this.logger.log(
+    //   `Block #${blockNumber} created (not saved yet): ${hash} (${executedTxs.length} txs, ${receipts.length} receipts)`,
+    // );
 
     return block;
   }
@@ -508,9 +508,9 @@ export class BlockService implements OnApplicationBootstrap {
           await repoWithReceipts.saveReceipt(receipt);
         }
       }
-      this.logger.debug(
-        `${receipts.length} receipts saved for block #${block.number}`,
-      );
+      // this.logger.debug(
+      //   `${receipts.length} receipts saved for block #${block.number}`,
+      // );
     }
 
     this.logger.log(`Block #${block.number} saved: ${block.hash}`);
@@ -602,9 +602,9 @@ export class BlockService implements OnApplicationBootstrap {
           (txChainId * 2 + 35 === Number(tx.v) ||
             txChainId * 2 + 36 === Number(tx.v))
         ) {
-          this.logger.debug(
-            `[VM] Extracted chainId from tx.v=${tx.v}: ${txChainId}`,
-          );
+          // this.logger.debug(
+          //   `[VM] Extracted chainId from tx.v=${tx.v}: ${txChainId}`,
+          // );
         } else {
           txChainId = CHAIN_ID;
         }
@@ -660,9 +660,9 @@ export class BlockService implements OnApplicationBootstrap {
               Buffer.from(senderResult as unknown as Uint8Array),
             );
           }
-          this.logger.debug(
-            `[VM] Transaction sender extracted: ${senderAddress} (expected: ${tx.from})`,
-          );
+          // this.logger.debug(
+          //   `[VM] Transaction sender extracted: ${senderAddress} (expected: ${tx.from})`,
+          // );
 
           if (senderAddress.toLowerCase() !== tx.from.toLowerCase()) {
             this.logger.warn(
@@ -682,9 +682,9 @@ export class BlockService implements OnApplicationBootstrap {
           const txHash = this.cryptoService.bytesToHex(
             Buffer.from(txHashResult),
           );
-          this.logger.debug(
-            `[VM] Transaction hash from VM: ${txHash} (expected: ${tx.hash})`,
-          );
+          // this.logger.debug(
+          //   `[VM] Transaction hash from VM: ${txHash} (expected: ${tx.hash})`,
+          // );
         } catch (hashError: unknown) {
           this.logger.warn(
             `[VM] Failed to get transaction hash: ${String(hashError)}`,
@@ -713,9 +713,9 @@ export class BlockService implements OnApplicationBootstrap {
       // 컨트랙트 배포(tx.to === null)인 경우 항상 새 객체 생성
       let txForVM = ethTx;
       if (tx.to === null) {
-        this.logger.debug(
-          '[VM] 컨트랙트 배포 트랜잭션 감지 → createLegacyTx로 새 객체 생성 (to=undefined)',
-        );
+        // this.logger.debug(
+        //   '[VM] 컨트랙트 배포 트랜잭션 감지 → createLegacyTx로 새 객체 생성 (to=undefined)',
+        // );
         // createLegacyTx로 새로운 트랜잭션 객체 생성
         // ethTx에서 필드 추출 (원본 트랜잭션의 서명 값 사용)
         const ethTxTyped = ethTx as unknown as {
@@ -750,9 +750,9 @@ export class BlockService implements OnApplicationBootstrap {
               : Buffer.from(this.cryptoService.hexToBytes(tx.data || '0x'));
 
         // createLegacyTx에 전달할 필드 값 확인 및 로깅
-        this.logger.debug(
-          `[VM] createLegacyTx 필드 값: nonce=${ethTxTyped.nonce}, gasPrice=${ethTxTyped.gasPrice}, gasLimit=${ethTxTyped.gasLimit}, value=${ethTxTyped.value}, v=${ethTxTyped.v}, r.length=${rBuffer.length}, s.length=${sBuffer.length}, data.length=${dataBuffer.length}`,
-        );
+        // this.logger.debug(
+        //   `[VM] createLegacyTx 필드 값: nonce=${ethTxTyped.nonce}, gasPrice=${ethTxTyped.gasPrice}, gasLimit=${ethTxTyped.gasLimit}, value=${ethTxTyped.value}, v=${ethTxTyped.v}, r.length=${rBuffer.length}, s.length=${sBuffer.length}, data.length=${dataBuffer.length}`,
+        // );
 
         txForVM = createLegacyTx(
           {
@@ -768,9 +768,9 @@ export class BlockService implements OnApplicationBootstrap {
           },
           { common: txCommon },
         );
-        this.logger.debug(
-          `[VM] 새 트랜잭션 객체 생성 완료: to=${(txForVM as unknown as { to?: unknown }).to === undefined ? 'undefined' : '설정됨'}`,
-        );
+        // this.logger.debug(
+        //   `[VM] 새 트랜잭션 객체 생성 완료: to=${(txForVM as unknown as { to?: unknown }).to === undefined ? 'undefined' : '설정됨'}`,
+        // );
       }
 
       // VM 10.x: runTx는 독립 함수로 변경됨
@@ -790,18 +790,18 @@ export class BlockService implements OnApplicationBootstrap {
         hash?: () => unknown;
         getSenderAddress?: () => unknown;
       };
-      this.logger.debug(
-        `[VM] runTx 호출 전 최종 트랜잭션 상태:` +
-          `\n  nonce=${txForVMTyped.nonce}, typeof=${typeof txForVMTyped.nonce}` +
-          `\n  gasPrice=${txForVMTyped.gasPrice}, typeof=${typeof txForVMTyped.gasPrice}` +
-          `\n  gasLimit=${txForVMTyped.gasLimit}, typeof=${typeof txForVMTyped.gasLimit}` +
-          `\n  to=${txForVMTyped.to}, typeof=${typeof txForVMTyped.to}, isUndefined=${txForVMTyped.to === undefined}` +
-          `\n  value=${txForVMTyped.value}, typeof=${typeof txForVMTyped.value}` +
-          `\n  v=${txForVMTyped.v}, typeof=${typeof txForVMTyped.v}` +
-          `\n  r=${txForVMTyped.r instanceof Buffer ? `Buffer(${txForVMTyped.r.length})` : txForVMTyped.r instanceof Uint8Array ? `Uint8Array(${txForVMTyped.r.length})` : typeof txForVMTyped.r}` +
-          `\n  s=${txForVMTyped.s instanceof Buffer ? `Buffer(${txForVMTyped.s.length})` : txForVMTyped.s instanceof Uint8Array ? `Uint8Array(${txForVMTyped.s.length})` : typeof txForVMTyped.s}` +
-          `\n  data=${txForVMTyped.data instanceof Buffer ? `Buffer(${txForVMTyped.data.length})` : txForVMTyped.data instanceof Uint8Array ? `Uint8Array(${txForVMTyped.data.length})` : typeof txForVMTyped.data}`,
-      );
+      // this.logger.debug(
+      //   `[VM] runTx 호출 전 최종 트랜잭션 상태:` +
+      //     `\n  nonce=${txForVMTyped.nonce}, typeof=${typeof txForVMTyped.nonce}` +
+      //     `\n  gasPrice=${txForVMTyped.gasPrice}, typeof=${typeof txForVMTyped.gasPrice}` +
+      //     `\n  gasLimit=${txForVMTyped.gasLimit}, typeof=${typeof txForVMTyped.gasLimit}` +
+      //     `\n  to=${txForVMTyped.to}, typeof=${typeof txForVMTyped.to}, isUndefined=${txForVMTyped.to === undefined}` +
+      //     `\n  value=${txForVMTyped.value}, typeof=${typeof txForVMTyped.value}` +
+      //     `\n  v=${txForVMTyped.v}, typeof=${typeof txForVMTyped.v}` +
+      //     `\n  r=${txForVMTyped.r instanceof Buffer ? `Buffer(${txForVMTyped.r.length})` : txForVMTyped.r instanceof Uint8Array ? `Uint8Array(${txForVMTyped.r.length})` : typeof txForVMTyped.r}` +
+      //     `\n  s=${txForVMTyped.s instanceof Buffer ? `Buffer(${txForVMTyped.s.length})` : txForVMTyped.s instanceof Uint8Array ? `Uint8Array(${txForVMTyped.s.length})` : typeof txForVMTyped.s}` +
+      //     `\n  data=${txForVMTyped.data instanceof Buffer ? `Buffer(${txForVMTyped.data.length})` : txForVMTyped.data instanceof Uint8Array ? `Uint8Array(${txForVMTyped.data.length})` : typeof txForVMTyped.data}`,
+      // );
 
       let result;
       try {
@@ -893,9 +893,9 @@ export class BlockService implements OnApplicationBootstrap {
             `[VM] Contract address has unexpected length: ${contractAddress.length}, address: ${contractAddress}`,
           );
         }
-        this.logger.debug(
-          `[VM] Contract address extracted: ${contractAddress}`,
-        );
+        // this.logger.debug(
+        //   `[VM] Contract address extracted: ${contractAddress}`,
+        // );
       }
 
       // EVM 로그를 Receipt.Log 형태로 변환
@@ -922,9 +922,9 @@ export class BlockService implements OnApplicationBootstrap {
     }
     await this.accountService.transfer(tx.from, tx.to, tx.value);
     await this.accountService.incrementNonce(tx.from);
-    this.logger.debug(
-      `Transaction executed: ${tx.from} -> ${tx.to} (${tx.value} Wei)`,
-    );
+    // this.logger.debug(
+    //   `Transaction executed: ${tx.from} -> ${tx.to} (${tx.value} Wei)`,
+    // );
   }
 
   /**

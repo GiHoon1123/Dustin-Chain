@@ -38,12 +38,12 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     // IStateRepository가 이미 초기화됨 (Global Module)
-    this.logger.log('StateManager initialized');
+    // this.logger.log('StateManager initialized');
   }
 
   async onModuleDestroy(): Promise<void> {
     // IStateRepository는 StorageModule에서 관리
-    this.logger.log('StateManager closed');
+    // this.logger.log('StateManager closed');
   }
 
   /**
@@ -82,7 +82,7 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
    */
   async setAccount(address: Address, account: Account): Promise<void> {
     this.journal.set(address, account);
-    this.logger.debug(`Account ${address} added to journal`);
+    // this.logger.debug(`Account ${address} added to journal`);
   }
 
   /**
@@ -90,7 +90,7 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
    */
   async deleteAccount(address: Address): Promise<void> {
     this.journal.set(address, null as any);
-    this.logger.debug(`Account ${address} marked for deletion in journal`);
+    // this.logger.debug(`Account ${address} marked for deletion in journal`);
   }
 
   /**
@@ -98,7 +98,7 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
    */
   async startBlock(): Promise<void> {
     this.journal.clear();
-    this.logger.debug('Block started - journal cleared');
+    // this.logger.debug('Block started - journal cleared');
   }
 
   /**
@@ -110,17 +110,17 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
         // 계정 삭제는 현재 지원하지 않음 (이더리움도 마찬가지)
         // 잔액 0인 계정도 State Trie에 남음
         this.cache.delete(address);
-        this.logger.debug(`Account ${address} marked for deletion (skipped)`);
+        // this.logger.debug(`Account ${address} marked for deletion (skipped)`);
       } else {
         // 계정 저장 - State Trie에 저장
         await this.stateRepository.saveAccount(account);
         this.addToCache(address, account);
-        this.logger.debug(`Account ${address} committed to StateRepository`);
+        // this.logger.debug(`Account ${address} committed to StateRepository`);
       }
     }
 
     this.journal.clear();
-    this.logger.log('Block committed - journal cleared');
+    // this.logger.log('Block committed - journal cleared');
   }
 
   /**
@@ -128,7 +128,7 @@ export class StateManager implements OnModuleInit, OnModuleDestroy {
    */
   async rollbackBlock(): Promise<void> {
     this.journal.clear();
-    this.logger.log('Block rolled back - journal cleared');
+    // this.logger.log('Block rolled back - journal cleared');
   }
 
   /**

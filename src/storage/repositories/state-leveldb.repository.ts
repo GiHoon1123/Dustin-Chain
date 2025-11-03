@@ -56,15 +56,15 @@ export class StateLevelDBRepository
     try {
       this.db = new ClassicLevel('data/state');
       await this.db.open();
-      this.logger.log('State LevelDB opened');
+      // this.logger.log('State LevelDB opened');
 
       // 메모리 Trie 생성 (계정 저장 시 LevelDB에도 직접 저장)
       this.trie = await createMPT();
       this.currentRoot = this.trie.root();
 
-      this.logger.log(
-        `State Trie initialized with root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
-      );
+      // this.logger.log(
+      //   `State Trie initialized with root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
+      // );
     } catch (error: any) {
       this.logger.error('Failed to initialize State LevelDB:', error);
       throw error;
@@ -140,9 +140,9 @@ export class StateLevelDBRepository
         account.storageRoot = storageRoot;
         account.codeHash = codeHash;
 
-        this.logger.debug(
-          `Account retrieved: ${address} (nonce: ${nonce}, balance: ${balance})`,
-        );
+        // this.logger.debug(
+        //   `Account retrieved: ${address} (nonce: ${nonce}, balance: ${balance})`,
+        // );
 
         return account;
       } catch (error: any) {
@@ -200,12 +200,12 @@ export class StateLevelDBRepository
       // State Root 자동 업데이트
       this.currentRoot = this.trie.root();
 
-      this.logger.debug(
-        `Account saved: ${account.address} (nonce: ${account.nonce}, balance: ${account.balance})`,
-      );
-      this.logger.debug(
-        `New State Root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
-      );
+      // this.logger.debug(
+      //   `Account saved: ${account.address} (nonce: ${account.nonce}, balance: ${account.balance})`,
+      // );
+      // this.logger.debug(
+      //   `New State Root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
+      // );
     } catch (error: any) {
       this.logger.error(`Failed to save account ${account.address}:`, error);
       throw error;
@@ -267,9 +267,9 @@ export class StateLevelDBRepository
 
       this.currentRoot = this.trie.root();
 
-      this.logger.log(
-        `State Root restored to: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
-      );
+      // this.logger.log(
+      //   `State Root restored to: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
+      // );
     } catch (error: any) {
       this.logger.error(`Failed to set State Root to ${root}:`, error);
       throw error;
@@ -283,7 +283,7 @@ export class StateLevelDBRepository
     try {
       if (this.db && this.db.status === 'open') {
         await this.db.close();
-        this.logger.log('State LevelDB closed');
+        // this.logger.log('State LevelDB closed');
       }
     } catch (error: any) {
       this.logger.error('Failed to close State LevelDB:', error);

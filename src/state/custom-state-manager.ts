@@ -40,7 +40,7 @@ export class CustomStateManager {
         const db = new ClassicLevel<string, string>('data/contracts', opts);
         await db.open();
         this.kv = db;
-        this.logger.log('CustomStateManager KV opened (data/state)');
+        // this.logger.log('CustomStateManager KV opened (data/state)');
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         this.logger.error(`Failed to open KV database: ${errorMsg}`);
@@ -82,11 +82,11 @@ export class CustomStateManager {
    */
   async getAccount(address: Address | Uint8Array): Promise<EthAccount> {
     const normalizedAddr = this.normalizeAddress(address);
-    this.logger.debug(`getAccount(${normalizedAddr})`);
+    // this.logger.debug(`getAccount(${normalizedAddr})`);
     const our = await this.stateManager.getAccount(normalizedAddr);
     if (!our) {
       // 존재하지 않는 계정은 nonce=0, balance=0, 빈 storage/code로 반환
-      this.logger.debug(`getAccount(${address}) → not found, returning empty`);
+      // this.logger.debug(`getAccount(${address}) → not found, returning empty`);
       return createAccount({
         nonce: 0n,
         balance: 0n,
@@ -94,9 +94,9 @@ export class CustomStateManager {
         codeHash: this.crypto.hexToBytes(EMPTY_HASH),
       });
     }
-    this.logger.debug(
-      `getAccount(${address}) → nonce=${our.nonce}, balance=${our.balance}`,
-    );
+    // this.logger.debug(
+    //   `getAccount(${address}) → nonce=${our.nonce}, balance=${our.balance}`,
+    // );
     return this.toEthAccount(our);
   }
 
@@ -111,9 +111,9 @@ export class CustomStateManager {
     const normalizedAddr = this.normalizeAddress(address);
     const our = this.toOurAccount(normalizedAddr, eth);
     await this.stateManager.setAccount(normalizedAddr, our);
-    this.logger.debug(
-      `putAccount(${address}) nonce=${our.nonce}, balance=${our.balance}`,
-    );
+    // this.logger.debug(
+    //   `putAccount(${address}) nonce=${our.nonce}, balance=${our.balance}`,
+    // );
   }
 
   /**
@@ -121,17 +121,17 @@ export class CustomStateManager {
    */
   async checkpoint(): Promise<void> {
     await this.stateManager.startBlock();
-    this.logger.debug('checkpoint()');
+    // this.logger.debug('checkpoint()');
   }
 
   async commit(): Promise<void> {
     await this.stateManager.commitBlock();
-    this.logger.debug('commit()');
+    // this.logger.debug('commit()');
   }
 
   async revert(): Promise<void> {
     await this.stateManager.rollbackBlock();
-    this.logger.debug('revert()');
+    // this.logger.debug('revert()');
   }
 
   /**
@@ -145,7 +145,7 @@ export class CustomStateManager {
   async flush(): Promise<void> {
     // LevelDB는 자동으로 플러시되므로 추가 작업 불필요
     // ensureDB()를 호출하지 않음 (이미 열려있거나 필요할 때만 열리도록)
-    this.logger.debug('flush() called (no-op)');
+    // this.logger.debug('flush() called (no-op)');
   }
 
   /**
@@ -157,7 +157,7 @@ export class CustomStateManager {
       normalizedAddr,
       new Account(normalizedAddr),
     );
-    this.logger.debug(`deleteAccount(${normalizedAddr})`);
+    // this.logger.debug(`deleteAccount(${normalizedAddr})`);
   }
 
   async modifyAccountFields(
@@ -198,7 +198,7 @@ export class CustomStateManager {
       acc.codeHash = this.crypto.bytesToHex(codeHashBuf);
     }
     await this.stateManager.setAccount(normalizedAddr, acc);
-    this.logger.debug(`modifyAccountFields(${normalizedAddr})`);
+    // this.logger.debug(`modifyAccountFields(${normalizedAddr})`);
   }
 
   async putCode(
@@ -226,7 +226,7 @@ export class CustomStateManager {
     const addressLower = normalizedAddr.toLowerCase();
     // 모든 스토리지 슬롯 삭제 (간단한 구현)
     // 실제로는 키를 순회하면서 삭제해야 하지만, 현재는 빈 구현
-    this.logger.debug(`clearStorage(${address})`);
+    // this.logger.debug(`clearStorage(${address})`);
   }
 
   async getStateRoot(): Promise<Uint8Array> {
@@ -248,7 +248,7 @@ export class CustomStateManager {
     if (clearCache) {
       // 캐시 클리어는 StateManager에서 처리
     }
-    this.logger.debug(`setStateRoot(${rootHex})`);
+    // this.logger.debug(`setStateRoot(${rootHex})`);
   }
 
   async hasStateRoot(root: Uint8Array): Promise<boolean> {
@@ -273,7 +273,7 @@ export class CustomStateManager {
 
   clearCaches(): void {
     // 캐시 클리어
-    this.logger.debug('clearCaches()');
+    // this.logger.debug('clearCaches()');
   }
 
   shallowCopy(downlevelCaches?: boolean): StateManagerInterface {
@@ -295,9 +295,9 @@ export class CustomStateManager {
     if (!key) key = `code:addr:${address}`;
     const hex = await this.kv!.get(key).catch(() => '');
     const bytes = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
-    this.logger.debug(
-      `getContractCode(${_address}) → ${bytes.byteLength} bytes (key=${key})`,
-    );
+    // this.logger.debug(
+    //   `getContractCode(${_address}) → ${bytes.byteLength} bytes (key=${key})`,
+    // );
     return bytes;
   }
 
@@ -316,9 +316,9 @@ export class CustomStateManager {
       (await this.stateManager.getAccount(address)) || new Account(address);
     acc.codeHash = codeHash;
     await this.stateManager.setAccount(address, acc);
-    this.logger.debug(
-      `putContractCode(${_address}) ← ${_code.byteLength} bytes (codeHash=${codeHash})`,
-    );
+    // this.logger.debug(
+    //   `putContractCode(${_address}) ← ${_code.byteLength} bytes (codeHash=${codeHash})`,
+    // );
   }
 
   async getStorage(
@@ -350,9 +350,9 @@ export class CustomStateManager {
     const k = `storage:${_address.toLowerCase()}:${slot}`;
     const hex = await this.kv!.get(k).catch(() => '');
     const val = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
-    this.logger.debug(
-      `getContractStorage(${_address}) slot=0x${slot} → ${val.byteLength} bytes`,
-    );
+    // this.logger.debug(
+    //   `getContractStorage(${_address}) slot=0x${slot} → ${val.byteLength} bytes`,
+    // );
     return val;
   }
 
@@ -388,9 +388,9 @@ export class CustomStateManager {
     acc.storageRoot = newRoot;
     await this.stateManager.setAccount(address, acc);
 
-    this.logger.debug(
-      `putContractStorage(${_address}) slot=0x${slot} ← ${_value.byteLength} bytes, storageRoot=${newRoot}`,
-    );
+    // this.logger.debug(
+    //   `putContractStorage(${_address}) slot=0x${slot} ← ${_value.byteLength} bytes, storageRoot=${newRoot}`,
+    // );
   }
 
   /**

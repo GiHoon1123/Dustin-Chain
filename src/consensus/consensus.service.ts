@@ -41,7 +41,7 @@ export class ConsensusService {
    */
   setGenesisTime(timestamp: number): void {
     this.genesisTime = timestamp;
-    this.logger.log(`Genesis Time set: ${new Date(timestamp).toISOString()}`);
+    // this.logger.log(`Genesis Time set: ${new Date(timestamp).toISOString()}`);
   }
 
   /**
@@ -88,9 +88,9 @@ export class ConsensusService {
       }
     }
 
-    this.logger.log(
-      `Collected ${attestations.length}/${committee.length} attestations for block #${block.number}`,
-    );
+    // this.logger.log(
+    //   `Collected ${attestations.length}/${committee.length} attestations for block #${block.number}`,
+    // );
 
     return attestations;
   }
@@ -113,9 +113,9 @@ export class ConsensusService {
     const required = Math.ceil((committeeSize * 2) / 3);
     const hasSupermajority = attestations.length >= required;
 
-    this.logger.debug(
-      `Supermajority check: ${attestations.length}/${committeeSize} (required: ${required}) → ${hasSupermajority ? '✅' : '❌'}`,
-    );
+    // this.logger.debug(
+    //   `Supermajority check: ${attestations.length}/${committeeSize} (required: ${required}) → ${hasSupermajority ? '✅' : '❌'}`,
+    // );
 
     return hasSupermajority;
   }

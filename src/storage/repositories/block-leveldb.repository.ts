@@ -61,12 +61,12 @@ export class BlockLevelDBRepository
 
   async onModuleInit(): Promise<void> {
     await this.db.open();
-    this.logger.log('BlockLevelDB opened: ./data/chaindata');
+    // this.logger.log('BlockLevelDB opened: ./data/chaindata');
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.db.close();
-    this.logger.log('BlockLevelDB closed');
+    // this.logger.log('BlockLevelDB closed');
   }
 
   /**
@@ -132,9 +132,9 @@ export class BlockLevelDBRepository
       await batch.write();
 
       // 6. Header 캐싱 (DB 저장 성공 후에만)
-      this.headerCache.set(block.hash, header);
+      this.headerCache.set(block.hash, header      );
 
-      this.logger.debug(`Block #${block.number} saved: ${block.hash}`);
+      // this.logger.debug(`Block #${block.number} saved: ${block.hash}`);
     } catch (error: any) {
       this.logger.error(`Failed to save block #${block.number}:`, error);
       throw error;
@@ -151,7 +151,7 @@ export class BlockLevelDBRepository
     try {
       // DB 상태 확인
       if (this.db.status !== 'open') {
-        this.logger.debug('DB not open yet, returning null');
+        // this.logger.debug('DB not open yet, returning null');
         return null;
       }
 
@@ -302,7 +302,7 @@ export class BlockLevelDBRepository
   async clear(): Promise<void> {
     await this.db.clear();
     this.headerCache.clear();
-    this.logger.log('All blocks cleared');
+    // this.logger.log('All blocks cleared');
   }
 
   // ========== 직렬화/역직렬화 ==========
@@ -520,7 +520,7 @@ export class BlockLevelDBRepository
     const value = this.serializeReceipt(receipt);
 
     await this.db.put(key, value, { valueEncoding: 'buffer' });
-    this.logger.debug(`Receipt saved: ${receipt.transactionHash}`);
+    // this.logger.debug(`Receipt saved: ${receipt.transactionHash}`);
   }
 
   /**
@@ -566,9 +566,9 @@ export class BlockLevelDBRepository
   private serializeReceipt(receipt: TransactionReceipt): Buffer {
     // contractAddress는 null이면 빈 문자열로 저장 (RLP 인코딩 시)
     const contractAddrForStorage = receipt.contractAddress || '';
-    this.logger.debug(
-      `Serializing receipt: txHash=${receipt.transactionHash}, contractAddress=${receipt.contractAddress || 'null'}`,
-    );
+    // this.logger.debug(
+    //   `Serializing receipt: txHash=${receipt.transactionHash}, contractAddress=${receipt.contractAddress || 'null'}`,
+    // );
     const rlpData = [
       receipt.transactionHash,
       receipt.transactionIndex.toString(),

@@ -48,7 +48,7 @@ export class AccountService {
     if (!account) {
       account = new Account(address);
       this.stateManager.setAccount(address, account);
-      this.logger.log(`Created new account: ${address}`);
+      // this.logger.log(`Created new account: ${address}`);
     }
 
     return account;
@@ -112,9 +112,9 @@ export class AccountService {
     // StateManager에 변경사항 저장 (저널에 기록)
     this.stateManager.setAccount(address, account);
 
-    this.logger.log(
-      `Added ${amount} Wei to ${address}, new balance: ${account.balance}`,
-    );
+    // this.logger.log(
+    //   `Added ${amount} Wei to ${address}, new balance: ${account.balance}`,
+    // );
   }
 
   /**
@@ -143,9 +143,9 @@ export class AccountService {
     // StateManager에 변경사항 저장 (저널에 기록)
     this.stateManager.setAccount(address, account);
 
-    this.logger.log(
-      `Subtracted ${amount} Wei from ${address}, new balance: ${account.balance}`,
-    );
+    // this.logger.log(
+    //   `Subtracted ${amount} Wei from ${address}, new balance: ${account.balance}`,
+    // );
   }
 
   /**
@@ -174,7 +174,7 @@ export class AccountService {
     await this.subtractBalance(from, amount);
     await this.addBalance(to, amount);
 
-    this.logger.log(`Transferred ${amount} Wei from ${from} to ${to}`);
+    // this.logger.log(`Transferred ${amount} Wei from ${from} to ${to}`);
   }
 
   /**
@@ -200,7 +200,7 @@ export class AccountService {
     // StateManager에 변경사항 저장 (저널에 기록)
     this.stateManager.setAccount(address, account);
 
-    this.logger.log(`Incremented nonce for ${address}: ${account.nonce}`);
+    // this.logger.log(`Incremented nonce for ${address}: ${account.nonce}`);
   }
 
   /**

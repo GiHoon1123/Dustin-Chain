@@ -151,9 +151,9 @@ export class TransactionService {
       gasLimit,
     );
 
-    this.logger.debug(
-      `Transaction signed: ${finalHash} (${from} -> ${to}, ${value} Wei, nonce: ${nonce})`,
-    );
+    // this.logger.debug(
+    //   `Transaction signed: ${finalHash} (${from} -> ${to}, ${value} Wei, nonce: ${nonce})`,
+    // );
 
     return tx;
   }
@@ -239,7 +239,7 @@ export class TransactionService {
       );
     }
 
-    this.logger.debug(`Nonce validated for ${tx.hash}: ${tx.nonce}`);
+    // this.logger.debug(`Nonce validated for ${tx.hash}: ${tx.nonce}`);
   }
 
   /**
@@ -261,9 +261,9 @@ export class TransactionService {
       );
     }
 
-    this.logger.debug(
-      `Balance validated for ${tx.hash}: ${balance} >= ${required}`,
-    );
+    // this.logger.debug(
+    //   `Balance validated for ${tx.hash}: ${balance} >= ${required}`,
+    // );
   }
 
   /**
@@ -287,9 +287,9 @@ export class TransactionService {
       tx.data = normalizedData;
     }
 
-    this.logger.debug(
-      `Gas parameters validated for ${tx.hash}: price=${tx.gasPrice}, limit=${tx.gasLimit}`,
-    );
+    // this.logger.debug(
+    //   `Gas parameters validated for ${tx.hash}: price=${tx.gasPrice}, limit=${tx.gasLimit}`,
+    // );
   }
 
   /**
@@ -315,7 +315,7 @@ export class TransactionService {
     // 4. 잔액 검증 (전송 금액 + 가스 비용)
     await this.validateBalance(tx);
 
-    this.logger.log(`Transaction validated: ${tx.hash}`);
+    // this.logger.log(`Transaction validated: ${tx.hash}`);
   }
 
   /**
@@ -393,9 +393,9 @@ export class TransactionService {
       throw new Error('Transaction already exists in pool');
     }
 
-    this.logger.log(
-      `Transaction submitted: ${finalHash} (${from} -> ${to}, ${value} Wei)`,
-    );
+    // this.logger.log(
+    //   `Transaction submitted: ${finalHash} (${from} -> ${to}, ${value} Wei)`,
+    // );
 
     return tx;
   }
@@ -480,7 +480,7 @@ export class TransactionService {
     const receipt = await levelDbRepo.findReceipt(hash);
 
     if (!receipt) {
-      this.logger.debug(`Receipt not found: ${hash}`);
+      // this.logger.debug(`Receipt not found: ${hash}`);
       return null;
     }
 
