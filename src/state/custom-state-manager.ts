@@ -408,6 +408,12 @@ export class CustomStateManager {
         ? our.codeHash
         : our.codeHash || EMPTY_HASH;
 
+    // ⚠️ VM 버그 수정을 위해 주소 생성 전에만 nonce를 조정하는 방법이 필요함
+    // 하지만 getAccount는 주소 생성뿐 아니라 nonce 검증에도 사용됨
+    // 따라서 원래 nonce를 반환하고, 주소 생성 시에만 특별 처리 필요
+    // 하지만 VM 코드를 수정할 수 없으므로, 일단 원래 nonce 반환
+    // TODO: VM의 _generateAddress를 패치하거나 다른 방법 필요
+    
     return createAccount({
       nonce: BigInt(our.nonce),
       balance: our.balance,

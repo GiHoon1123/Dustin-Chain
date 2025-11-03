@@ -564,6 +564,11 @@ export class BlockLevelDBRepository
    * Binary로 저장 (JSON 사용 안 함)
    */
   private serializeReceipt(receipt: TransactionReceipt): Buffer {
+    // contractAddress는 null이면 빈 문자열로 저장 (RLP 인코딩 시)
+    const contractAddrForStorage = receipt.contractAddress || '';
+    this.logger.debug(
+      `Serializing receipt: txHash=${receipt.transactionHash}, contractAddress=${receipt.contractAddress || 'null'}`,
+    );
     const rlpData = [
       receipt.transactionHash,
       receipt.transactionIndex.toString(),
@@ -574,7 +579,7 @@ export class BlockLevelDBRepository
       receipt.status.toString(),
       receipt.gasUsed.toString(),
       receipt.cumulativeGasUsed.toString(),
-      receipt.contractAddress || '',
+      contractAddrForStorage, // null이면 빈 문자열
       JSON.stringify(receipt.logs), // logs는 복잡한 객체이므로 JSON 유지
       receipt.logsBloom,
     ];
@@ -698,7 +703,39 @@ export class BlockLevelDBRepository
         BigInt(cumulativeGasUsed.toString()),
       );
 
-      receipt.contractAddress = contractAddress.toString() || null;
+      // contractAddress 처리: RLP 디코딩된 값은 Buffer나 string일 수 있음
+      // Buffer인 경우 UTF-8이 아닌 hex로 변환해야 함 (20바이트 주소)
+      if (contractAddress) {
+        // Buffer나 Uint8Array는 직접 hex로 변환
+        if (Buffer.isBuffer(contractAddress) || contractAddress instanceof Uint8Array) {
+          receipt.contractAddress = this.ensureHexString(contractAddress);
+        } else if (typeof contractAddress === 'string') {
+          // 이미 문자열인 경우, 0x 접두사 확인
+          receipt.contractAddress =
+            contractAddress.startsWith('0x')
+              ? contractAddress
+              : contractAddress.length > 0
+                ? this.ensureHexString(Buffer.from(contractAddress, 'utf8'))
+                : null;
+        } else {
+          // 다른 타입인 경우 toString() 후 처리
+          const addrStr = contractAddress.toString();
+          receipt.contractAddress =
+            addrStr && addrStr.length > 0 && addrStr !== ''
+              ? this.ensureHexString(addrStr)
+              : null;
+        }
+        // 빈 문자열이거나 0x0 등은 null로 처리
+        if (
+          receipt.contractAddress === '' ||
+          receipt.contractAddress === '0x' ||
+          receipt.contractAddress === '0x0'
+        ) {
+          receipt.contractAddress = null;
+        }
+      } else {
+        receipt.contractAddress = null;
+      }
       receipt.logs = JSON.parse(logs.toString());
       receipt.logsBloom = this.ensureHexString(logsBloom);
 

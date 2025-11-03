@@ -6,7 +6,7 @@ import {
   StateManagerInterface,
 } from '@ethereumjs/common';
 import { createMPT } from '@ethereumjs/mpt';
-import { createTxFromRLP } from '@ethereumjs/tx';
+import { createLegacyTx, createTxFromRLP } from '@ethereumjs/tx';
 import { createVM, runTx, VM } from '@ethereumjs/vm';
 // NOTE: @ethereumjs/tx v10에는 TransactionFactory가 없어 임시로 미사용 처리
 import {
@@ -139,6 +139,40 @@ export class BlockService implements OnApplicationBootstrap {
         stateManager: this.evmState as unknown as StateManagerInterface,
         common: this.common,
       });
+
+      // ⚠️ VM 버그 수정: VM._generateAddress에서 acc.nonce - 1을 계산하는데,
+      // nonce가 0이면 -1이 되어 bigIntToBytes(-1)에서 에러 발생
+      // 해결: VM.evm._generateAddress를 패치하여 음수를 0으로 처리
+
+      (this.vm.evm as any)._generateAddress = async function (message: any) {
+        let acc = await this.stateManager.getAccount(message.caller);
+        if (!acc) {
+          const { Account } = require('@ethereumjs/util');
+
+          acc = new Account();
+        }
+        let newNonce = acc.nonce - 1n;
+        // 음수인 경우 0으로 처리 (첫 컨트랙트 배포 시 nonce=0이면 -1이 됨)
+        if (newNonce < 0n) {
+          newNonce = 0n;
+        }
+        const util = require('@ethereumjs/util');
+        let addr: Uint8Array;
+        if (message.salt) {
+          addr = util.generateAddress2(
+            message.caller.bytes,
+            message.salt,
+            message.code,
+          );
+        } else {
+          addr = util.generateAddress(
+            message.caller.bytes,
+            util.bigIntToBytes(newNonce),
+          );
+        }
+        return new util.Address(addr);
+      }.bind(this.vm.evm);
+      this.logger.debug('[VM] _generateAddress 패치 적용 완료');
       this.logger.log(
         `VM initialized for execution (chainId=${this.common.chainId()})`,
       );
@@ -658,20 +692,148 @@ export class BlockService implements OnApplicationBootstrap {
         }
       }
 
+      // 컨트랙트 배포 트랜잭션 처리: 새로운 트랜잭션 객체 생성
+      // createTxFromRLP는 to가 null일 때 빈 버퍼로 파싱하지만,
+      // VM은 to가 undefined일 때만 컨트랙트 배포로 처리함
+      // 따라서 to가 빈 버퍼인 경우 새로운 트랜잭션 객체를 만들어 to를 undefined로 설정
+      const ethTxTyped = ethTx as unknown as {
+        nonce: bigint;
+        gasPrice: bigint;
+        gasLimit: bigint;
+        to?: Buffer | Uint8Array | undefined;
+        value: bigint;
+        data: Buffer | Uint8Array;
+        v: bigint;
+        r: Buffer | Uint8Array;
+        s: Buffer | Uint8Array;
+      };
+
+      // 컨트랙트 배포 트랜잭션 처리: 항상 createLegacyTx로 새 객체 생성
+      // createTxFromRLP는 RLP 파싱 결과로 내부 상태가 잘못될 수 있음
+      // 컨트랙트 배포(tx.to === null)인 경우 항상 새 객체 생성
+      let txForVM = ethTx;
+      if (tx.to === null) {
+        this.logger.debug(
+          '[VM] 컨트랙트 배포 트랜잭션 감지 → createLegacyTx로 새 객체 생성 (to=undefined)',
+        );
+        // createLegacyTx로 새로운 트랜잭션 객체 생성
+        // ethTx에서 필드 추출 (원본 트랜잭션의 서명 값 사용)
+        const ethTxTyped = ethTx as unknown as {
+          nonce: bigint;
+          gasPrice: bigint;
+          gasLimit: bigint;
+          value: bigint;
+          data: Buffer | Uint8Array;
+          v: bigint;
+          r: Buffer | Uint8Array | unknown;
+          s: Buffer | Uint8Array | unknown;
+        };
+
+        // r, s가 Buffer나 Uint8Array가 아니면 변환
+        const rBuffer =
+          ethTxTyped.r instanceof Buffer
+            ? ethTxTyped.r
+            : ethTxTyped.r instanceof Uint8Array
+              ? Buffer.from(ethTxTyped.r)
+              : Buffer.from(this.cryptoService.hexToBytes(tx.r));
+        const sBuffer =
+          ethTxTyped.s instanceof Buffer
+            ? ethTxTyped.s
+            : ethTxTyped.s instanceof Uint8Array
+              ? Buffer.from(ethTxTyped.s)
+              : Buffer.from(this.cryptoService.hexToBytes(tx.s));
+        const dataBuffer =
+          ethTxTyped.data instanceof Buffer
+            ? ethTxTyped.data
+            : ethTxTyped.data instanceof Uint8Array
+              ? Buffer.from(ethTxTyped.data)
+              : Buffer.from(this.cryptoService.hexToBytes(tx.data || '0x'));
+
+        // createLegacyTx에 전달할 필드 값 확인 및 로깅
+        this.logger.debug(
+          `[VM] createLegacyTx 필드 값: nonce=${ethTxTyped.nonce}, gasPrice=${ethTxTyped.gasPrice}, gasLimit=${ethTxTyped.gasLimit}, value=${ethTxTyped.value}, v=${ethTxTyped.v}, r.length=${rBuffer.length}, s.length=${sBuffer.length}, data.length=${dataBuffer.length}`,
+        );
+
+        txForVM = createLegacyTx(
+          {
+            nonce: ethTxTyped.nonce,
+            gasPrice: ethTxTyped.gasPrice,
+            gasLimit: ethTxTyped.gasLimit,
+            to: undefined, // 컨트랙트 배포를 위해 명시적으로 undefined 설정
+            value: ethTxTyped.value,
+            data: dataBuffer,
+            v: ethTxTyped.v,
+            r: rBuffer,
+            s: sBuffer,
+          },
+          { common: txCommon },
+        );
+        this.logger.debug(
+          `[VM] 새 트랜잭션 객체 생성 완료: to=${(txForVM as unknown as { to?: unknown }).to === undefined ? 'undefined' : '설정됨'}`,
+        );
+      }
+
       // VM 10.x: runTx는 독립 함수로 변경됨
       // 타입은 @ethereumjs/vm의 RunTxResult 사용
+
+      // 디버깅: runTx 호출 전 트랜잭션 상태 완전히 로깅
+      const txForVMTyped = txForVM as unknown as {
+        nonce?: unknown;
+        gasPrice?: unknown;
+        gasLimit?: unknown;
+        to?: unknown;
+        value?: unknown;
+        data?: unknown;
+        v?: unknown;
+        r?: unknown;
+        s?: unknown;
+        hash?: () => unknown;
+        getSenderAddress?: () => unknown;
+      };
+      this.logger.debug(
+        `[VM] runTx 호출 전 최종 트랜잭션 상태:` +
+          `\n  nonce=${txForVMTyped.nonce}, typeof=${typeof txForVMTyped.nonce}` +
+          `\n  gasPrice=${txForVMTyped.gasPrice}, typeof=${typeof txForVMTyped.gasPrice}` +
+          `\n  gasLimit=${txForVMTyped.gasLimit}, typeof=${typeof txForVMTyped.gasLimit}` +
+          `\n  to=${txForVMTyped.to}, typeof=${typeof txForVMTyped.to}, isUndefined=${txForVMTyped.to === undefined}` +
+          `\n  value=${txForVMTyped.value}, typeof=${typeof txForVMTyped.value}` +
+          `\n  v=${txForVMTyped.v}, typeof=${typeof txForVMTyped.v}` +
+          `\n  r=${txForVMTyped.r instanceof Buffer ? `Buffer(${txForVMTyped.r.length})` : txForVMTyped.r instanceof Uint8Array ? `Uint8Array(${txForVMTyped.r.length})` : typeof txForVMTyped.r}` +
+          `\n  s=${txForVMTyped.s instanceof Buffer ? `Buffer(${txForVMTyped.s.length})` : txForVMTyped.s instanceof Uint8Array ? `Uint8Array(${txForVMTyped.s.length})` : typeof txForVMTyped.s}` +
+          `\n  data=${txForVMTyped.data instanceof Buffer ? `Buffer(${txForVMTyped.data.length})` : txForVMTyped.data instanceof Uint8Array ? `Uint8Array(${txForVMTyped.data.length})` : typeof txForVMTyped.data}`,
+      );
+
       let result;
       try {
-        result = await runTx(this.vm, { tx: ethTx });
+        result = await runTx(this.vm, { tx: txForVM });
       } catch (vmError: unknown) {
         const errorMsg =
           vmError instanceof Error ? vmError.message : String(vmError);
-        // create collision은 같은 nonce로 여러 번 배포 시도
-        // Address 타입 에러는 VM 내부에서 발생할 수 있음
-        this.logger.error(
-          `[VM] runTx failed for ${tx.hash}: ${errorMsg}`,
-          vmError instanceof Error ? vmError.stack : undefined,
-        );
+        const errorStack =
+          vmError instanceof Error ? vmError.stack : String(vmError);
+
+        // 깊은 디버깅: 에러 스택 전체 로깅
+        this.logger.error(`[VM] runTx failed for ${tx.hash}: ${errorMsg}`);
+        this.logger.error(`[VM] Error stack trace:\n${errorStack}`);
+
+        // 에러 객체의 모든 속성 로깅
+        if (vmError instanceof Error) {
+          this.logger.error(
+            `[VM] Error object properties: ${JSON.stringify(
+              Object.getOwnPropertyNames(vmError).reduce(
+                (acc, key) => {
+                  try {
+                    acc[key] = String((vmError as any)[key]);
+                  } catch {
+                    acc[key] = '[unable to stringify]';
+                  }
+                  return acc;
+                },
+                {} as Record<string, string>,
+              ),
+            )}`,
+          );
+        }
         // 에러가 발생해도 트랜잭션은 블록에 포함됨 (실패 처리)
         throw vmError;
       }
@@ -689,18 +851,51 @@ export class BlockService implements OnApplicationBootstrap {
       const gasUsed: bigint =
         result.gasUsed ?? result.execResult.gasUsed ?? BigInt(21000);
       const created = result.createdAddress;
-      // VM 10.x: createdAddress는 Address 타입 (string으로 추정)
+      // VM 10.x: createdAddress는 Address 타입 (string 또는 Address 객체)
       let contractAddress: Address | null = null;
       if (created) {
-        // Address 타입이 string인지 확인하고 변환
+        // Address 타입 처리: string, Address 객체, Uint8Array, Buffer 등
         if (typeof created === 'string') {
           contractAddress = created;
+        } else if (created && typeof created === 'object') {
+          // Address 객체인 경우 .toString() 또는 .bytes 사용
+          if ('toString' in created) {
+            const addrStr = (created as { toString: () => string }).toString();
+            // toString()이 올바른 0x 접두사 주소를 반환하는지 확인
+            contractAddress =
+              addrStr && addrStr.startsWith('0x') ? addrStr : null;
+          } else if ('bytes' in created) {
+            const bytes = (created as { bytes: Uint8Array | Buffer }).bytes;
+            contractAddress = this.cryptoService.bytesToHex(Buffer.from(bytes));
+          } else {
+            // Uint8Array나 Buffer인 경우
+            contractAddress = this.cryptoService.bytesToHex(
+              Buffer.from(created as unknown as Uint8Array),
+            );
+          }
         } else {
           // Uint8Array나 다른 타입인 경우 변환
           contractAddress = this.cryptoService.bytesToHex(
             Buffer.from(created as unknown as Uint8Array),
           );
         }
+
+        // 최종 검증: contractAddress가 유효한 0x 접두사 주소인지 확인
+        if (contractAddress && !contractAddress.startsWith('0x')) {
+          this.logger.warn(
+            `[VM] Invalid contract address format: ${contractAddress}, converting...`,
+          );
+          contractAddress = `0x${contractAddress}`;
+        }
+        // 20바이트 (40 hex chars) 길이 확인
+        if (contractAddress && contractAddress.length !== 42) {
+          this.logger.warn(
+            `[VM] Contract address has unexpected length: ${contractAddress.length}, address: ${contractAddress}`,
+          );
+        }
+        this.logger.debug(
+          `[VM] Contract address extracted: ${contractAddress}`,
+        );
       }
 
       // EVM 로그를 Receipt.Log 형태로 변환
