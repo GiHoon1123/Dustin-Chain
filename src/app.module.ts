@@ -4,6 +4,7 @@ import { BlockModule } from './block/block.module';
 import { BotModule } from './bot/bot.module';
 import { CommonModule } from './common/common.module';
 import { ConsensusModule } from './consensus/consensus.module';
+import { ContractModule } from './contract/contract.module';
 import { StateModule } from './state/state.module';
 import { StorageModule } from './storage/storage.module';
 import { TransactionModule } from './transaction/transaction.module';
@@ -40,6 +41,7 @@ import { ValidatorModule } from './validator/validator.module';
     ValidatorModule,
     ConsensusModule,
     BlockModule,
+    ContractModule, // 컨트랙트 관련 기능
     BotModule, // 트랜잭션 자동 생성
   ],
   controllers: [],
