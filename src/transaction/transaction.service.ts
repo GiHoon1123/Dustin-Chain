@@ -81,7 +81,7 @@ export class TransactionService {
     // 1. 발신자 주소 도출
     const from = this.cryptoService.privateKeyToAddress(privateKey);
 
-    // 2. 현재 nonce 조회
+    // 2. nonce 조회 (이더리움 표준: 서버가 현재 nonce를 사용)
     const nonce = await this.accountService.getNonce(from);
 
     const gasPrice = options?.gasPrice ?? DEFAULT_GAS_PRICE;
@@ -107,7 +107,7 @@ export class TransactionService {
       Buffer.alloc(0), // r = 0
       Buffer.alloc(0), // s = 0
     ];
-    
+
     const signRlp = this.cryptoService.rlpEncode(signArray);
     const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
 
@@ -122,7 +122,7 @@ export class TransactionService {
     // RLP([nonce, gasPrice, gasLimit, to, value, data, v, r, s])
     const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
     const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
-    
+
     const finalArray = [
       this.toRlpBuffer(BigInt(nonce)),
       this.toRlpBuffer(gasPrice),
@@ -134,7 +134,7 @@ export class TransactionService {
       rValue,
       sValue,
     ];
-    
+
     const finalRlp = this.cryptoService.rlpEncode(finalArray);
     const finalHash = this.cryptoService.hashBuffer(Buffer.from(finalRlp)); // hashBuffer는 이미 Hash (string) 반환
 
@@ -175,7 +175,9 @@ export class TransactionService {
 
     // 트랜잭션 해시 재계산 (서명 제외) - RLP 기반
     // 서명 대상: RLP([nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0])
-    const toBytes = tx.to ? this.cryptoService.hexToBytes(tx.to) : new Uint8Array(0);
+    const toBytes = tx.to
+      ? this.cryptoService.hexToBytes(tx.to)
+      : new Uint8Array(0);
     const toBuffer = Buffer.from(toBytes);
     const dataBytes = this.cryptoService.hexToBytes(normalizedData || '0x');
     const dataBuffer = Buffer.from(dataBytes);
@@ -191,7 +193,7 @@ export class TransactionService {
       Buffer.alloc(0), // r = 0
       Buffer.alloc(0), // s = 0
     ];
-    
+
     const signRlp = this.cryptoService.rlpEncode(signArray);
     const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
 
@@ -216,7 +218,14 @@ export class TransactionService {
   /**
    * Nonce 검증
    *
-   * 트랜잭션의 nonce가 계정의 현재 nonce와 일치하는지 확인
+   * 이더리움 표준:
+   * - nonce는 계정의 현재 nonce와 정확히 일치해야 함
+   * - 실행 시: tx.nonce === account.nonce (엄격)
+   * - Mempool: tx.nonce >= account.nonce (queued 허용 가능, 우리는 현재 pending만 지원)
+   *
+   * 우리 구현:
+   * - 현재 pending만 지원하므로 정확히 일치해야 함
+   * - 나중에 queued 추가 시 수정 필요
    *
    * @param tx - 검증할 트랜잭션
    * @throws {Error} Nonce 불일치
@@ -346,7 +355,7 @@ export class TransactionService {
     const dataBuffer = Buffer.from(dataBytes);
     const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
     const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
-    
+
     const finalArray = [
       this.toRlpBuffer(BigInt(nonce)),
       this.toRlpBuffer(gasPrice),
@@ -358,7 +367,7 @@ export class TransactionService {
       rValue,
       sValue,
     ];
-    
+
     const finalRlp = this.cryptoService.rlpEncode(finalArray);
     const finalHash = this.cryptoService.hashBuffer(Buffer.from(finalRlp)); // hashBuffer는 이미 Hash (string) 반환
 

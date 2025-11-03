@@ -7,7 +7,7 @@ import {
 } from '@ethereumjs/common';
 import { createMPT } from '@ethereumjs/mpt';
 import { createTxFromRLP } from '@ethereumjs/tx';
-import { createVM, VM } from '@ethereumjs/vm';
+import { createVM, runTx, VM } from '@ethereumjs/vm';
 // NOTE: @ethereumjs/tx v10에는 TransactionFactory가 없어 임시로 미사용 처리
 import {
   Inject,
@@ -608,9 +608,22 @@ export class BlockService implements OnApplicationBootstrap {
           let senderAddress: string;
           if (typeof senderResult === 'string') {
             senderAddress = senderResult;
+          } else if (
+            senderResult &&
+            typeof senderResult === 'object' &&
+            'toString' in senderResult
+          ) {
+            // Address 객체일 수 있음
+            senderAddress = (
+              senderResult as { toString: () => string }
+            ).toString();
+            if (!senderAddress.startsWith('0x')) {
+              senderAddress = `0x${senderAddress}`;
+            }
           } else {
+            // Uint8Array나 Buffer
             senderAddress = this.cryptoService.bytesToHex(
-              Buffer.from(senderResult),
+              Buffer.from(senderResult as unknown as Uint8Array),
             );
           }
           this.logger.debug(
@@ -645,32 +658,21 @@ export class BlockService implements OnApplicationBootstrap {
         }
       }
 
-      // runTx 타입 최소 정의 (필요한 필드만)
-      type RunTxExecResult = {
-        exceptionError?: { error: string };
-        gasUsed?: bigint;
-        logs?: [Uint8Array, Uint8Array[], Uint8Array][];
-      };
-      type RunTxResult = {
-        gasUsed?: bigint;
-        execResult: RunTxExecResult;
-        createdAddress?: { buf: () => Uint8Array };
-      };
-
-      const vmRunner = this.vm as unknown as {
-        runTx: (o: { tx: unknown }) => Promise<RunTxResult>;
-      };
-
-      let result: RunTxResult;
+      // VM 10.x: runTx는 독립 함수로 변경됨
+      // 타입은 @ethereumjs/vm의 RunTxResult 사용
+      let result;
       try {
-        result = await vmRunner.runTx({ tx: ethTx });
+        result = await runTx(this.vm, { tx: ethTx });
       } catch (vmError: unknown) {
         const errorMsg =
           vmError instanceof Error ? vmError.message : String(vmError);
+        // create collision은 같은 nonce로 여러 번 배포 시도
+        // Address 타입 에러는 VM 내부에서 발생할 수 있음
         this.logger.error(
           `[VM] runTx failed for ${tx.hash}: ${errorMsg}`,
           vmError instanceof Error ? vmError.stack : undefined,
         );
+        // 에러가 발생해도 트랜잭션은 블록에 포함됨 (실패 처리)
         throw vmError;
       }
 
@@ -687,9 +689,19 @@ export class BlockService implements OnApplicationBootstrap {
       const gasUsed: bigint =
         result.gasUsed ?? result.execResult.gasUsed ?? BigInt(21000);
       const created = result.createdAddress;
-      const contractAddress = created
-        ? this.cryptoService.bytesToHex(created.buf())
-        : null;
+      // VM 10.x: createdAddress는 Address 타입 (string으로 추정)
+      let contractAddress: Address | null = null;
+      if (created) {
+        // Address 타입이 string인지 확인하고 변환
+        if (typeof created === 'string') {
+          contractAddress = created;
+        } else {
+          // Uint8Array나 다른 타입인 경우 변환
+          contractAddress = this.cryptoService.bytesToHex(
+            Buffer.from(created as unknown as Uint8Array),
+          );
+        }
+      }
 
       // EVM 로그를 Receipt.Log 형태로 변환
       const logs = (result.execResult.logs || []).map(

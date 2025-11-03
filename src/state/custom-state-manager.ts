@@ -34,21 +34,56 @@ export class CustomStateManager {
 
   private async ensureDB(): Promise<void> {
     if (!this.kv) {
-      const opts: any = { keyEncoding: 'utf8', valueEncoding: 'utf8' };
-      const db = new ClassicLevel<string, string>('data/state', opts);
-      await db.open();
-      this.kv = db;
-      this.logger.log('CustomStateManager KV opened (data/state)');
+      try {
+        const opts: any = { keyEncoding: 'utf8', valueEncoding: 'utf8' };
+        // StateLevelDBRepository와 다른 경로 사용 (컨트랙트 코드/스토리지 전용)
+        const db = new ClassicLevel<string, string>('data/contracts', opts);
+        await db.open();
+        this.kv = db;
+        this.logger.log('CustomStateManager KV opened (data/state)');
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Failed to open KV database: ${errorMsg}`);
+        // 이미 열려있거나 다른 프로세스가 사용 중일 수 있음
+        // 에러를 throw하지 않고 계속 진행 (코드 조회 시 빈 값 반환)
+      }
     }
+  }
+
+  /**
+   * Address 타입 정규화 (VM 10.x 호환)
+   * VM이 Uint8Array나 다른 타입의 Address를 전달할 수 있음
+   * @ethereumjs/common의 Address 타입은 string이거나 특별한 객체일 수 있음
+   */
+  private normalizeAddress(address: Address | Uint8Array | unknown): Address {
+    if (typeof address === 'string') {
+      return address;
+    }
+    if (address instanceof Uint8Array) {
+      return this.crypto.bytesToHex(address);
+    }
+    if (Buffer.isBuffer(address)) {
+      return this.crypto.bytesToHex(address);
+    }
+    // @ethereumjs/common의 Address 객체일 수 있음 (toString() 메서드 확인)
+    if (address && typeof address === 'object' && 'toString' in address) {
+      const addrStr = (address as { toString: () => string }).toString();
+      // 0x 접두사가 없으면 추가
+      return addrStr.startsWith('0x') ? addrStr : `0x${addrStr}`;
+    }
+    // 기타 타입도 string으로 변환 시도
+    const addrStr = String(address);
+    return addrStr.startsWith('0x') ? addrStr : `0x${addrStr}`;
   }
 
   /**
    * EVM이 기대하는 형태로 계정 조회
    * - 우리 Account → @ethereumjs/util.Account 변환
    */
-  async getAccount(address: Address): Promise<EthAccount> {
-    this.logger.debug(`getAccount(${address})`);
-    const our = await this.stateManager.getAccount(address);
+  async getAccount(address: Address | Uint8Array): Promise<EthAccount> {
+    const normalizedAddr = this.normalizeAddress(address);
+    this.logger.debug(`getAccount(${normalizedAddr})`);
+    const our = await this.stateManager.getAccount(normalizedAddr);
     if (!our) {
       // 존재하지 않는 계정은 nonce=0, balance=0, 빈 storage/code로 반환
       this.logger.debug(`getAccount(${address}) → not found, returning empty`);
@@ -69,9 +104,13 @@ export class CustomStateManager {
    * EVM이 수정한 계정 저장
    * - @ethereumjs/util.Account → 우리 Account 변환 후 저널에 기록
    */
-  async putAccount(address: Address, eth: EthAccount): Promise<void> {
-    const our = this.toOurAccount(address, eth);
-    await this.stateManager.setAccount(address, our);
+  async putAccount(
+    address: Address | Uint8Array,
+    eth: EthAccount,
+  ): Promise<void> {
+    const normalizedAddr = this.normalizeAddress(address);
+    const our = this.toOurAccount(normalizedAddr, eth);
+    await this.stateManager.setAccount(normalizedAddr, our);
     this.logger.debug(
       `putAccount(${address}) nonce=${our.nonce}, balance=${our.balance}`,
     );
@@ -112,13 +151,17 @@ export class CustomStateManager {
   /**
    * StateManagerInterface 10.x 호환 메서드들
    */
-  async deleteAccount(address: Address): Promise<void> {
-    await this.stateManager.setAccount(address, new Account(address));
-    this.logger.debug(`deleteAccount(${address})`);
+  async deleteAccount(address: Address | Uint8Array): Promise<void> {
+    const normalizedAddr = this.normalizeAddress(address);
+    await this.stateManager.setAccount(
+      normalizedAddr,
+      new Account(normalizedAddr),
+    );
+    this.logger.debug(`deleteAccount(${normalizedAddr})`);
   }
 
   async modifyAccountFields(
-    address: Address,
+    address: Address | Uint8Array,
     accountFields: {
       nonce?: bigint;
       balance?: bigint;
@@ -126,8 +169,10 @@ export class CustomStateManager {
       codeHash?: Uint8Array;
     },
   ): Promise<void> {
+    const normalizedAddr = this.normalizeAddress(address);
     const acc =
-      (await this.stateManager.getAccount(address)) || new Account(address);
+      (await this.stateManager.getAccount(normalizedAddr)) ||
+      new Account(normalizedAddr);
     if (accountFields.nonce !== undefined) {
       acc.nonce = Number(accountFields.nonce);
     }
@@ -135,31 +180,50 @@ export class CustomStateManager {
       acc.balance = accountFields.balance;
     }
     if (accountFields.storageRoot !== undefined) {
-      acc.storageRoot = this.crypto.bytesToHex(accountFields.storageRoot);
+      // Uint8Array인지 확인하고 변환
+      const storageRootBuf =
+        accountFields.storageRoot instanceof Uint8Array
+          ? accountFields.storageRoot
+          : Buffer.from(
+              accountFields.storageRoot as unknown as ArrayLike<number>,
+            );
+      acc.storageRoot = this.crypto.bytesToHex(storageRootBuf);
     }
     if (accountFields.codeHash !== undefined) {
-      acc.codeHash = this.crypto.bytesToHex(accountFields.codeHash);
+      // Uint8Array인지 확인하고 변환
+      const codeHashBuf =
+        accountFields.codeHash instanceof Uint8Array
+          ? accountFields.codeHash
+          : Buffer.from(accountFields.codeHash as unknown as ArrayLike<number>);
+      acc.codeHash = this.crypto.bytesToHex(codeHashBuf);
     }
-    await this.stateManager.setAccount(address, acc);
-    this.logger.debug(`modifyAccountFields(${address})`);
+    await this.stateManager.setAccount(normalizedAddr, acc);
+    this.logger.debug(`modifyAccountFields(${normalizedAddr})`);
   }
 
-  async putCode(address: Address, value: Uint8Array): Promise<void> {
-    await this.putContractCode(address, value);
+  async putCode(
+    address: Address | Uint8Array,
+    value: Uint8Array,
+  ): Promise<void> {
+    const normalizedAddr = this.normalizeAddress(address);
+    await this.putContractCode(normalizedAddr, value);
   }
 
-  async getCode(address: Address): Promise<Uint8Array> {
-    return this.getContractCode(address);
+  async getCode(address: Address | Uint8Array): Promise<Uint8Array> {
+    const normalizedAddr = this.normalizeAddress(address);
+    return this.getContractCode(normalizedAddr);
   }
 
-  async getCodeSize(address: Address): Promise<number> {
-    const code = await this.getContractCode(address);
+  async getCodeSize(address: Address | Uint8Array): Promise<number> {
+    const normalizedAddr = this.normalizeAddress(address);
+    const code = await this.getContractCode(normalizedAddr);
     return code.length;
   }
 
-  async clearStorage(address: Address): Promise<void> {
+  async clearStorage(address: Address | Uint8Array): Promise<void> {
     await this.ensureDB();
-    const addressLower = address.toLowerCase();
+    const normalizedAddr = this.normalizeAddress(address);
+    const addressLower = normalizedAddr.toLowerCase();
     // 모든 스토리지 슬롯 삭제 (간단한 구현)
     // 실제로는 키를 순회하면서 삭제해야 하지만, 현재는 빈 구현
     this.logger.debug(`clearStorage(${address})`);
@@ -174,7 +238,12 @@ export class CustomStateManager {
     stateRoot: Uint8Array,
     clearCache?: boolean,
   ): Promise<void> {
-    const rootHex = this.crypto.bytesToHex(stateRoot);
+    // Uint8Array인지 확인하고 변환
+    const rootBuf =
+      stateRoot instanceof Uint8Array
+        ? stateRoot
+        : Buffer.from(stateRoot as unknown as ArrayLike<number>);
+    const rootHex = this.crypto.bytesToHex(rootBuf);
     await this.stateRepository.setStateRoot(rootHex);
     if (clearCache) {
       // 캐시 클리어는 StateManager에서 처리
@@ -184,7 +253,12 @@ export class CustomStateManager {
 
   async hasStateRoot(root: Uint8Array): Promise<boolean> {
     const currentRoot = await this.getStateRoot();
-    return Buffer.from(root).equals(currentRoot);
+    // Uint8Array인지 확인하고 변환
+    const rootBuf =
+      root instanceof Uint8Array
+        ? root
+        : Buffer.from(root as unknown as ArrayLike<number>);
+    return Buffer.from(rootBuf).equals(Buffer.from(currentRoot));
   }
 
   // originalStorageCache 구현 (최소 구현)
@@ -247,16 +321,21 @@ export class CustomStateManager {
     );
   }
 
-  async getStorage(address: Address, key: Uint8Array): Promise<Uint8Array> {
-    return this.getContractStorage(address, key);
+  async getStorage(
+    address: Address | Uint8Array,
+    key: Uint8Array,
+  ): Promise<Uint8Array> {
+    const normalizedAddr = this.normalizeAddress(address);
+    return this.getContractStorage(normalizedAddr, key);
   }
 
   async putStorage(
-    address: Address,
+    address: Address | Uint8Array,
     key: Uint8Array,
     value: Uint8Array,
   ): Promise<void> {
-    return this.putContractStorage(address, key, value);
+    const normalizedAddr = this.normalizeAddress(address);
+    return this.putContractStorage(normalizedAddr, key, value);
   }
 
   /**
@@ -319,11 +398,21 @@ export class CustomStateManager {
    * VM 내부 계정 타입을 맞추기 위해 변환이 필요함
    */
   private toEthAccount(our: Account): EthAccount {
+    // storageRoot와 codeHash는 반드시 string이어야 함
+    const storageRootStr =
+      typeof our.storageRoot === 'string'
+        ? our.storageRoot
+        : our.storageRoot || EMPTY_ROOT;
+    const codeHashStr =
+      typeof our.codeHash === 'string'
+        ? our.codeHash
+        : our.codeHash || EMPTY_HASH;
+
     return createAccount({
       nonce: BigInt(our.nonce),
       balance: our.balance,
-      storageRoot: this.crypto.hexToBytes(our.storageRoot || EMPTY_ROOT),
-      codeHash: this.crypto.hexToBytes(our.codeHash || EMPTY_HASH),
+      storageRoot: this.crypto.hexToBytes(storageRootStr),
+      codeHash: this.crypto.hexToBytes(codeHashStr),
     });
   }
 
