@@ -1,10 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  Matches,
-} from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 /**
  * 컨트랙트 호출 요청 DTO
@@ -68,7 +63,8 @@ export class CallContractResponseDto {
   @ApiProperty({
     description:
       '함수 실행 결과 (ABI 인코딩된 hex string) - view/pure 함수의 반환값',
-    example: '0x000000000000000000000000000000000000000000000000000000000000002a',
+    example:
+      '0x000000000000000000000000000000000000000000000000000000000000002a',
   })
   result: string;
 

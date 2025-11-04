@@ -32,7 +32,7 @@ interface GenesisConfig {
 
 const ACCOUNTS_FILE = 'genesis-accounts.json';
 const OUTPUT_FILE = 'genesis.json';
-const INITIAL_BALANCE = '1000000000000000000000'; // 50 DSTN in Wei
+const INITIAL_BALANCE = '100000000000000000000000000'; // 1,000,000,000 DSTN in Wei
 
 /**
  * genesis.json 생성

@@ -32,7 +32,8 @@ export class ExecuteContractRequestDto {
   @ApiProperty({
     description:
       '함수 호출 데이터 (ABI 인코딩된 hex string) - 함수 선택자(4바이트) + 파라미터 인코딩',
-    example: '0x55241077000000000000000000000000000000000000000000000000000000000000002a',
+    example:
+      '0x55241077000000000000000000000000000000000000000000000000000000000000002a',
     pattern: '^0x[a-fA-F0-9]*$',
   })
   @IsString()
@@ -54,12 +55,14 @@ export class ExecuteContractRequestDto {
 export class ExecuteContractResponseDto {
   @ApiProperty({
     description: '트랜잭션 해시 (고유 식별자)',
-    example: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    example:
+      '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
   })
   hash: string;
 
   @ApiProperty({
-    description: '트랜잭션 상태 (pending: Pool에 추가됨, 아직 블록에 포함되지 않음)',
+    description:
+      '트랜잭션 상태 (pending: Pool에 추가됨, 아직 블록에 포함되지 않음)',
     example: 'pending',
     enum: ['pending'],
   })

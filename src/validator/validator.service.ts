@@ -156,9 +156,9 @@ export class ValidatorService {
 
     const proposer = validators[index];
 
-      // this.logger.debug(
-      //   `Slot ${slot}: Selected Proposer ${proposer.address.slice(0, 10)}... (index: ${index}/${validators.length})`,
-      // );
+    // this.logger.debug(
+    //   `Slot ${slot}: Selected Proposer ${proposer.address.slice(0, 10)}... (index: ${index}/${validators.length})`,
+    // );
 
     return proposer.address;
   }
@@ -198,9 +198,9 @@ export class ValidatorService {
     // 상위 128명 선택
     const committee = shuffled.slice(0, COMMITTEE_SIZE).map((v) => v.address);
 
-      // this.logger.debug(
-      //   `Slot ${slot}: Selected Committee ${committee.length} validators`,
-      // );
+    // this.logger.debug(
+    //   `Slot ${slot}: Selected Committee ${committee.length} validators`,
+    // );
 
     return committee;
   }

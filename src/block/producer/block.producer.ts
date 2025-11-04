@@ -155,9 +155,9 @@ export class BlockProducer implements OnApplicationBootstrap {
     // 대기 시간 계산
     const delay = nextSlotTime - now;
 
-      // this.logger.debug(
-      //   `Next block scheduled at slot ${currentSlot + 1} (in ${Math.round(delay / 1000)}s)`,
-      // );
+    // this.logger.debug(
+    //   `Next block scheduled at slot ${currentSlot + 1} (in ${Math.round(delay / 1000)}s)`,
+    // );
 
     // 정확한 시간에 블록 생성
     this.currentTimeout = setTimeout(() => {
@@ -288,9 +288,9 @@ export class BlockProducer implements OnApplicationBootstrap {
     const proposerReward = BigInt(PROPOSER_REWARD) * WEI_PER_DSTN;
     await this.accountService.addBalance(proposer, proposerReward);
 
-      // this.logger.debug(
-      //   `Proposer reward: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
-      // );
+    // this.logger.debug(
+    //   `Proposer reward: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
+    // );
 
     // 2. Committee 보상 (1 DSTN을 Attestation 제출자들이 나눔)
     if (attestations.length > 0) {

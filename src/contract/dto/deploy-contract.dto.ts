@@ -21,7 +21,8 @@ import { IsNotEmpty, IsString, Matches } from 'class-validator';
 export class DeployContractRequestDto {
   @ApiProperty({
     description: '컨트랙트 바이트코드 (컴파일된 hex string)',
-    example: '0x608060405234801561000f575f5ffd5b50604051611416380380611416833981810160405281019061003191906102f5565b...',
+    example:
+      '0x608060405234801561000f575f5ffd5b50604051611416380380611416833981810160405281019061003191906102f5565b...',
     pattern: '^0x[a-fA-F0-9]*$',
   })
   @IsString()
@@ -47,12 +48,14 @@ export class DeployContractRequestDto {
 export class DeployContractResponseDto {
   @ApiProperty({
     description: '트랜잭션 해시 (고유 식별자)',
-    example: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    example:
+      '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
   })
   hash: string;
 
   @ApiProperty({
-    description: '트랜잭션 상태 (pending: Pool에 추가됨, 아직 블록에 포함되지 않음)',
+    description:
+      '트랜잭션 상태 (pending: Pool에 추가됨, 아직 블록에 포함되지 않음)',
     example: 'pending',
     enum: ['pending'],
   })

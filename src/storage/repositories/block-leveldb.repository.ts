@@ -132,7 +132,7 @@ export class BlockLevelDBRepository
       await batch.write();
 
       // 6. Header 캐싱 (DB 저장 성공 후에만)
-      this.headerCache.set(block.hash, header      );
+      this.headerCache.set(block.hash, header);
 
       // this.logger.debug(`Block #${block.number} saved: ${block.hash}`);
     } catch (error: any) {
@@ -707,16 +707,18 @@ export class BlockLevelDBRepository
       // Buffer인 경우 UTF-8이 아닌 hex로 변환해야 함 (20바이트 주소)
       if (contractAddress) {
         // Buffer나 Uint8Array는 직접 hex로 변환
-        if (Buffer.isBuffer(contractAddress) || contractAddress instanceof Uint8Array) {
+        if (
+          Buffer.isBuffer(contractAddress) ||
+          contractAddress instanceof Uint8Array
+        ) {
           receipt.contractAddress = this.ensureHexString(contractAddress);
         } else if (typeof contractAddress === 'string') {
           // 이미 문자열인 경우, 0x 접두사 확인
-          receipt.contractAddress =
-            contractAddress.startsWith('0x')
-              ? contractAddress
-              : contractAddress.length > 0
-                ? this.ensureHexString(Buffer.from(contractAddress, 'utf8'))
-                : null;
+          receipt.contractAddress = contractAddress.startsWith('0x')
+            ? contractAddress
+            : contractAddress.length > 0
+              ? this.ensureHexString(Buffer.from(contractAddress, 'utf8'))
+              : null;
         } else {
           // 다른 타입인 경우 toString() 후 처리
           const addrStr = contractAddress.toString();
