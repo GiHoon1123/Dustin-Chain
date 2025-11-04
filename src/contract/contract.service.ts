@@ -41,6 +41,7 @@ export class ContractService implements OnApplicationBootstrap {
   private readonly common: Common;
 
   private genesisAccount0: GenesisAccount | null = null;
+  private deploymentAccounts: GenesisAccount[] = []; // 0-100번 계정 (컨트랙트 배포용)
 
   constructor(
     private readonly evmState: CustomStateManager,
@@ -86,6 +87,8 @@ export class ContractService implements OnApplicationBootstrap {
 
     // 제네시스 계정 0번 로드 (쓰기 작업용)
     this.loadGenesisAccount0();
+    // 0-100번 계정 로드 (컨트랙트 배포용)
+    this.loadDeploymentAccounts();
   }
 
   private findAccountsFile(): string | null {
@@ -128,6 +131,33 @@ export class ContractService implements OnApplicationBootstrap {
       );
     } catch (error: any) {
       this.logger.error(`Failed to load genesis account 0: ${error.message}`);
+    }
+  }
+
+  /**
+   * 0-100번 계정 로드 (컨트랙트 배포용)
+   */
+  private loadDeploymentAccounts(): void {
+    try {
+      const accountsPath = this.findAccountsFile();
+      if (!accountsPath) {
+        this.logger.warn('genesis-accounts.json not found');
+        return;
+      }
+
+      const fileContent = fs.readFileSync(accountsPath, 'utf8');
+      const allAccounts: GenesisAccount[] = JSON.parse(fileContent);
+
+      // 0-100번 계정만 필터링
+      this.deploymentAccounts = allAccounts.filter(
+        (acc) => acc.index >= 0 && acc.index <= 100,
+      );
+
+      this.logger.log(
+        `Loaded ${this.deploymentAccounts.length} deployment accounts (index 0-100) for contract deployment`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to load deployment accounts: ${error.message}`);
     }
   }
 
@@ -329,7 +359,7 @@ export class ContractService implements OnApplicationBootstrap {
   /**
    * 컨트랙트 배포
    *
-   * 제네시스 계정 0번을 사용하여 컨트랙트를 배포합니다.
+   * 0-100번 계정 중 랜덤으로 하나를 선택하여 컨트랙트를 배포합니다.
    *
    * ⚠️ 테스트용 API: 실제 프로덕션에서는 각 사용자가 자신의 지갑으로 서명해야 합니다.
    * 임시 기능으로 UX 개선을 위해 구현되었습니다.
@@ -340,14 +370,20 @@ export class ContractService implements OnApplicationBootstrap {
   async deployContract(
     bytecode: string,
   ): Promise<{ hash: string; status: string }> {
-    if (!this.genesisAccount0) {
-      throw new Error('Genesis account 0 is not loaded');
+    if (this.deploymentAccounts.length === 0) {
+      throw new Error('Deployment accounts are not loaded');
     }
 
     try {
+      // 0-100번 계정 중 랜덤으로 하나 선택
+      const randomAccountIndex = Math.floor(
+        Math.random() * this.deploymentAccounts.length,
+      );
+      const deployerAccount = this.deploymentAccounts[randomAccountIndex];
+
       // 컨트랙트 배포는 to가 null, data에 바이트코드
       const tx = await this.transactionService.signTransaction(
-        this.genesisAccount0.privateKey,
+        deployerAccount.privateKey,
         null, // 컨트랙트 배포는 to가 null
         0n,
         {
@@ -371,7 +407,7 @@ export class ContractService implements OnApplicationBootstrap {
       );
 
       this.logger.log(
-        `Contract deployment transaction submitted: ${submittedTx.hash} (from: ${this.genesisAccount0.address})`,
+        `Contract deployment transaction submitted: ${submittedTx.hash} (from: account #${deployerAccount.index}, ${deployerAccount.address.slice(0, 10)}...)`,
       );
 
       return {
