@@ -43,13 +43,13 @@ export class BlockLevelDBRepository
   implements IBlockRepository, OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(BlockLevelDBRepository.name);
-  private db: ClassicLevel<string, string | Buffer>; // ✅ Binary 저장 (Geth 방식)
+  private db: ClassicLevel<string, string | Buffer>; // Binary 저장 (Geth 방식)
 
   // Header 캐싱 (LRU, 최근 10,000개)
   private headerCache: InstanceType<LRUType>;
 
   constructor(private readonly cryptoService: CryptoService) {
-    // ✅ Mixed encoding: lookup keys (string), data values (Buffer)
+    // Mixed encoding: lookup keys (string), data values (Buffer)
     this.db = new ClassicLevel<string, string | Buffer>('./data/chaindata');
 
     // Header 캐시 초기화 (10,000개, 약 2MB)
@@ -61,12 +61,12 @@ export class BlockLevelDBRepository
 
   async onModuleInit(): Promise<void> {
     await this.db.open();
-    this.logger.log('BlockLevelDB opened: ./data/chaindata');
+    // this.logger.log('BlockLevelDB opened: ./data/chaindata');
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.db.close();
-    this.logger.log('BlockLevelDB closed');
+    // this.logger.log('BlockLevelDB closed');
   }
 
   /**
@@ -96,7 +96,7 @@ export class BlockLevelDBRepository
         return;
       }
 
-      // ✅ Batch 생성 (원자적 작업)
+      // Batch 생성 (원자적 작업)
       const batch = this.db.batch();
 
       // 1. Header 저장 (Binary)
@@ -128,13 +128,13 @@ export class BlockLevelDBRepository
         batch.put(lookupKey, lookupValue, { valueEncoding: 'buffer' });
       }
 
-      // ✅ 원자적으로 모두 저장 (모두 성공 or 모두 실패)
+      // 원자적으로 모두 저장 (모두 성공 or 모두 실패)
       await batch.write();
 
       // 6. Header 캐싱 (DB 저장 성공 후에만)
-      this.headerCache.set(block.hash, header);
+      this.headerCache.set(block.hash, header      );
 
-      this.logger.debug(`Block #${block.number} saved: ${block.hash}`);
+      // this.logger.debug(`Block #${block.number} saved: ${block.hash}`);
     } catch (error: any) {
       this.logger.error(`Failed to save block #${block.number}:`, error);
       throw error;
@@ -151,7 +151,7 @@ export class BlockLevelDBRepository
     try {
       // DB 상태 확인
       if (this.db.status !== 'open') {
-        this.logger.debug('DB not open yet, returning null');
+        // this.logger.debug('DB not open yet, returning null');
         return null;
       }
 
@@ -302,7 +302,7 @@ export class BlockLevelDBRepository
   async clear(): Promise<void> {
     await this.db.clear();
     this.headerCache.clear();
-    this.logger.log('All blocks cleared');
+    // this.logger.log('All blocks cleared');
   }
 
   // ========== 직렬화/역직렬화 ==========
@@ -326,7 +326,7 @@ export class BlockLevelDBRepository
     ];
 
     const rlpEncoded = this.cryptoService.rlpEncode(headerArray);
-    return Buffer.from(rlpEncoded); // ✅ Binary 그대로 반환
+    return Buffer.from(rlpEncoded); // Binary 그대로 반환
   }
 
   /**
@@ -411,27 +411,38 @@ export class BlockLevelDBRepository
    * Body 직렬화 (RLP) - Geth 방식
    *
    * Binary로 저장 (Hex String 변환 없음)
+   *
+   * EVM 통합으로 인한 변경:
+   * - data, gasPrice, gasLimit 필드 추가
+   * - 기존 트랜잭션도 호환되도록 기본값 저장
    */
   private serializeBody(body: BlockBody): Buffer {
     // 트랜잭션 배열 직렬화
     const txsArray = body.transactions.map((tx) => [
       tx.hash,
       tx.from,
-      tx.to,
+      tx.to || '', // null인 경우 빈 문자열로 저장 (컨트랙트 배포)
       tx.value.toString(),
       tx.nonce.toString(),
       tx.timestamp.getTime().toString(), // Date → timestamp (ms)
       tx.v || '',
       tx.r || '',
       tx.s || '',
+      tx.data || '', // EVM: 컨트랙트 배포/호출 데이터
+      tx.gasPrice?.toString() || '1000000000', // EVM: 가스 가격 (기본값 1 Gwei)
+      tx.gasLimit?.toString() || '21000', // EVM: 가스 한도 (기본값 21000)
     ]);
 
     const rlpEncoded = this.cryptoService.rlpEncode(txsArray);
-    return Buffer.from(rlpEncoded); // ✅ Binary 그대로 반환
+    return Buffer.from(rlpEncoded); // Binary 그대로 반환
   }
 
   /**
    * Body 역직렬화 (RLP) - Geth 방식
+   *
+   * EVM 통합으로 인한 변경:
+   * - data, gasPrice, gasLimit 필드 파싱 추가
+   * - 기존 데이터 호환성: 필드가 없으면 기본값 사용
    */
   private deserializeBody(serializedData: Buffer): BlockBody {
     try {
@@ -439,20 +450,46 @@ export class BlockLevelDBRepository
       const decoded = this.cryptoService.rlpDecode(serializedData) as any[];
 
       const transactions = decoded.map((txData: any[]) => {
-        const [hash, from, to, value, nonce, timestamp, v, r, s] = txData;
+        // 기존 데이터: [hash, from, to, value, nonce, timestamp, v, r, s]
+        // 신규 EVM 데이터: [hash, from, to, value, nonce, timestamp, v, r, s, data, gasPrice, gasLimit]
+        const hash = txData[0];
+        const from = txData[1];
+        const to = txData[2];
+        const value = txData[3];
+        const nonce = txData[4];
+        const timestamp = txData[5];
+        const v = txData[6];
+        const r = txData[7];
+        const s = txData[8];
+        // EVM 필드: 기존 데이터와의 호환성을 위해 기본값 제공
+        const data = txData[9] || '';
+        const gasPrice = txData[10]
+          ? BigInt(txData[10].toString())
+          : BigInt('1000000000'); // 기본값 1 Gwei
+        const gasLimit = txData[11]
+          ? BigInt(txData[11].toString())
+          : BigInt(21000); // 기본값 21000
 
         const signature = {
-          v: parseInt(v.toString()) || 0, // ✅ number로 변환
+          v: parseInt(v.toString()) || 0, // number로 변환
           r: this.ensureHexString(r) || '',
           s: this.ensureHexString(s) || '',
         };
+
+        // to 필드: 빈 문자열이면 null로 변환 (컨트랙트 배포)
+        const toStr = to ? this.ensureHexString(to) : '';
+        const toAddress = toStr && toStr.length > 0 ? toStr : null;
+
         const tx = new Transaction(
-          this.ensureHexString(from), // ✅ Buffer → Hex String
-          this.ensureHexString(to), // ✅ Buffer → Hex String
+          this.ensureHexString(from), // Buffer → Hex String
+          toAddress, // null 가능 (컨트랙트 배포)
           BigInt(value.toString()),
           parseInt(nonce.toString()),
           signature,
-          this.ensureHexString(hash), // ✅ Buffer → Hex String
+          this.ensureHexString(hash), // Buffer → Hex String
+          data, // EVM: data 필드
+          gasPrice, // EVM: gasPrice 필드
+          gasLimit, // EVM: gasLimit 필드
         );
         tx.timestamp = new Date(parseInt(timestamp.toString()));
 
@@ -483,7 +520,7 @@ export class BlockLevelDBRepository
     const value = this.serializeReceipt(receipt);
 
     await this.db.put(key, value, { valueEncoding: 'buffer' });
-    this.logger.debug(`Receipt saved: ${receipt.transactionHash}`);
+    // this.logger.debug(`Receipt saved: ${receipt.transactionHash}`);
   }
 
   /**
@@ -527,6 +564,11 @@ export class BlockLevelDBRepository
    * Binary로 저장 (JSON 사용 안 함)
    */
   private serializeReceipt(receipt: TransactionReceipt): Buffer {
+    // contractAddress는 null이면 빈 문자열로 저장 (RLP 인코딩 시)
+    const contractAddrForStorage = receipt.contractAddress || '';
+    // this.logger.debug(
+    //   `Serializing receipt: txHash=${receipt.transactionHash}, contractAddress=${receipt.contractAddress || 'null'}`,
+    // );
     const rlpData = [
       receipt.transactionHash,
       receipt.transactionIndex.toString(),
@@ -537,13 +579,13 @@ export class BlockLevelDBRepository
       receipt.status.toString(),
       receipt.gasUsed.toString(),
       receipt.cumulativeGasUsed.toString(),
-      receipt.contractAddress || '',
+      contractAddrForStorage, // null이면 빈 문자열
       JSON.stringify(receipt.logs), // logs는 복잡한 객체이므로 JSON 유지
       receipt.logsBloom,
     ];
 
     const rlpEncoded = this.cryptoService.rlpEncode(rlpData);
-    return Buffer.from(rlpEncoded); // ✅ Binary 그대로 반환
+    return Buffer.from(rlpEncoded); // Binary 그대로 반환
   }
 
   /**
@@ -661,7 +703,39 @@ export class BlockLevelDBRepository
         BigInt(cumulativeGasUsed.toString()),
       );
 
-      receipt.contractAddress = contractAddress.toString() || null;
+      // contractAddress 처리: RLP 디코딩된 값은 Buffer나 string일 수 있음
+      // Buffer인 경우 UTF-8이 아닌 hex로 변환해야 함 (20바이트 주소)
+      if (contractAddress) {
+        // Buffer나 Uint8Array는 직접 hex로 변환
+        if (Buffer.isBuffer(contractAddress) || contractAddress instanceof Uint8Array) {
+          receipt.contractAddress = this.ensureHexString(contractAddress);
+        } else if (typeof contractAddress === 'string') {
+          // 이미 문자열인 경우, 0x 접두사 확인
+          receipt.contractAddress =
+            contractAddress.startsWith('0x')
+              ? contractAddress
+              : contractAddress.length > 0
+                ? this.ensureHexString(Buffer.from(contractAddress, 'utf8'))
+                : null;
+        } else {
+          // 다른 타입인 경우 toString() 후 처리
+          const addrStr = contractAddress.toString();
+          receipt.contractAddress =
+            addrStr && addrStr.length > 0 && addrStr !== ''
+              ? this.ensureHexString(addrStr)
+              : null;
+        }
+        // 빈 문자열이거나 0x0 등은 null로 처리
+        if (
+          receipt.contractAddress === '' ||
+          receipt.contractAddress === '0x' ||
+          receipt.contractAddress === '0x0'
+        ) {
+          receipt.contractAddress = null;
+        }
+      } else {
+        receipt.contractAddress = null;
+      }
       receipt.logs = JSON.parse(logs.toString());
       receipt.logsBloom = this.ensureHexString(logsBloom);
 

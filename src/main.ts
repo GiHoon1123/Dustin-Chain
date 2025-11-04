@@ -25,6 +25,7 @@ async function bootstrap() {
     .addTag('validator', 'Validator 관리 API')
     .addTag('consensus', 'Consensus 정보 API')
     .addTag('block', '블록 조회 API')
+    .addTag('contract', '컨트랙트 관련 API')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

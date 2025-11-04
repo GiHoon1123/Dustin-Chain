@@ -1,5 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsString, Matches, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  Min,
+} from 'class-validator';
 
 /**
  * 트랜잭션 전송 요청 DTO
@@ -24,16 +31,18 @@ export class SendTransactionRequestDto {
   })
   from: string;
 
-  @ApiProperty({
-    description: '수신자 주소',
+  @ApiPropertyOptional({
+    description: '수신자 주소 (컨트랙트 배포 시 null)',
     example: '0x1234567890123456789012345678901234567890',
+    nullable: true,
   })
-  @IsString()
-  @IsNotEmpty()
-  @Matches(/^0x[a-fA-F0-9]{40}$/, {
-    message: 'to must be a valid Ethereum address',
-  })
-  to: string;
+  @IsOptional()
+  // @ValidateIf((o) => o.to !== null && o.to !== undefined && o.to !== '')
+  // @IsString()
+  // @Matches(/^0x[a-fA-F0-9]{40}$/ , {
+  //   message: 'to must be a valid Ethereum address (or omit/null for contract creation)',
+  // })
+  to?: string | null;
 
   @ApiProperty({
     description: '송금 금액 (Wei 단위)',
@@ -41,10 +50,47 @@ export class SendTransactionRequestDto {
   })
   @IsString()
   @IsNotEmpty()
-  @Matches(/^[1-9]\d*$/, {
-    message: 'value must be a positive integer string',
+  @Matches(/^\d+$/, {
+    message: 'value must be a non-negative integer string',
   })
   value: string;
+
+  @ApiProperty({
+    description: '가스 가격 (Wei 단위)',
+    example: '1000000000',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^[1-9]\d*$/, {
+    message: 'gasPrice must be a positive integer string',
+  })
+  gasPrice?: string;
+
+  @ApiProperty({
+    description: '가스 한도',
+    example: '21000',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^[1-9]\d*$/, {
+    message: 'gasLimit must be a positive integer string',
+  })
+  gasLimit?: string;
+
+  @ApiProperty({
+    description: '데이터 필드 (Hex String)',
+    example: '0x',
+    required: false,
+    default: '0x',
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^0x[0-9a-fA-F]*$/, {
+    message: 'data must be a hex string with 0x prefix',
+  })
+  data?: string;
 
   @ApiProperty({
     description: '논스 (발신자 계정의 현재 nonce)',

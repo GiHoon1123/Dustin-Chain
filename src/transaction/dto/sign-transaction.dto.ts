@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 /**
  * 트랜잭션 서명 요청 DTO (테스트용)
@@ -26,16 +26,18 @@ export class SignTransactionRequestDto {
   })
   privateKey: string;
 
-  @ApiProperty({
-    description: '수신자 주소',
+  @ApiPropertyOptional({
+    description: '수신자 주소 (컨트랙트 배포 시 null)',
     example: '0x742d35cc6634c0532925a3b844bc9e7595f0beb0',
+    nullable: true,
   })
-  @IsString()
-  @IsNotEmpty()
-  @Matches(/^0x[a-fA-F0-9]{40}$/, {
-    message: 'to must be a valid Ethereum address (0x + 40 hex characters)',
-  })
-  to: string;
+  @IsOptional()
+  // @IsString()
+  // @Matches(/^0x[a-fA-F0-9]{40}$/, {
+  //   message:
+  //     'to must be a valid Ethereum address (or omit/null for contract creation)',
+  // })
+  to?: string | null;
 
   @ApiProperty({
     description: '송금 금액 (Wei 단위)',
@@ -43,10 +45,47 @@ export class SignTransactionRequestDto {
   })
   @IsString()
   @IsNotEmpty()
-  @Matches(/^[1-9]\d*$/, {
-    message: 'value must be a positive integer string',
+  @Matches(/^\d+$/, {
+    message: 'value must be a non-negative integer string',
   })
   value: string;
+
+  @ApiProperty({
+    description: '가스 가격 (Wei)',
+    example: '1000000000',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^[1-9]\d*$/, {
+    message: 'gasPrice must be a positive integer string',
+  })
+  gasPrice?: string;
+
+  @ApiProperty({
+    description: '가스 한도',
+    example: '21000',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^[1-9]\d*$/, {
+    message: 'gasLimit must be a positive integer string',
+  })
+  gasLimit?: string;
+
+  @ApiProperty({
+    description: '데이터 필드 (Hex String, 0x 접두사)',
+    example: '0x',
+    required: false,
+    default: '0x',
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^0x[0-9a-fA-F]*$/, {
+    message: 'data must be a hex string with 0x prefix',
+  })
+  data?: string;
 }
 
 /**
@@ -67,10 +106,12 @@ export class SignTransactionResponseDto {
   from: string;
 
   @ApiProperty({
-    description: '수신자 주소',
+    description: '수신자 주소 (컨트랙트 배포 시 null)',
     example: '0x742d35cc6634c0532925a3b844bc9e7595f0beb0',
+    required: false,
+    nullable: true,
   })
-  to: string;
+  to: string | null;
 
   @ApiProperty({
     description: '송금 금액 (Wei 단위)',
@@ -103,4 +144,22 @@ export class SignTransactionResponseDto {
       '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
   })
   s: string;
+
+  @ApiProperty({
+    description: '가스 가격 (Wei)',
+    example: '1000000000',
+  })
+  gasPrice: string;
+
+  @ApiProperty({
+    description: '가스 한도',
+    example: '21000',
+  })
+  gasLimit: string;
+
+  @ApiProperty({
+    description: '데이터 필드 (Hex String)',
+    example: '0x',
+  })
+  data: string;
 }

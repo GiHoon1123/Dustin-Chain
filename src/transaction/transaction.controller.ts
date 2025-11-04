@@ -52,12 +52,17 @@ export class TransactionController {
   async signTransaction(
     @Body() body: SignTransactionRequestDto,
   ): Promise<SignTransactionResponseDto> {
-    const { privateKey, to, value } = body;
+    const { privateKey, to, value, gasPrice, gasLimit, data } = body;
 
     const tx = await this.transactionService.signTransaction(
       privateKey,
-      to,
+      to ?? null,
       BigInt(value),
+      {
+        gasPrice: gasPrice ? BigInt(gasPrice) : undefined,
+        gasLimit: gasLimit ? BigInt(gasLimit) : undefined,
+        data,
+      },
     );
 
     return {
@@ -69,6 +74,9 @@ export class TransactionController {
       v: tx.v,
       r: tx.r,
       s: tx.s,
+      gasPrice: tx.gasPrice.toString(),
+      gasLimit: tx.gasLimit.toString(),
+      data: tx.data,
     };
   }
 
@@ -100,14 +108,19 @@ export class TransactionController {
   async sendTransaction(
     @Body() body: SendTransactionRequestDto,
   ): Promise<SendTransactionResponseDto> {
-    const { from, to, value, nonce, v, r, s } = body;
+    const { from, to, value, nonce, gasPrice, gasLimit, data, v, r, s } = body;
 
     const tx = await this.transactionService.submitTransaction(
       from,
-      to,
+      to ?? null,
       BigInt(value),
       nonce,
       { v, r, s },
+      {
+        gasPrice: gasPrice ? BigInt(gasPrice) : undefined,
+        gasLimit: gasLimit ? BigInt(gasLimit) : undefined,
+        data,
+      },
     );
 
     return {
@@ -117,6 +130,14 @@ export class TransactionController {
       message: 'Transaction submitted to mempool',
     };
   }
+
+  /**
+   * 임시: 검증 우회 전송 (컨트랙트 배포용 to=null 허용)
+   *
+   * - class-validator를 거치지 않고 body를 직접 파싱
+   * - 배포 트랜잭션(to=null) 테스트를 위한 임시 엔드포인트
+   */
+  // 임시 send-raw 엔드포인트 제거됨
 
   /**
    * 트랜잭션 조회

@@ -50,10 +50,11 @@ export class Transaction {
    * - Contract: 컨트랙트 호출
    * - null: 컨트랙트 배포
    *
-   * 우리:
-   * - EOA만 지원 (송금만)
+   * EVM 통합 후:
+   * - null인 경우 컨트랙트 배포 트랜잭션
+   * - 주소가 있는 경우 일반 송금 또는 컨트랙트 호출
    */
-  to: Address;
+  to: Address | null;
 
   /**
    * 송금 금액 (Wei 단위)
@@ -112,13 +113,56 @@ export class Transaction {
    */
   timestamp: Date;
 
+  /**
+   * 트랜잭션 데이터 (컨트랙트 배포/호출용 바이트코드)
+   *
+   * 이더리움:
+   * - 빈 문자열: 일반 송금 트랜잭션
+   * - 바이트코드: 컨트랙트 배포 또는 컨트랙트 함수 호출 데이터
+   *
+   * 저장 형식:
+   * - 내부적으로 Buffer 또는 Hex String으로 처리
+   * - JSON 직렬화 시 "0x" 접두사가 붙은 Hex String
+   */
+  data: string;
+
+  /**
+   * Gas 가격 (Wei 단위)
+   *
+   * 이더리움:
+   * - 트랜잭션 실행 시 사용되는 가스의 단가
+   * - 채굴자가 받는 수수료 = gasUsed * gasPrice
+   * - 네트워크 혼잡도에 따라 조정됨
+   *
+   * 기본값:
+   * - 1 Gwei = 10^9 Wei (일반적인 가스 가격)
+   */
+  gasPrice: bigint;
+
+  /**
+   * Gas 한도 (최대 가스 사용량)
+   *
+   * 이더리움:
+   * - 트랜잭션 실행 시 최대로 사용할 수 있는 가스량
+   * - gasUsed <= gasLimit 이어야 함
+   * - 부족하면 Out of Gas 에러 발생
+   *
+   * 기본값:
+   * - 21000: 일반 송금 트랜잭션의 기본 가스
+   * - 컨트랙트 배포/호출 시 더 많은 가스 필요
+   */
+  gasLimit: bigint;
+
   constructor(
     from: Address,
-    to: Address,
+    to: Address | null,
     value: bigint,
     nonce: number,
     signature: Signature,
     hash: Hash,
+    data: string = '',
+    gasPrice: bigint = BigInt('1000000000'), // 1 Gwei = 10^9 Wei
+    gasLimit: bigint = BigInt(21000), // 기본 전송 트랜잭션 가스
   ) {
     this.from = from;
     this.to = to;
@@ -128,6 +172,9 @@ export class Transaction {
     this.r = signature.r;
     this.s = signature.s;
     this.hash = hash;
+    this.data = data;
+    this.gasPrice = gasPrice;
+    this.gasLimit = gasLimit;
     this.status = 'pending';
     this.timestamp = new Date();
   }
@@ -160,28 +207,49 @@ export class Transaction {
 
   /**
    * JSON 직렬화 (Ethereum JSON-RPC 표준)
-   * 
+   *
    * 이더리움 표준:
-   * - value: Hex String
-   * - nonce: Hex String
-   * - v: Hex String
-   * - blockNumber: Hex String
+   * - value: Hex String (0x 접두사 포함)
+   * - nonce: Hex String (0x 접두사 포함)
+   * - v: Hex String (0x 접두사 포함)
+   * - blockNumber: Hex String (0x 접두사 포함)
+   * - data: Hex String (0x 접두사 포함, "0x"로 시작)
+   * - gasPrice: Hex String (0x 접두사 포함)
+   * - gasLimit: Hex String (0x 접두사 포함, "gas"로 표시)
+   * - to: Address 또는 null (컨트랙트 배포 시 null)
    */
   toJSON() {
+    // data 필드를 Hex String으로 변환 (Buffer/Uint8Array 안전 처리)
+    let dataHex: string;
+    const d: unknown = this.data as unknown;
+    if (typeof d === 'string') {
+      if (d.length === 0) dataHex = '0x';
+      else dataHex = d.startsWith('0x') ? d : `0x${d}`;
+    } else if (d && typeof d === 'object' && (d as any).buffer) {
+      // Buffer 또는 Uint8Array로 간주
+      const bytes = Buffer.isBuffer(d) ? d : Buffer.from(d as Uint8Array);
+      dataHex = bytes.length ? `0x${bytes.toString('hex')}` : '0x';
+    } else {
+      dataHex = '0x';
+    }
+
     return {
       hash: this.hash,
       from: this.from,
-      to: this.to,
-      value: `0x${this.value.toString(16)}`, // ✅ Hex String
-      nonce: `0x${this.nonce.toString(16)}`, // ✅ Hex String
-      v: `0x${this.v.toString(16)}`, // ✅ Hex String
+      to: this.to, // null이면 null 그대로 반환 (컨트랙트 배포 트랜잭션)
+      value: `0x${this.value.toString(16)}`,
+      nonce: `0x${this.nonce.toString(16)}`,
+      data: dataHex,
+      gasPrice: `0x${this.gasPrice.toString(16)}`,
+      gas: `0x${this.gasLimit.toString(16)}`, // 이더리움 표준에서는 "gas" 필드명 사용
+      v: `0x${this.v.toString(16)}`,
       r: this.r,
       s: this.s,
       status: this.status,
       blockNumber: this.blockNumber
         ? `0x${this.blockNumber.toString(16)}`
-        : undefined, // ✅ Hex String
-      timestamp: `0x${Math.floor(this.timestamp.getTime() / 1000).toString(16)}`, // ✅ Unix timestamp (Hex)
+        : undefined,
+      timestamp: `0x${Math.floor(this.timestamp.getTime() / 1000).toString(16)}`,
     };
   }
 }

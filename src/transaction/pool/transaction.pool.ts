@@ -58,9 +58,9 @@ export class TransactionPool {
     }
 
     this.pending.set(tx.hash, tx);
-    this.logger.log(
-      `Transaction added to pool: ${tx.hash} (${tx.from} -> ${tx.to}, ${tx.value} Wei)`,
-    );
+    // this.logger.log(
+    //   `Transaction added to pool: ${tx.hash} (${tx.from} -> ${tx.to}, ${tx.value} Wei)`,
+    // );
 
     return true;
   }
@@ -102,7 +102,7 @@ export class TransactionPool {
    */
   remove(hash: Hash): void {
     if (this.pending.delete(hash)) {
-      this.logger.log(`Transaction removed from pool: ${hash}`);
+      // this.logger.log(`Transaction removed from pool: ${hash}`);
     }
   }
 
@@ -126,7 +126,7 @@ export class TransactionPool {
    */
   clear(): void {
     this.pending.clear();
-    this.logger.log('Transaction pool cleared');
+    // this.logger.log('Transaction pool cleared');
   }
 
   /**

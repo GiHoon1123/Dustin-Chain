@@ -1,4 +1,4 @@
-import { Trie } from '@ethereumjs/trie';
+import { createMPT, MerklePatriciaTrie } from '@ethereumjs/mpt';
 import {
   Injectable,
   Logger,
@@ -39,7 +39,7 @@ export class StateLevelDBRepository
 {
   private readonly logger = new Logger(StateLevelDBRepository.name);
   private db: ClassicLevel;
-  private trie: Trie;
+  private trie: MerklePatriciaTrie;
   private currentRoot: Uint8Array;
 
   constructor(private readonly cryptoService: CryptoService) {}
@@ -56,15 +56,15 @@ export class StateLevelDBRepository
     try {
       this.db = new ClassicLevel('data/state');
       await this.db.open();
-      this.logger.log('State LevelDB opened');
+      // this.logger.log('State LevelDB opened');
 
       // 메모리 Trie 생성 (계정 저장 시 LevelDB에도 직접 저장)
-      this.trie = new Trie();
+      this.trie = await createMPT();
       this.currentRoot = this.trie.root();
 
-      this.logger.log(
-        `State Trie initialized with root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
-      );
+      // this.logger.log(
+      //   `State Trie initialized with root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
+      // );
     } catch (error: any) {
       this.logger.error('Failed to initialize State LevelDB:', error);
       throw error;
@@ -106,7 +106,7 @@ export class StateLevelDBRepository
           return null;
         }
         const decoded = this.cryptoService.rlpDecode(
-          Buffer.from(value as string, 'hex'),
+          Buffer.from(value, 'hex'),
         ) as any[];
 
         // RLP decoding: 빈 Buffer는 0으로 처리
@@ -124,13 +124,25 @@ export class StateLevelDBRepository
           balance = BigInt('0x' + balanceHex);
         }
 
+        // storageRoot / codeHash (신규 필드)
+        const storageRootBuf = decoded[2];
+        const codeHashBuf = decoded[3];
+        const storageRoot = storageRootBuf
+          ? this.cryptoService.bytesToHex(storageRootBuf)
+          : EMPTY_ROOT;
+        const codeHash = codeHashBuf
+          ? this.cryptoService.bytesToHex(codeHashBuf)
+          : EMPTY_HASH;
+
         const account = new Account(address);
         account.nonce = nonce;
         account.balance = balance;
+        account.storageRoot = storageRoot;
+        account.codeHash = codeHash;
 
-        this.logger.debug(
-          `Account retrieved: ${address} (nonce: ${nonce}, balance: ${balance})`,
-        );
+        // this.logger.debug(
+        //   `Account retrieved: ${address} (nonce: ${nonce}, balance: ${balance})`,
+        // );
 
         return account;
       } catch (error: any) {
@@ -171,8 +183,8 @@ export class StateLevelDBRepository
       const value = this.cryptoService.rlpEncode([
         account.nonce,
         account.balance, // ✅ bigint 그대로 (이더리움 표준)
-        this.cryptoService.hexToBytes(EMPTY_ROOT), // 스마트 컨트랙트 없음
-        this.cryptoService.hexToBytes(EMPTY_HASH), // 코드 없음
+        this.cryptoService.hexToBytes(account.storageRoot || EMPTY_ROOT),
+        this.cryptoService.hexToBytes(account.codeHash || EMPTY_HASH),
       ]);
 
       // 1. Trie에 저장 (State Root 계산용)
@@ -188,12 +200,12 @@ export class StateLevelDBRepository
       // State Root 자동 업데이트
       this.currentRoot = this.trie.root();
 
-      this.logger.debug(
-        `Account saved: ${account.address} (nonce: ${account.nonce}, balance: ${account.balance})`,
-      );
-      this.logger.debug(
-        `New State Root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
-      );
+      // this.logger.debug(
+      //   `Account saved: ${account.address} (nonce: ${account.nonce}, balance: ${account.balance})`,
+      // );
+      // this.logger.debug(
+      //   `New State Root: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
+      // );
     } catch (error: any) {
       this.logger.error(`Failed to save account ${account.address}:`, error);
       throw error;
@@ -239,7 +251,7 @@ export class StateLevelDBRepository
       this.currentRoot = this.cryptoService.hexToBytes(root);
 
       // LevelDB에서 모든 계정을 읽어서 Trie 재구성
-      this.trie = new Trie();
+      this.trie = await createMPT();
 
       for await (const [key, value] of this.db.iterator({
         gte: 'account:',
@@ -255,9 +267,9 @@ export class StateLevelDBRepository
 
       this.currentRoot = this.trie.root();
 
-      this.logger.log(
-        `State Root restored to: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
-      );
+      // this.logger.log(
+      //   `State Root restored to: ${this.cryptoService.bytesToHex(this.currentRoot)}`,
+      // );
     } catch (error: any) {
       this.logger.error(`Failed to set State Root to ${root}:`, error);
       throw error;
@@ -271,7 +283,7 @@ export class StateLevelDBRepository
     try {
       if (this.db && this.db.status === 'open') {
         await this.db.close();
-        this.logger.log('State LevelDB closed');
+        // this.logger.log('State LevelDB closed');
       }
     } catch (error: any) {
       this.logger.error('Failed to close State LevelDB:', error);

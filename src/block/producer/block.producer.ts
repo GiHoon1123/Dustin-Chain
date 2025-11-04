@@ -61,13 +61,13 @@ export class BlockProducer implements OnApplicationBootstrap {
    * NestJS Lifecycle:
    * 1. BlockLevelDBRepository.onModuleInit() - DB 열기
    * 2. BlockService.onApplicationBootstrap() - Genesis Block 체크/생성
-   * 3. BlockProducer.onApplicationBootstrap() - 블록 생성 시작 ✅
+   * 3. BlockProducer.onApplicationBootstrap() - 블록 생성 시작
    *
    * 주의: onApplicationBootstrap은 모든 서비스에서 동시 실행됨
    * BlockService가 Genesis Block을 생성할 때까지 대기 필요
    */
   async onApplicationBootstrap() {
-    this.logger.log('Block Producer initializing...');
+    // this.logger.log('Block Producer initializing...');
 
     // Genesis Block을 찾을 때까지 대기 (최대 10초)
     let genesisBlock: any = null;
@@ -79,25 +79,25 @@ export class BlockProducer implements OnApplicationBootstrap {
       if (block) {
         genesisBlock = block;
       } else {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
         attempts++;
       }
     }
-    
+
     if (!genesisBlock) {
       throw new Error('Genesis Block not found after waiting 10 seconds');
     }
 
-    this.logger.log('Genesis Block found, starting Block Producer');
+    // this.logger.log('Genesis Block found, starting Block Producer');
 
     this.genesisTime = genesisBlock.timestamp;
 
     // ConsensusService에도 Genesis Time 설정
     this.consensusService.setGenesisTime(this.genesisTime!);
 
-    this.logger.log(
-      `Genesis Time set: ${new Date(this.genesisTime!).toISOString()}`,
-    );
+    // this.logger.log(
+    //   `Genesis Time set: ${new Date(this.genesisTime!).toISOString()}`,
+    // );
 
     // 블록 생성 시작
     this.start();
@@ -123,8 +123,8 @@ export class BlockProducer implements OnApplicationBootstrap {
     }
 
     this.isRunning = true;
-    this.logger.log('Block Producer started');
-    this.logger.log(`Block time: ${BLOCK_TIME / 1000} seconds`);
+    // this.logger.log('Block Producer started');
+    // this.logger.log(`Block time: ${BLOCK_TIME / 1000} seconds`);
 
     // 첫 블록 스케줄링
     this.scheduleNextBlock();
@@ -155,9 +155,9 @@ export class BlockProducer implements OnApplicationBootstrap {
     // 대기 시간 계산
     const delay = nextSlotTime - now;
 
-    this.logger.debug(
-      `Next block scheduled at slot ${currentSlot + 1} (in ${Math.round(delay / 1000)}s)`,
-    );
+      // this.logger.debug(
+      //   `Next block scheduled at slot ${currentSlot + 1} (in ${Math.round(delay / 1000)}s)`,
+      // );
 
     // 정확한 시간에 블록 생성
     this.currentTimeout = setTimeout(() => {
@@ -200,9 +200,9 @@ export class BlockProducer implements OnApplicationBootstrap {
       const committee =
         await this.validatorService.selectCommittee(currentSlot);
 
-      this.logger.log(
-        `Slot ${currentSlot}: Proposer=${proposer.slice(0, 10)}..., Committee=${committee.length} validators`,
-      );
+      // this.logger.log(
+      //   `Slot ${currentSlot}: Proposer=${proposer.slice(0, 10)}..., Committee=${committee.length} validators`,
+      // );
 
       // 3. 저널 시작 (블록 실행 준비)
       await this.stateManager.startBlock();
@@ -233,9 +233,9 @@ export class BlockProducer implements OnApplicationBootstrap {
         // 보상 분배
         await this.distributeRewards(proposer, attestations);
 
-        this.logger.log(
-          `✅ Block #${block.number} Justified & Saved: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
-        );
+        // this.logger.log(
+        //   `✅ Block #${block.number} Justified & Saved: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
+        // );
       } else {
         // ❌ 2/3 미달 → 롤백
         await this.stateManager.rollbackBlock();
@@ -288,9 +288,9 @@ export class BlockProducer implements OnApplicationBootstrap {
     const proposerReward = BigInt(PROPOSER_REWARD) * WEI_PER_DSTN;
     await this.accountService.addBalance(proposer, proposerReward);
 
-    this.logger.debug(
-      `Proposer reward: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
-    );
+      // this.logger.debug(
+      //   `Proposer reward: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
+      // );
 
     // 2. Committee 보상 (1 DSTN을 Attestation 제출자들이 나눔)
     if (attestations.length > 0) {
@@ -305,14 +305,14 @@ export class BlockProducer implements OnApplicationBootstrap {
         );
       }
 
-      this.logger.debug(
-        `Committee rewards: ${attestations.length} validators × ${Number(rewardPerAttester) / Number(WEI_PER_DSTN)} DSTN`,
-      );
+      // this.logger.debug(
+      //   `Committee rewards: ${attestations.length} validators × ${Number(rewardPerAttester) / Number(WEI_PER_DSTN)} DSTN`,
+      // );
     }
 
     // 총 보상
     const totalReward = PROPOSER_REWARD + COMMITTEE_REWARD_POOL;
-    this.logger.debug(`Total block reward: ${totalReward} DSTN distributed`);
+    // this.logger.debug(`Total block reward: ${totalReward} DSTN distributed`);
   }
 
   /**
@@ -332,7 +332,7 @@ export class BlockProducer implements OnApplicationBootstrap {
     }
 
     this.isRunning = false;
-    this.logger.log('Block Producer stopped');
+    // this.logger.log('Block Producer stopped');
   }
 
   /**

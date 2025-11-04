@@ -76,5 +76,3 @@ export abstract class IStateRepository {
    */
   abstract close(): Promise<void>;
 }
-
-

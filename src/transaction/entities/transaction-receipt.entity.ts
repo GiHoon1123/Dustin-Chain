@@ -63,7 +63,7 @@ export class TransactionReceipt {
    * - 트랜잭션 수신자
    * - Contract 생성 시 null
    */
-  to: Address;
+  to: Address | null;
 
   /**
    * 실행 상태
@@ -139,7 +139,7 @@ export class TransactionReceipt {
     blockHash: Hash,
     blockNumber: number,
     from: Address,
-    to: Address,
+    to: Address | null,
     status: 1 | 0,
     gasUsed: bigint,
     cumulativeGasUsed: bigint,
@@ -160,7 +160,7 @@ export class TransactionReceipt {
 
   /**
    * JSON 직렬화 (Ethereum JSON-RPC 표준)
-   * 
+   *
    * 이더리움 표준:
    * - transactionIndex, blockNumber, status: Hex String
    * - gasUsed, cumulativeGasUsed: Hex String

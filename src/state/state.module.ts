@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { StateManager } from './state-manager';
+import { CustomStateManager } from './custom-state-manager';
 
 /**
  * StateModule
@@ -23,7 +24,7 @@ import { StateManager } from './state-manager';
  */
 @Global()
 @Module({
-  providers: [StateManager],
-  exports: [StateManager],
+  providers: [StateManager, CustomStateManager],
+  exports: [StateManager, CustomStateManager],
 })
 export class StateModule {}

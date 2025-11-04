@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * 트랜잭션 정보 응답 DTO - Ethereum JSON-RPC 표준
- * 
+ *
  * 이더리움 표준:
  * - value, nonce, v, blockNumber, timestamp: Hex String
  */
