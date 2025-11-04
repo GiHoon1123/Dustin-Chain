@@ -87,11 +87,25 @@ export class CustomStateManager {
     if (!our) {
       // 존재하지 않는 계정은 nonce=0, balance=0, 빈 storage/code로 반환
       // this.logger.debug(`getAccount(${address}) → not found, returning empty`);
+      // hexToBytes는 Uint8Array를 반환하지만, 명시적으로 순수 Uint8Array 복제본으로 보장
+      const storageRootBytesRaw = this.crypto.hexToBytes(EMPTY_ROOT);
+      const codeHashBytesRaw = this.crypto.hexToBytes(EMPTY_HASH);
+
+      // 순수 Uint8Array 복제본 생성 (Buffer가 아닌)
+      const storageRootBytes =
+        storageRootBytesRaw instanceof Uint8Array
+          ? new Uint8Array(storageRootBytesRaw) // 복제본 생성
+          : new Uint8Array(storageRootBytesRaw);
+      const codeHashBytes =
+        codeHashBytesRaw instanceof Uint8Array
+          ? new Uint8Array(codeHashBytesRaw) // 복제본 생성
+          : new Uint8Array(codeHashBytesRaw);
+
       return createAccount({
         nonce: 0n,
         balance: 0n,
-        storageRoot: this.crypto.hexToBytes(EMPTY_ROOT),
-        codeHash: this.crypto.hexToBytes(EMPTY_HASH),
+        storageRoot: storageRootBytes,
+        codeHash: codeHashBytes,
       });
     }
     // this.logger.debug(
@@ -209,9 +223,23 @@ export class CustomStateManager {
     await this.putContractCode(normalizedAddr, value);
   }
 
+  /**
+   * getCode 오버라이드
+   *
+   * ⚠️ 중요: 기본 구현이 실행되지 않도록 명시적으로 오버라이드
+   * 기본 구현은 LevelDB에서 Buffer를 반환할 수 있어서 에러 발생 가능
+   */
   async getCode(address: Address | Uint8Array): Promise<Uint8Array> {
     const normalizedAddr = this.normalizeAddress(address);
-    return this.getContractCode(normalizedAddr);
+    const code = await this.getContractCode(normalizedAddr);
+
+    // ⚠️ 이중 보장: getContractCode가 이미 Uint8Array를 반환하지만, 다시 한번 확인
+    // Buffer가 아닌 순수 Uint8Array 복제본으로 반환
+    if (code instanceof Uint8Array && code.constructor.name === 'Uint8Array') {
+      return code;
+    }
+    // 만약 Buffer나 다른 타입이면 Uint8Array로 변환
+    return new Uint8Array(code);
   }
 
   async getCodeSize(address: Address | Uint8Array): Promise<number> {
@@ -231,7 +259,9 @@ export class CustomStateManager {
 
   async getStateRoot(): Promise<Uint8Array> {
     const root = await this.stateRepository.getStateRoot();
-    return Buffer.from(this.crypto.hexToBytes(root));
+    const rootBytes = this.crypto.hexToBytes(root);
+    // ⚠️ 중요: hexToBytes는 이미 Uint8Array를 반환하지만, 확실히 하기 위해 복제본 생성
+    return new Uint8Array(rootBytes);
   }
 
   async setStateRoot(
@@ -294,7 +324,9 @@ export class CustomStateManager {
     // Fallback: 주소 네임스페이스
     if (!key) key = `code:addr:${address}`;
     const hex = await this.kv!.get(key).catch(() => '');
-    const bytes = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
+    const bytesBuffer = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
+    // ⚠️ 중요: Buffer를 Uint8Array로 변환하여 반환
+    const bytes = new Uint8Array(bytesBuffer);
     // this.logger.debug(
     //   `getContractCode(${_address}) → ${bytes.byteLength} bytes (key=${key})`,
     // );
@@ -349,7 +381,9 @@ export class CustomStateManager {
     const slot = Buffer.from(_key).toString('hex');
     const k = `storage:${_address.toLowerCase()}:${slot}`;
     const hex = await this.kv!.get(k).catch(() => '');
-    const val = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
+    const valBuffer = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
+    // ⚠️ 중요: Buffer를 Uint8Array로 변환하여 반환
+    const val = new Uint8Array(valBuffer);
     // this.logger.debug(
     //   `getContractStorage(${_address}) slot=0x${slot} → ${val.byteLength} bytes`,
     // );
@@ -413,13 +447,48 @@ export class CustomStateManager {
     // 따라서 원래 nonce를 반환하고, 주소 생성 시에만 특별 처리 필요
     // 하지만 VM 코드를 수정할 수 없으므로, 일단 원래 nonce 반환
     // TODO: VM의 _generateAddress를 패치하거나 다른 방법 필요
-    
-    return createAccount({
+
+    // hexToBytes는 Uint8Array를 반환하지만, 명시적으로 순수 Uint8Array 복제본으로 보장
+    const storageRootBytesRaw = this.crypto.hexToBytes(storageRootStr);
+    const codeHashBytesRaw = this.crypto.hexToBytes(codeHashStr);
+
+    // 순수 Uint8Array 복제본 생성 (Buffer가 아닌)
+    const storageRootBytes =
+      storageRootBytesRaw instanceof Uint8Array
+        ? new Uint8Array(storageRootBytesRaw) // 복제본 생성
+        : new Uint8Array(storageRootBytesRaw);
+    const codeHashBytes =
+      codeHashBytesRaw instanceof Uint8Array
+        ? new Uint8Array(codeHashBytesRaw) // 복제본 생성
+        : new Uint8Array(codeHashBytesRaw);
+
+    // createAccount 호출 전에 타입 확인
+    const account = createAccount({
       nonce: BigInt(our.nonce),
       balance: our.balance,
-      storageRoot: this.crypto.hexToBytes(storageRootStr),
-      codeHash: this.crypto.hexToBytes(codeHashStr),
+      storageRoot: storageRootBytes,
+      codeHash: codeHashBytes,
     });
+
+    // ⚠️ 확인: createAccount가 내부적으로 Buffer를 다시 만들지 않는지 검증
+    if (
+      account.storageRoot &&
+      account.storageRoot.constructor.name !== 'Uint8Array'
+    ) {
+      this.logger.warn(
+        `[WARN] createAccount returned storageRoot as ${account.storageRoot.constructor.name}, expected Uint8Array`,
+      );
+    }
+    if (
+      account.codeHash &&
+      account.codeHash.constructor.name !== 'Uint8Array'
+    ) {
+      this.logger.warn(
+        `[WARN] createAccount returned codeHash as ${account.codeHash.constructor.name}, expected Uint8Array`,
+      );
+    }
+
+    return account;
   }
 
   /**
