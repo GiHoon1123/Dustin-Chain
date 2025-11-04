@@ -1,8 +1,16 @@
-import { Message } from '@ethereumjs/evm';
+import {
+  Common,
+  createCustomCommon,
+  Hardfork,
+  Mainnet,
+  StateManagerInterface,
+} from '@ethereumjs/common';
 import { Address as EthAddress } from '@ethereumjs/util';
-import { Injectable, Logger } from '@nestjs/common';
+import { createVM, VM } from '@ethereumjs/vm';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { AccountService } from '../account/account.service';
 import { BlockService } from '../block/block.service';
+import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
 import { CustomStateManager } from '../state/custom-state-manager';
@@ -17,15 +25,52 @@ import { CustomStateManager } from '../state/custom-state-manager';
  * - 컨트랙트 읽기 메서드 호출 (eth_call)
  */
 @Injectable()
-export class ContractService {
+export class ContractService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ContractService.name);
+  private callVM: VM | null = null;
+  private readonly common: Common;
 
   constructor(
     private readonly evmState: CustomStateManager,
     private readonly accountService: AccountService,
     private readonly cryptoService: CryptoService,
     private readonly blockService: BlockService,
-  ) {}
+  ) {
+    // Common 객체 초기화 (체인 파라미터)
+    this.common = createCustomCommon(
+      {
+        chainId: CHAIN_ID,
+      },
+      Mainnet,
+      {
+        hardfork: Hardfork.Cancun,
+      },
+    );
+  }
+
+  /**
+   * 애플리케이션 부트스트랩: eth_call 전용 VM 인스턴스 생성
+   *
+   * 이더리움과 동일하게:
+   * - eth_call은 별도의 VM 인스턴스 사용 (블록 실행과 독립)
+   * - 같은 StateManager를 공유하지만, VM의 내부 상태(_tx, _block)는 분리
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      // eth_call 전용 VM 인스턴스 생성
+      this.callVM = await createVM({
+        stateManager: this.evmState as unknown as StateManagerInterface,
+        common: this.common,
+      });
+
+      this.logger.log(
+        `Call VM initialized for eth_call (chainId=${this.common.chainId()})`,
+      );
+    } catch (e: unknown) {
+      this.logger.error(`Failed to initialize Call VM: ${String(e)}`);
+      // VM 없이도 계속 진행 (나중에 에러 발생)
+    }
+  }
 
   /**
    * 컨트랙트 바이트코드 조회
@@ -70,9 +115,9 @@ export class ContractService {
     data: string,
     from?: Address,
   ): Promise<{ result: string; gasUsed: string }> {
-    const vm = this.blockService.getVM();
-    if (!vm) {
-      throw new Error('VM is not initialized');
+    // eth_call 전용 VM 인스턴스 사용 (블록 실행 VM과 분리)
+    if (!this.callVM) {
+      throw new Error('Call VM is not initialized');
     }
 
     // Checkpoint 생성 (상태 변경 취소용)
@@ -104,36 +149,29 @@ export class ContractService {
       const toEthAddress = new EthAddress(toBytes);
       const callerEthAddress = new EthAddress(callerBytes);
 
-      // Message 객체 생성
-      const message = new Message({
-        to: toEthAddress,
-        caller: callerEthAddress,
-        data: dataBytes,
-        gasLimit: 16777215n,
-        value: 0n,
-      });
-
       // 최신 블록 가져오기 (블록 컨텍스트용)
       const latestBlock = await this.blockService.getLatestBlock();
       if (!latestBlock) {
         throw new Error('No blocks found');
       }
 
-      // VM에서 runCall 실행
-      // 중요: message를 직접 전달하지 않고 개별 옵션으로 전달해야 this._tx가 설정됨
-      // runCall 내부: if (!message) { this._tx = { gasPrice: opts.gasPrice ?? 0, origin: opts.origin ?? caller } }
-      // 추가 문제: interpreter.ts에서 내부적으로 runCall({ message })를 호출할 때도 this._tx가 필요
-      // 따라서 depth=0일 때만 this._tx를 설정하고, depth>0일 때는 이미 설정된 this._tx를 사용
-      // StateManager.getCode는 이미 CustomStateManager에서 Uint8Array를 보장하므로 추가 검증 불필요
-      const result = await vm.evm.runCall({
-        caller: callerEthAddress,
+      // VM에서 runCall 실행 (eth_call 전용 VM 인스턴스 사용)
+      // runCall 내부에서 message가 없으면 자동으로 this._tx와 this._block을 설정함
+      // 따라서 사전에 설정할 필요 없이, 옵션만 올바르게 전달하면 됨
+      const evm = this.callVM.evm as any;
+
+      // runCall 호출 (내부에서 this._tx와 this._block을 자동으로 설정)
+      // message를 전달하지 않으면, runCall 내부에서 message를 생성하고
+      // 동시에 this._tx와 this._block도 설정함
+      const result = await evm.runCall({
         to: toEthAddress,
+        caller: callerEthAddress,
         data: dataBytes,
         gasLimit: 16777215n,
         value: 0n,
-        gasPrice: 1000000000n, // 1 Gwei (EVM.runInterpreter가 this._tx.gasPrice를 읽으므로 필요)
-        origin: callerEthAddress, // this._tx.origin도 필요
-        depth: 0, // 최상위 호출이므로 depth=0
+        gasPrice: 1000000000n, // 1 Gwei (runCall 내부에서 this._tx.gasPrice로 설정됨)
+        origin: callerEthAddress, // runCall 내부에서 this._tx.origin으로 설정됨
+        depth: 0,
         block: {
           header: {
             number: BigInt(latestBlock.number),
@@ -145,10 +183,9 @@ export class ContractService {
       // Checkpoint 복구 (상태 변경 취소)
       await this.evmState.revert();
 
-      // VM 10.x runCall 반환값: execResult 구조
-      const returnValue =
-        (result as any).execResult?.returnValue || new Uint8Array();
-      const gasUsed = (result as any).execResult?.gasUsed || 0n;
+      // VM 10.x runCall 반환값: EVMResult 구조
+      const returnValue = result.execResult?.returnValue || new Uint8Array();
+      const gasUsed = result.execResult?.executionGasUsed || 0n;
 
       return {
         result: this.cryptoService.bytesToHex(returnValue),
