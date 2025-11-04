@@ -220,22 +220,41 @@ export class TransactionService {
    *
    * 이더리움 표준:
    * - nonce는 계정의 현재 nonce와 정확히 일치해야 함
-   * - 실행 시: tx.nonce === account.nonce (엄격)
-   * - Mempool: tx.nonce >= account.nonce (queued 허용 가능, 우리는 현재 pending만 지원)
+   * - Pool에 이미 같은 nonce의 트랜잭션이 있으면 거부 (중복 방지)
+   * - nonce는 트랜잭션이 블록에 포함되어 실행될 때만 증가
+   * - Pool에 있는 트랜잭션은 아직 실행되지 않았으므로 nonce는 증가하지 않음
    *
-   * 우리 구현:
-   * - 현재 pending만 지원하므로 정확히 일치해야 함
-   * - 나중에 queued 추가 시 수정 필요
+   * 예시:
+   * - accountNonce = 0
+   * - 첫 번째 트랜잭션 (nonce: 0) Pool 추가 → accountNonce는 여전히 0
+   * - 두 번째 트랜잭션 시도:
+   *   - nonce: 0 사용 → Pool에 이미 nonce 0이 있으면 거부
+   *   - nonce: 1 사용 → accountNonce는 0이므로 거부 (queued는 현재 미지원)
    *
    * @param tx - 검증할 트랜잭션
-   * @throws {Error} Nonce 불일치
+   * @throws {Error} Nonce 불일치 또는 중복
    */
   async validateNonce(tx: Transaction): Promise<void> {
     const accountNonce = await this.accountService.getNonce(tx.from);
 
+    // 1. 계정의 현재 nonce와 일치하는지 확인
     if (tx.nonce !== accountNonce) {
       throw new Error(
         `Invalid nonce: expected ${accountNonce}, got ${tx.nonce}`,
+      );
+    }
+
+    // 2. Pool에 이미 같은 nonce의 트랜잭션이 있는지 확인 (중복 방지)
+    const pendingTxs = this.txPool.getPending();
+    const duplicateTx = pendingTxs.find(
+      (pendingTx) =>
+        pendingTx.from.toLowerCase() === tx.from.toLowerCase() &&
+        pendingTx.nonce === tx.nonce,
+    );
+
+    if (duplicateTx) {
+      throw new Error(
+        `Duplicate nonce: transaction with nonce ${tx.nonce} already exists in pool (hash: ${duplicateTx.hash})`,
       );
     }
 
