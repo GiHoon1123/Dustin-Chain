@@ -317,23 +317,77 @@ export class CustomStateManager {
   }
 
   /**
-   * 컨트랙트 코드 조회 (codeHash 기반이 이상적이나, 현재는 주소 네임스페이스 + codeHash 보조)
+   * 컨트랙트 코드 조회
+   *
+   * 이더리움 표준:
+   * 1. 계정 조회 → codeHash 가져오기
+   * 2. codeHash로 바이트코드 조회
+   * 3. 없으면 빈 바이트 배열 반환
+   *
+   * Fallback:
+   * - account_codehash 키 또는 code:addr 키로 찾기 (레거시 호환)
    */
   async getContractCode(_address: Address): Promise<Uint8Array> {
     await this.ensureDB();
-    const address = _address.toLowerCase();
+    const address = this.normalizeAddress(_address).toLowerCase();
+
+    // 1. 먼저 계정을 조회해서 codeHash 가져오기 (이더리움 표준)
+    let codeHash: string | undefined;
+    try {
+      const account = await this.stateManager.getAccount(address);
+      if (
+        account &&
+        account.codeHash &&
+        account.codeHash !==
+          '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470'
+      ) {
+        // EMPTY_HASH가 아니면 codeHash 사용
+        codeHash = account.codeHash;
+      }
+    } catch (error) {
+      // 계정 조회 실패 시 무시하고 fallback 사용
+    }
+
+    // 2. codeHash가 있으면 code:${codeHash} 키로 조회
+    if (codeHash) {
+      const codeKey = `code:${codeHash}`;
+      const hex = await this.kv!.get(codeKey).catch(() => '');
+      if (hex) {
+        const bytesBuffer = Buffer.from(hex, 'hex');
+        const bytes = new Uint8Array(bytesBuffer);
+        this.logger.debug(
+          `[getContractCode] ${_address} → ${bytes.byteLength} bytes (codeHash=${codeHash})`,
+        );
+        return bytes;
+      } else {
+        this.logger.warn(
+          `[getContractCode] ${_address} codeHash=${codeHash} but code not found in KV`,
+        );
+      }
+    } else {
+      this.logger.warn(`[getContractCode] ${_address} no codeHash in account`);
+    }
+
+    // 3. Fallback 1: account_codehash 키로 찾기
     const codeHashKey = `account_codehash:${address}`;
     const storedHash = await this.kv!.get(codeHashKey).catch(() => undefined);
-    let key: string | undefined;
-    if (storedHash) key = `code:${storedHash}`;
-    // Fallback: 주소 네임스페이스
-    if (!key) key = `code:addr:${address}`;
-    const hex = await this.kv!.get(key).catch(() => '');
+    if (storedHash) {
+      const codeKey = `code:${storedHash}`;
+      const hex = await this.kv!.get(codeKey).catch(() => '');
+      if (hex) {
+        const bytesBuffer = Buffer.from(hex, 'hex');
+        const bytes = new Uint8Array(bytesBuffer);
+        return bytes;
+      }
+    }
+
+    // 4. Fallback 2: 주소 네임스페이스
+    const fallbackKey = `code:addr:${address}`;
+    const hex = await this.kv!.get(fallbackKey).catch(() => '');
     const bytesBuffer = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
-    // ⚠️ 중요: Buffer를 Uint8Array로 변환하여 반환
     const bytes = new Uint8Array(bytesBuffer);
     // this.logger.debug(
-    //   `getContractCode(${_address}) → ${bytes.byteLength} bytes (key=${key})`,
+    //   `getContractCode(${_address}) → ${bytes.byteLength} bytes (fallback)`,
     // );
     return bytes;
   }
@@ -343,7 +397,7 @@ export class CustomStateManager {
    */
   async putContractCode(_address: Address, _code: Uint8Array): Promise<void> {
     await this.ensureDB();
-    const address = _address.toLowerCase();
+    const address = this.normalizeAddress(_address).toLowerCase();
     const codeHash = this.crypto.hashBuffer(Buffer.from(_code));
     const codeKey = `code:${codeHash}`;
     await this.kv!.put(codeKey, Buffer.from(_code).toString('hex'));
@@ -383,8 +437,9 @@ export class CustomStateManager {
     _key: Uint8Array,
   ): Promise<Uint8Array> {
     await this.ensureDB();
+    const normalizedAddr = this.normalizeAddress(_address).toLowerCase();
     const slot = Buffer.from(_key).toString('hex');
-    const k = `storage:${_address.toLowerCase()}:${slot}`;
+    const k = `storage:${normalizedAddr}:${slot}`;
     const hex = await this.kv!.get(k).catch(() => '');
     const valBuffer = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
     // ⚠️ 중요: Buffer를 Uint8Array로 변환하여 반환
@@ -404,7 +459,7 @@ export class CustomStateManager {
     _value: Uint8Array,
   ): Promise<void> {
     await this.ensureDB();
-    const address = _address.toLowerCase();
+    const address = this.normalizeAddress(_address).toLowerCase();
     const slot = Buffer.from(_key).toString('hex');
     const k = `storage:${address}:${slot}`;
     await this.kv!.put(k, Buffer.from(_value).toString('hex'));
