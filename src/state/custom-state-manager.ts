@@ -131,21 +131,26 @@ export class CustomStateManager {
   }
 
   /**
-   * 체크포인트/커밋/리버트는 우리 StateManager 저널과 매핑
+   * 체크포인트/커밋/리버트는 우리 StateManager 저널 스택과 매핑
+   *
+   * 이더리움과 동일하게 동작:
+   * - checkpoint: 스택에 새 레벨 push (중첩 가능)
+   * - commit: 최상단 pop 후 하위 레벨에 병합
+   * - revert: 최상단 pop만 (변경사항 취소)
    */
   async checkpoint(): Promise<void> {
-    await this.stateManager.startBlock();
-    // this.logger.debug('checkpoint()');
+    await this.stateManager.checkpoint();
+    // this.logger.debug(`checkpoint() - depth: ${(this.stateManager as any).journalStack?.length || 'unknown'}`);
   }
 
   async commit(): Promise<void> {
-    await this.stateManager.commitBlock();
-    // this.logger.debug('commit()');
+    await this.stateManager.commitCheckpoint();
+    // this.logger.debug(`commit() - depth: ${(this.stateManager as any).journalStack?.length || 'unknown'}`);
   }
 
   async revert(): Promise<void> {
-    await this.stateManager.rollbackBlock();
-    // this.logger.debug('revert()');
+    await this.stateManager.revertCheckpoint();
+    // this.logger.debug(`revert() - depth: ${(this.stateManager as any).journalStack?.length || 'unknown'}`);
   }
 
   /**
