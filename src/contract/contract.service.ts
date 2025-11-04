@@ -1,3 +1,5 @@
+import { Message } from '@ethereumjs/evm';
+import { Address as EthAddress } from '@ethereumjs/util';
 import { Injectable, Logger } from '@nestjs/common';
 import { AccountService } from '../account/account.service';
 import { BlockService } from '../block/block.service';
@@ -77,28 +79,75 @@ export class ContractService {
     await this.evmState.checkpoint();
 
     try {
-      // data를 Buffer로 변환 (0x 접두사 제거)
-      const dataBuffer = Buffer.from(
-        data.startsWith('0x') ? data.slice(2) : data,
-        'hex',
-      );
+      // data를 Buffer로 변환 후 순수 Uint8Array 복제본 생성
+      const dataHex = data.startsWith('0x') ? data.slice(2) : data;
+      const dataBuffer = Buffer.from(dataHex, 'hex');
+      const dataBytes = new Uint8Array(dataBuffer); // 순수 Uint8Array 복제본
 
       // 호출자 주소 설정 (없으면 빈 주소)
       const callerAddress =
         from || '0x0000000000000000000000000000000000000000';
 
+      // Address 객체 생성 (20바이트)
+      // ⚠️ 중요: Buffer를 직접 넣지 말고, 순수 Uint8Array 복제본으로 생성
+      const toHex = to.startsWith('0x') ? to.slice(2) : to;
+      const callerHex = callerAddress.startsWith('0x')
+        ? callerAddress.slice(2)
+        : callerAddress;
+
+      // Buffer를 먼저 만들고, 그 다음 순수 Uint8Array 복제본 생성
+      const toBuffer = Buffer.from(toHex, 'hex');
+      const callerBuffer = Buffer.from(callerHex, 'hex');
+      const toBytes = new Uint8Array(toBuffer); // 순수 Uint8Array 복제본
+      const callerBytes = new Uint8Array(callerBuffer); // 순수 Uint8Array 복제본
+
+      const toEthAddress = new EthAddress(toBytes);
+      const callerEthAddress = new EthAddress(callerBytes);
+
+      // Message 객체 생성
+      const message = new Message({
+        to: toEthAddress,
+        caller: callerEthAddress,
+        data: dataBytes,
+        gasLimit: 16777215n,
+        value: 0n,
+      });
+
+      // 최신 블록 가져오기 (블록 컨텍스트용)
+      const latestBlock = await this.blockService.getLatestBlock();
+      if (!latestBlock) {
+        throw new Error('No blocks found');
+      }
+
       // VM에서 runCall 실행
+      // 중요: message를 직접 전달하지 않고 개별 옵션으로 전달해야 this._tx가 설정됨
+      // runCall 내부: if (!message) { this._tx = { gasPrice: opts.gasPrice ?? 0, origin: opts.origin ?? caller } }
+      // 추가 문제: interpreter.ts에서 내부적으로 runCall({ message })를 호출할 때도 this._tx가 필요
+      // 따라서 depth=0일 때만 this._tx를 설정하고, depth>0일 때는 이미 설정된 this._tx를 사용
+      // StateManager.getCode는 이미 CustomStateManager에서 Uint8Array를 보장하므로 추가 검증 불필요
       const result = await vm.evm.runCall({
-        to: to as any,
-        data: dataBuffer,
-        caller: callerAddress as any,
+        caller: callerEthAddress,
+        to: toEthAddress,
+        data: dataBytes,
+        gasLimit: 16777215n,
+        value: 0n,
+        gasPrice: 1000000000n, // 1 Gwei (EVM.runInterpreter가 this._tx.gasPrice를 읽으므로 필요)
+        origin: callerEthAddress, // this._tx.origin도 필요
+        depth: 0, // 최상위 호출이므로 depth=0
+        block: {
+          header: {
+            number: BigInt(latestBlock.number),
+            gasLimit: 30000000n,
+          } as any,
+        },
       });
 
       // Checkpoint 복구 (상태 변경 취소)
       await this.evmState.revert();
 
       // VM 10.x runCall 반환값: execResult 구조
-      const returnValue = (result as any).execResult?.returnValue || new Uint8Array();
+      const returnValue =
+        (result as any).execResult?.returnValue || new Uint8Array();
       const gasUsed = (result as any).execResult?.gasUsed || 0n;
 
       return {
@@ -108,11 +157,12 @@ export class ContractService {
     } catch (error: unknown) {
       // 에러 발생 시에도 checkpoint 복구
       await this.evmState.revert();
-      const errorMsg =
-        error instanceof Error ? error.message : String(error);
-      this.logger.error(`Contract call failed: ${errorMsg}`);
-      throw new Error(`Contract call failed: ${errorMsg}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(
+        `Contract call failed: ${errorMsg}${errorStack ? '\n' + errorStack : ''}`,
+      );
+      throw error;
     }
   }
 }
-
