@@ -81,8 +81,22 @@ export class TransactionService {
     // 1. 발신자 주소 도출
     const from = this.cryptoService.privateKeyToAddress(privateKey);
 
-    // 2. nonce 조회 (이더리움 표준: 서버가 현재 nonce를 사용)
-    const nonce = await this.accountService.getNonce(from);
+    // 2. nonce 조회 (pending 트랜잭션 포함)
+    // 이더리움 표준: pending 트랜잭션의 nonce를 고려해야 함
+    const accountNonce = await this.accountService.getNonce(from);
+    const pendingTxs = this.txPool.getPending();
+    const queuedTxs = this.txPool.getQueued();
+    const allTxs = [...pendingTxs, ...queuedTxs];
+
+    // 해당 계정의 pending/queued 트랜잭션 중 최대 nonce 찾기
+    const maxNonceInPool = allTxs
+      .filter((tx) => tx.from.toLowerCase() === from.toLowerCase())
+      .reduce((max, tx) => (tx.nonce > max ? tx.nonce : max), -1);
+
+    // 다음 nonce 사용
+    // - Pool에 트랜잭션이 없으면: accountNonce 사용 (pending으로 추가)
+    // - Pool에 트랜잭션이 있으면: maxNonceInPool + 1 사용 (queued로 추가)
+    const nonce = maxNonceInPool === -1 ? accountNonce : maxNonceInPool + 1;
 
     const gasPrice = options?.gasPrice ?? DEFAULT_GAS_PRICE;
     const gasLimit = options?.gasLimit ?? DEFAULT_GAS_LIMIT;
@@ -219,17 +233,17 @@ export class TransactionService {
    * Nonce 검증
    *
    * 이더리움 표준:
-   * - nonce는 계정의 현재 nonce와 정확히 일치해야 함
+   * - nonce는 계정의 현재 nonce와 같거나 커야 함
+   * - tx.nonce === accountNonce → pending (즉시 실행 가능)
+   * - tx.nonce > accountNonce → queued (대기 중)
+   * - tx.nonce < accountNonce → 거부 (이미 처리된 트랜잭션)
    * - Pool에 이미 같은 nonce의 트랜잭션이 있으면 거부 (중복 방지)
-   * - nonce는 트랜잭션이 블록에 포함되어 실행될 때만 증가
-   * - Pool에 있는 트랜잭션은 아직 실행되지 않았으므로 nonce는 증가하지 않음
    *
    * 예시:
-   * - accountNonce = 0
-   * - 첫 번째 트랜잭션 (nonce: 0) Pool 추가 → accountNonce는 여전히 0
-   * - 두 번째 트랜잭션 시도:
-   *   - nonce: 0 사용 → Pool에 이미 nonce 0이 있으면 거부
-   *   - nonce: 1 사용 → accountNonce는 0이므로 거부 (queued는 현재 미지원)
+   * - accountNonce = 5
+   * - nonce 5 → pending (즉시 실행 가능)
+   * - nonce 6, 7, 8 → queued (대기 중)
+   * - nonce 4 → 거부 (너무 오래됨)
    *
    * @param tx - 검증할 트랜잭션
    * @throws {Error} Nonce 불일치 또는 중복
@@ -237,19 +251,23 @@ export class TransactionService {
   async validateNonce(tx: Transaction): Promise<void> {
     const accountNonce = await this.accountService.getNonce(tx.from);
 
-    // 1. 계정의 현재 nonce와 일치하는지 확인
-    if (tx.nonce !== accountNonce) {
+    // 1. nonce가 너무 작으면 거부 (이미 처리된 트랜잭션)
+    if (tx.nonce < accountNonce) {
       throw new Error(
-        `Invalid nonce: expected ${accountNonce}, got ${tx.nonce}`,
+        `Invalid nonce: ${tx.nonce} < ${accountNonce} (transaction too old)`,
       );
     }
 
     // 2. Pool에 이미 같은 nonce의 트랜잭션이 있는지 확인 (중복 방지)
+    // pending과 queued 모두 확인
     const pendingTxs = this.txPool.getPending();
-    const duplicateTx = pendingTxs.find(
-      (pendingTx) =>
-        pendingTx.from.toLowerCase() === tx.from.toLowerCase() &&
-        pendingTx.nonce === tx.nonce,
+    const queuedTxs = this.txPool.getQueued();
+    const allTxs = [...pendingTxs, ...queuedTxs];
+
+    const duplicateTx = allTxs.find(
+      (poolTx) =>
+        poolTx.from.toLowerCase() === tx.from.toLowerCase() &&
+        poolTx.nonce === tx.nonce,
     );
 
     if (duplicateTx) {
@@ -406,8 +424,11 @@ export class TransactionService {
     // 4. 검증
     await this.validateTransaction(tx);
 
-    // 5. Pool 추가
-    const added = this.txPool.add(tx);
+    // 5. 계정 nonce 조회 (Pool 추가 시 pending/queued 구분을 위해 필요)
+    const accountNonce = await this.accountService.getNonce(from);
+
+    // 6. Pool 추가 (pending/queued 자동 구분)
+    const added = this.txPool.add(tx, accountNonce);
     if (!added) {
       throw new Error('Transaction already exists in pool');
     }

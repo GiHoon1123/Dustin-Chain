@@ -472,11 +472,24 @@ export class BlockService implements OnApplicationBootstrap {
       receipt.blockHash = hash;
     }
 
-    // 11. Receipt를 Block에 임시 저장 (나중에 saveBlock에서 사용)
+    // 11. Queued 트랜잭션을 Pending으로 전환
+    // 트랜잭션이 실행되어 nonce가 증가했으므로,
+    // 해당 계정의 queued 트랜잭션 중 실행 가능한 것들을 pending으로 전환
+    const processedAddresses = new Set<string>();
+    for (const tx of executedTxs) {
+      const addressLower = tx.from.toLowerCase();
+      if (!processedAddresses.has(addressLower)) {
+        processedAddresses.add(addressLower);
+        const newNonce = await this.accountService.getNonce(tx.from);
+        this.txPool.promoteQueuedToPending(tx.from, newNonce);
+      }
+    }
+
+    // 12. Receipt를 Block에 임시 저장 (나중에 saveBlock에서 사용)
     type BlockWithReceipts = Block & { receipts?: TransactionReceipt[] };
     (block as BlockWithReceipts).receipts = receipts;
 
-    // 12. 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
+    // 13. 저장하지 않음! (BlockProducer에서 2/3 확인 후 저장)
     // 블록 객체만 반환
 
     // this.logger.log(
@@ -852,12 +865,15 @@ export class BlockService implements OnApplicationBootstrap {
         );
         if (result.execResult.exceptionError) {
           const err = result.execResult.exceptionError;
-          this.logger.error(
-            `[VM] Constructor failed: ${JSON.stringify({
-              error: err.error?.toString(),
-              errorType: err.errorType,
-              reason: err.reason,
-            })}`,
+          // 컨트랙트 생성자 실패는 정상적인 현상일 수 있음 (WARN으로 처리)
+          this.logger.warn(
+            `[VM] Constructor failed (contract may revert intentionally): ${JSON.stringify(
+              {
+                error: err.error?.toString(),
+                errorType: err.errorType,
+                reason: err.reason,
+              },
+            )}`,
           );
         }
         if (returnValue.length > 0) {
@@ -867,12 +883,18 @@ export class BlockService implements OnApplicationBootstrap {
         }
       }
 
-      // 실패 시 에러 메시지 로깅
+      // 실패 시 에러 메시지 로깅 (컨트랙트 배포 실패는 WARN, 일반 트랜잭션 실패는 ERROR)
       if (result.execResult.exceptionError) {
         const errorInfo = result.execResult.exceptionError;
-        this.logger.error(
-          `[VM] Transaction failed: ${tx.hash} - Error: ${errorInfo.error || 'Unknown error'}`,
-        );
+        // 컨트랙트 배포 실패는 WARN, 일반 트랜잭션 실패는 ERROR
+        const logLevel = tx.to === null ? 'warn' : 'error';
+        const logMessage = `[VM] Transaction failed: ${tx.hash} - Error: ${errorInfo.error || 'Unknown error'}`;
+
+        if (logLevel === 'warn') {
+          this.logger.warn(logMessage);
+        } else {
+          this.logger.error(logMessage);
+        }
         // 상세 에러 정보 로깅
         if (errorInfo.error) {
           this.logger.error(
@@ -1166,12 +1188,19 @@ export class BlockService implements OnApplicationBootstrap {
       const key = this.cryptoService.rlpEncode(i);
 
       // Value: RLP(receipt) - Receipt 전체 데이터
-      // [status, cumulativeGasUsed, logsBloom, logs]
+      // 이더리움 표준: [status, cumulativeGasUsed, logsBloom, logs]
+      // logs는 [address, topics[], data] 형식의 배열
+      const encodedLogs = receipt.logs.map((log) => [
+        this.cryptoService.hexToBytes(log.address),
+        log.topics.map((topic) => this.cryptoService.hexToBytes(topic)),
+        this.cryptoService.hexToBytes(log.data || '0x'),
+      ]);
+
       const value = this.cryptoService.rlpEncode([
-        receipt.status, // status (1 or 0)
-        receipt.cumulativeGasUsed, // cumulative gas used
+        receipt.status.toString(), // status (1 or 0) - string으로 변환
+        receipt.cumulativeGasUsed.toString(), // cumulative gas used (bigint → string)
         this.cryptoService.hexToBytes(receipt.logsBloom), // logs bloom
-        receipt.logs, // logs array
+        encodedLogs, // logs array
       ]);
 
       // Trie에 저장
