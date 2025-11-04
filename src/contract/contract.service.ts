@@ -8,12 +8,22 @@ import {
 import { Address as EthAddress } from '@ethereumjs/util';
 import { createVM, VM } from '@ethereumjs/vm';
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AccountService } from '../account/account.service';
 import { BlockService } from '../block/block.service';
 import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
 import { CustomStateManager } from '../state/custom-state-manager';
+import { TransactionService } from '../transaction/transaction.service';
+
+interface GenesisAccount {
+  index: number;
+  address: string;
+  publicKey: string;
+  privateKey: string;
+}
 
 /**
  * Contract Service
@@ -30,11 +40,14 @@ export class ContractService implements OnApplicationBootstrap {
   private callVM: VM | null = null;
   private readonly common: Common;
 
+  private genesisAccount0: GenesisAccount | null = null;
+
   constructor(
     private readonly evmState: CustomStateManager,
     private readonly accountService: AccountService,
     private readonly cryptoService: CryptoService,
     private readonly blockService: BlockService,
+    private readonly transactionService: TransactionService,
   ) {
     // Common 객체 초기화 (체인 파라미터)
     this.common = createCustomCommon(
@@ -69,6 +82,52 @@ export class ContractService implements OnApplicationBootstrap {
     } catch (e: unknown) {
       this.logger.error(`Failed to initialize Call VM: ${String(e)}`);
       // VM 없이도 계속 진행 (나중에 에러 발생)
+    }
+
+    // 제네시스 계정 0번 로드 (쓰기 작업용)
+    this.loadGenesisAccount0();
+  }
+
+  private findAccountsFile(): string | null {
+    const possiblePaths = [
+      path.resolve(process.cwd(), 'genesis-accounts.json'),
+      path.resolve(__dirname, '../../genesis-accounts.json'),
+      path.resolve(__dirname, '../../../genesis-accounts.json'),
+    ];
+
+    for (const filePath of possiblePaths) {
+      if (fs.existsSync(filePath)) {
+        return filePath;
+      }
+    }
+
+    return null;
+  }
+
+  private loadGenesisAccount0(): void {
+    try {
+      const accountsPath = this.findAccountsFile();
+      if (!accountsPath) {
+        this.logger.warn('genesis-accounts.json not found');
+        return;
+      }
+
+      const fileContent = fs.readFileSync(accountsPath, 'utf8');
+      const allAccounts: GenesisAccount[] = JSON.parse(fileContent);
+
+      const account0 = allAccounts.find((acc) => acc.index === 0);
+
+      if (!account0) {
+        this.logger.warn('Genesis account 0 not found');
+        return;
+      }
+
+      this.genesisAccount0 = account0;
+      this.logger.log(
+        `Genesis account 0 loaded: ${account0.address.slice(0, 10)}...`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to load genesis account 0: ${error.message}`);
     }
   }
 
@@ -199,6 +258,70 @@ export class ContractService implements OnApplicationBootstrap {
       this.logger.error(
         `Contract call failed: ${errorMsg}${errorStack ? '\n' + errorStack : ''}`,
       );
+      throw error;
+    }
+  }
+
+  /**
+   * 컨트랙트 쓰기 메서드 실행 (트랜잭션 생성 및 제출)
+   *
+   * 이더리움:
+   * - eth_sendTransaction: 트랜잭션 생성 및 제출
+   * - 상태 변경 함수 호출용 (setValue, transfer 등)
+   *
+   * 동작:
+   * 1. 제네시스 계정 0번으로 트랜잭션 생성 및 서명
+   * 2. 트랜잭션 제출 (Pool 추가)
+   * 3. 트랜잭션 해시 반환
+   *
+   * @param to - 컨트랙트 주소
+   * @param data - ABI 인코딩된 함수 호출 데이터
+   * @returns 트랜잭션 해시 및 상태
+   */
+  async executeContract(
+    to: Address,
+    data: string,
+  ): Promise<{ hash: string; status: string }> {
+    if (!this.genesisAccount0) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    try {
+      const tx = await this.transactionService.signTransaction(
+        this.genesisAccount0.privateKey,
+        to,
+        0n,
+        {
+          data,
+          gasPrice: 1000000000n,
+          gasLimit: 1000000n,
+        },
+      );
+
+      const submittedTx = await this.transactionService.submitTransaction(
+        tx.from,
+        tx.to,
+        tx.value,
+        tx.nonce,
+        tx.getSignature(),
+        {
+          gasPrice: tx.gasPrice,
+          gasLimit: tx.gasLimit,
+          data: tx.data,
+        },
+      );
+
+      this.logger.log(
+        `Contract execute transaction submitted: ${submittedTx.hash} (from: ${this.genesisAccount0.address}, to: ${to})`,
+      );
+
+      return {
+        hash: submittedTx.hash,
+        status: 'pending',
+      };
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Contract execute failed: ${errorMsg}`);
       throw error;
     }
   }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AccountModule } from '../account/account.module';
 import { BlockModule } from '../block/block.module';
+import { TransactionModule } from '../transaction/transaction.module';
 import { ContractController } from './contract.controller';
 import { ContractService } from './contract.service';
 
@@ -20,12 +21,12 @@ import { ContractService } from './contract.service';
  * 의존성:
  * - AccountModule: 계정 정보 조회 (codeHash 등)
  * - BlockModule: VM 접근 (BlockService.getVM())
+ * - TransactionModule: 트랜잭션 생성 및 제출 (쓰기 작업용)
  */
 @Module({
-  imports: [AccountModule, BlockModule],
+  imports: [AccountModule, BlockModule, TransactionModule],
   controllers: [ContractController],
   providers: [ContractService],
   exports: [ContractService],
 })
 export class ContractModule {}
-
