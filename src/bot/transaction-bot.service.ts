@@ -215,7 +215,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
    * - 60초(1블록) = 4-5개 × 6회 = 24-30개 트랜잭션
    * - 시간당 = 1,440-1,800개 트랜잭션
    */
-  @Interval(10000)
+  @Interval(60000)
   async generateTransactions() {
     if (!this.isRunning || this.accounts.length === 0) {
       return;
@@ -238,7 +238,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
    *
    * 3개의 컨트랙트 중 랜덤으로 하나를 선택하여 배포
    */
-  @Interval(3000)
+  @Interval(600000)
   async deployContract() {
     if (!this.isRunning || !this.genesisAccount0) {
       return;

@@ -234,7 +234,7 @@ export class BlockProducer implements OnApplicationBootstrap {
         await this.distributeRewards(proposer, attestations);
 
         // this.logger.log(
-        //   `✅ Block #${block.number} Justified & Saved: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
+        //   `Block #${block.number} Justified & Saved: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
         // );
       } else {
         // ❌ 2/3 미달 → 롤백
