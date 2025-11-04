@@ -75,7 +75,8 @@ export class ContractController {
     description: '실행 결과',
     schema: {
       example: {
-        result: '0x0000000000000000000000000000000000000000000000000de0b6b3a7640000',
+        result:
+          '0x0000000000000000000000000000000000000000000000000de0b6b3a7640000',
         gasUsed: '0x5208',
       },
     },
@@ -95,4 +96,3 @@ export class ContractController {
     );
   }
 }
-
