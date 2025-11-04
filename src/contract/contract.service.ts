@@ -325,4 +325,63 @@ export class ContractService implements OnApplicationBootstrap {
       throw error;
     }
   }
+
+  /**
+   * 컨트랙트 배포
+   *
+   * 제네시스 계정 0번을 사용하여 컨트랙트를 배포합니다.
+   *
+   * ⚠️ 테스트용 API: 실제 프로덕션에서는 각 사용자가 자신의 지갑으로 서명해야 합니다.
+   * 임시 기능으로 UX 개선을 위해 구현되었습니다.
+   *
+   * @param bytecode - 컴파일된 컨트랙트 바이트코드 (hex string)
+   * @returns 트랜잭션 해시 및 상태
+   */
+  async deployContract(
+    bytecode: string,
+  ): Promise<{ hash: string; status: string }> {
+    if (!this.genesisAccount0) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    try {
+      // 컨트랙트 배포는 to가 null, data에 바이트코드
+      const tx = await this.transactionService.signTransaction(
+        this.genesisAccount0.privateKey,
+        null, // 컨트랙트 배포는 to가 null
+        0n,
+        {
+          data: bytecode,
+          gasPrice: 1000000000n,
+          gasLimit: 5000000n, // 컨트랙트 배포는 가스가 많이 필요
+        },
+      );
+
+      const submittedTx = await this.transactionService.submitTransaction(
+        tx.from,
+        null, // 컨트랙트 배포는 to가 null
+        tx.value,
+        tx.nonce,
+        tx.getSignature(),
+        {
+          gasPrice: tx.gasPrice,
+          gasLimit: tx.gasLimit,
+          data: tx.data,
+        },
+      );
+
+      this.logger.log(
+        `Contract deployment transaction submitted: ${submittedTx.hash} (from: ${this.genesisAccount0.address})`,
+      );
+
+      return {
+        hash: submittedTx.hash,
+        status: 'pending',
+      };
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Contract deployment failed: ${errorMsg}`);
+      throw error;
+    }
+  }
 }

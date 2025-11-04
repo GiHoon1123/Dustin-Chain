@@ -12,6 +12,10 @@ import {
   CallContractResponseDto,
 } from './dto/call-contract.dto';
 import {
+  DeployContractRequestDto,
+  DeployContractResponseDto,
+} from './dto/deploy-contract.dto';
+import {
   ExecuteContractRequestDto,
   ExecuteContractResponseDto,
 } from './dto/execute-contract.dto';
@@ -103,6 +107,49 @@ export class ContractController {
       body.data,
       body.from,
     );
+  }
+
+  /**
+   * 컨트랙트 배포 (트랜잭션 생성 및 제출)
+   *
+   * 이더리움:
+   * - eth_sendTransaction과 유사하지만 to가 null (컨트랙트 배포)
+   * - 트랜잭션을 생성하고 제출 (Pool 추가)
+   *
+   * 동작:
+   * 1. 제네시스 계정 0번으로 트랜잭션 생성 및 서명
+   * 2. 트랜잭션 제출 (Pool 추가)
+   * 3. 트랜잭션 해시 반환
+   *
+   * 주의:
+   * - 테스트용 API (제네시스 계정 0번 사용)
+   * - 실제 프로덕션에서는 각 사용자가 자신의 지갑(메타마스크)으로 서명
+   * - 임시 기능 (UX 개선을 위한 것)
+   *
+   * POST /contract/deploy
+   */
+  @Post('deploy')
+  @ApiOperation({
+    summary: '컨트랙트 배포 (트랜잭션 생성 및 제출)',
+    description:
+      '컨트랙트 바이트코드를 받아 배포 트랜잭션을 생성하고 제출합니다. 제네시스 계정 0번을 사용합니다.\n\n' +
+      '⚠️ 테스트용 API: 실제 프로덕션에서는 각 사용자가 자신의 지갑으로 서명해야 합니다.\n' +
+      '⚠️ 임시 기능: UX 개선을 위해 구현되었습니다.\n\n' +
+      'bytecode 필드는 컴파일된 컨트랙트 바이트코드(hex string)입니다.',
+  })
+  @ApiBody({
+    type: DeployContractRequestDto,
+    description: '컨트랙트 배포 요청 데이터',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '트랜잭션 제출 성공',
+    type: DeployContractResponseDto,
+  })
+  async deployContract(
+    @Body() body: DeployContractRequestDto,
+  ): Promise<DeployContractResponseDto> {
+    return await this.contractService.deployContract(body.bytecode);
   }
 
   /**
