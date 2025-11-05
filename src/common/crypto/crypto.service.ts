@@ -111,7 +111,9 @@ export class CryptoService {
     // elliptic 라이브러리가 자동으로 유효한 범위의 키 생성
     const keyPair = this.ec.genKeyPair();
     const privateKey = keyPair.getPrivate('hex');
-    return addHexPrefix(privateKey);
+    // 64 hex chars로 패딩 (32 bytes)
+    const paddedKey = privateKey.padStart(64, '0');
+    return addHexPrefix(paddedKey);
   }
 
   /**
