@@ -3,7 +3,6 @@ import { Interval } from '@nestjs/schedule';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AccountService } from '../account/account.service';
-import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
 import { ContractService } from '../contract/contract.service';
@@ -228,6 +227,9 @@ export class TransactionBotService implements OnApplicationBootstrap {
       for (let i = 0; i < count; i++) {
         await this.sendRandomTransaction();
       }
+      this.logger.log(
+        `Generated ${count} transactions for ${this.accounts.length} accounts`,
+      );
     } catch (error: any) {
       this.logger.error(`Bot error: ${error.message}`);
     }
@@ -331,41 +333,32 @@ export class TransactionBotService implements OnApplicationBootstrap {
         return;
       }
 
-      // 6. Nonce 가져오기
-      const nonce = await this.accountService.getNonce(fromAccount.address);
-
-      // 7. 트랜잭션 해시 계산 (TransactionService와 동일한 방식)
+      // 6. TransactionService.signTransaction() 사용
+      // - nonce 계산 자동 처리 (pending/queued 고려)
+      // - RLP 기반 해시 계산 (서명 검증 통과)
       const data = '0x';
-      const txData = {
-        from: fromAccount.address,
-        to: toAccount.address,
-        value: amount.toString(),
-        nonce,
-        gasPrice: gasPrice.toString(),
-        gasLimit: gasLimit.toString(),
-        data,
-        chainId: CHAIN_ID,
-      };
-      const txHash = this.cryptoService.hashUtf8(JSON.stringify(txData));
-
-      // 8. 트랜잭션 서명 (EIP-155)
-      const signature = this.cryptoService.signTransaction(
-        txHash,
+      const signedTx = await this.transactionService.signTransaction(
         fromAccount.privateKey,
-        CHAIN_ID,
-      );
-
-      // 9. 트랜잭션 제출
-      await this.transactionService.submitTransaction(
-        fromAccount.address,
         toAccount.address,
         amount,
-        nonce,
-        signature,
         {
+          data,
           gasPrice,
           gasLimit,
-          data,
+        },
+      );
+
+      // 7. 서명된 트랜잭션에서 정보 추출하여 제출
+      await this.transactionService.submitTransaction(
+        signedTx.from,
+        signedTx.to,
+        signedTx.value,
+        signedTx.nonce,
+        signedTx.getSignature(),
+        {
+          gasPrice: signedTx.gasPrice,
+          gasLimit: signedTx.gasLimit,
+          data: signedTx.data,
         },
       );
 
@@ -375,9 +368,9 @@ export class TransactionBotService implements OnApplicationBootstrap {
       // this.logger.debug(
       //   `✅ Bot TX: ${fromAccount.address.slice(0, 8)}...→${toAccount.address.slice(0, 8)}... (${this.formatDSTN(amount)} DSTN)`,
       // );
-    } catch {
+    } catch (error: any) {
       // 에러는 조용히 무시 (Nonce 충돌 등)
-      // this.logger.debug(`Bot TX failed: ${error.message}`);
+      this.logger.debug(`Bot TX failed: ${error.message}`);
     }
   }
 

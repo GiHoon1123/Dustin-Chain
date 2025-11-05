@@ -14,9 +14,9 @@ import { Transaction } from '../entities/transaction.entity';
  * - pending + queued 구현
  * - In-Memory 저장
  * - 블록 생성 시 여기서 트랜잭션 가져감
+ * - Gas Price 기반 정렬 (높은 가스 가격부터 처리)
  *
  * 나중에 개선:
- * - Gas Price 기반 정렬
  * - 용량 제한 & 자동 제거
  * - 시간 초과 처리
  */
@@ -100,11 +100,25 @@ export class TransactionPool {
    * 모든 Pending 트랜잭션 조회
    *
    * 블록 생성 시 사용
+   * 가스 가격 내림차순 정렬 (높은 가스 가격부터 처리)
    *
-   * @returns 모든 Pending 트랜잭션 배열
+   * @returns 모든 Pending 트랜잭션 배열 (가스 가격 내림차순 정렬)
    */
   getPending(): Transaction[] {
-    return Array.from(this.pending.values());
+    const txs = Array.from(this.pending.values());
+    // 가스 가격 내림차순 정렬 (높은 가스 가격부터)
+    // 같은 가스 가격이면 nonce 순서로 정렬 (계정별 순서 보장)
+    return txs.sort((a, b) => {
+      // 1순위: 가스 가격 내림차순
+      if (b.gasPrice > a.gasPrice) return 1;
+      if (b.gasPrice < a.gasPrice) return -1;
+      // 2순위: 같은 계정이면 nonce 오름차순 (순서 보장)
+      if (a.from.toLowerCase() === b.from.toLowerCase()) {
+        return a.nonce - b.nonce;
+      }
+      // 3순위: 다른 계정이면 해시로 정렬 (일관성)
+      return a.hash.localeCompare(b.hash);
+    });
   }
 
   /**
