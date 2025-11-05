@@ -18,7 +18,7 @@
  * - 너무 짧으면: 네트워크 부하, 포크 발생 가능성 증가
  * - 너무 길면: 트랜잭션 확인 시간 지연
  */
-export const BLOCK_TIME = 60000; // milliseconds (60 seconds)
+export const BLOCK_TIME = 12000; // milliseconds (12 seconds)
 // export const BLOCK_TIME = 10000; // milliseconds (60 seconds)
 
 /**
