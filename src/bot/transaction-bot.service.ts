@@ -239,38 +239,22 @@ export class TransactionBotService implements OnApplicationBootstrap {
    * 10분마다 컨트랙트 배포 (600,000ms = 10분)
    *
    * 3개의 컨트랙트 중 랜덤으로 하나를 선택하여 배포
+   *
+   * 주의: ContractService.deployContract()가 내부적으로 deploymentAccounts 중
+   * 랜덤 계정을 선택하여 배포하므로, 봇에서는 단순히 호출만 하면 됩니다.
    */
   @Interval(600000)
   async deployContract() {
-    if (!this.isRunning || !this.genesisAccount0) {
+    if (!this.isRunning) {
       return;
     }
 
     if (this.contractBytecodes.length === 0) {
+      this.logger.warn('No contract bytecodes loaded, skipping deployment');
       return;
     }
 
     try {
-      // Pool에 같은 nonce의 트랜잭션이 있는지 확인 (pending + queued 모두 확인)
-      const currentNonce = await this.accountService.getNonce(
-        this.genesisAccount0.address,
-      );
-      const pendingTxs = this.txPool.getPending();
-      const queuedTxs = this.txPool.getQueued();
-      const allTxs = [...pendingTxs, ...queuedTxs];
-
-      const hasPendingTx = allTxs.some(
-        (tx) =>
-          tx.from.toLowerCase() ===
-            this.genesisAccount0!.address.toLowerCase() &&
-          tx.nonce === currentNonce,
-      );
-
-      if (hasPendingTx) {
-        // Pool에 이미 같은 nonce의 트랜잭션이 있으면 건너뛰기
-        return;
-      }
-
       // 3개 컨트랙트 중 랜덤으로 하나 선택
       const randomIndex = Math.floor(
         Math.random() * this.contractBytecodes.length,
@@ -278,6 +262,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
       const bytecode = this.contractBytecodes[randomIndex];
 
       // ContractService.deployContract 사용 (수동 배포 API와 동일한 로직)
+      // ContractService 내부에서 deploymentAccounts 중 랜덤 계정을 선택하여 배포
       const result = await this.contractService.deployContract(bytecode);
 
       // 트랜잭션 카운터 증가
@@ -293,6 +278,13 @@ export class TransactionBotService implements OnApplicationBootstrap {
         // 조용히 무시 (이미 Pool에 있는 트랜잭션)
         return;
       }
+
+      // Deployment accounts 에러도 조용히 무시 (계정이 로드되지 않은 경우)
+      if (error.message?.includes('Deployment accounts are not loaded')) {
+        this.logger.warn('Deployment accounts not loaded, skipping deployment');
+        return;
+      }
+
       this.logger.error(`Contract deployment failed: ${error.message}`);
     }
   }
