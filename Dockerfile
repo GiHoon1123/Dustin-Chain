@@ -56,10 +56,8 @@ COPY --from=builder --chown=nestjs:nodejs /app/package*.json ./
 COPY --chown=nestjs:nodejs entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
-# 컨트랙트 바이트코드 파일 복사 (봇이 컨트랙트 배포에 사용)
-COPY --from=builder --chown=nestjs:nodejs /app/contract-bytecodes.json ./contract-bytecodes.json
-
 # 데이터 디렉토리 생성 (LevelDB 저장소)
+# contract-bytecodes.json은 볼륨 마운팅으로 제공 (호스트에서 마운팅 필요)
 RUN mkdir -p /app/data/chaindata && \
     mkdir -p /app/data/state
 
