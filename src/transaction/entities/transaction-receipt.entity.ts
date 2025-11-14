@@ -166,18 +166,30 @@ export class TransactionReceipt {
    * - gasUsed, cumulativeGasUsed: Hex String
    */
   toJSON() {
+    const logs = this.logs.map((log) => ({
+      address: log.address,
+      topics: log.topics,
+      data: log.data,
+      blockNumber: `0x${log.blockNumber.toString(16)}`,
+      transactionHash: log.transactionHash,
+      transactionIndex: `0x${log.transactionIndex.toString(16)}`,
+      blockHash: log.blockHash || this.blockHash,
+      logIndex: `0x${log.logIndex.toString(16)}`,
+      removed: log.removed,
+    }));
+
     return {
       transactionHash: this.transactionHash,
-      transactionIndex: `0x${this.transactionIndex.toString(16)}`, // ✅ Hex String
+      transactionIndex: `0x${this.transactionIndex.toString(16)}`,
       blockHash: this.blockHash,
-      blockNumber: `0x${this.blockNumber.toString(16)}`, // ✅ Hex String
+      blockNumber: `0x${this.blockNumber.toString(16)}`,
       from: this.from,
       to: this.to,
-      status: `0x${this.status.toString(16)}`, // ✅ Hex String (0x0 or 0x1)
-      gasUsed: `0x${this.gasUsed.toString(16)}`, // ✅ Hex String
-      cumulativeGasUsed: `0x${this.cumulativeGasUsed.toString(16)}`, // ✅ Hex String
+      status: `0x${this.status.toString(16)}`,
+      gasUsed: `0x${this.gasUsed.toString(16)}`,
+      cumulativeGasUsed: `0x${this.cumulativeGasUsed.toString(16)}`,
       contractAddress: this.contractAddress,
-      logs: this.logs,
+      logs,
       logsBloom: this.logsBloom,
     };
   }

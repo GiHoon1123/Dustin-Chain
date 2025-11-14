@@ -467,9 +467,11 @@ export class BlockService implements OnApplicationBootstrap {
       hash,
     );
 
-    // 10. Receipt에 blockHash 설정
     for (const receipt of receipts) {
       receipt.blockHash = hash;
+      for (const log of receipt.logs) {
+        log.blockHash = hash;
+      }
     }
 
     // 11. Queued 트랜잭션을 Pending으로 전환
