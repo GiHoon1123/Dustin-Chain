@@ -322,6 +322,7 @@ export class BlockLevelDBRepository
       header.stateRoot,
       header.transactionsRoot,
       header.receiptsRoot,
+      header.logsBloom,
       header.transactionCount.toString(),
     ];
 
@@ -335,19 +336,28 @@ export class BlockLevelDBRepository
   private deserializeHeader(serializedData: Buffer): BlockHeader {
     try {
       // Binary 그대로 디코딩 (Hex 변환 없음)
-      const decoded = this.cryptoService.rlpDecode(serializedData);
+      const decoded = this.cryptoService.rlpDecode(serializedData) as any[];
 
-      const [
-        number,
-        hash,
-        parentHash,
-        timestamp,
-        proposer,
-        stateRoot,
-        transactionsRoot,
-        receiptsRoot,
-        transactionCount,
-      ] = decoded as any[];
+      // 기존 데이터 호환성: 배열 길이 확인
+      // 기존 구조 (9개): [number, hash, parentHash, timestamp, proposer, stateRoot, transactionsRoot, receiptsRoot, transactionCount]
+      // 신규 구조 (10개): [number, hash, parentHash, timestamp, proposer, stateRoot, transactionsRoot, receiptsRoot, logsBloom, transactionCount]
+      const isOldFormat = decoded.length === 9;
+
+      const number = decoded[0];
+      const hash = decoded[1];
+      const parentHash = decoded[2];
+      const timestamp = decoded[3];
+      const proposer = decoded[4];
+      const stateRoot = decoded[5];
+      const transactionsRoot = decoded[6];
+      const receiptsRoot = decoded[7];
+      const logsBloom = isOldFormat ? undefined : decoded[8];
+      const transactionCount = isOldFormat ? decoded[8] : decoded[9];
+
+      // 기존 데이터 호환성: logsBloom이 없으면 빈 bloom으로 설정
+      const blockLogsBloom = logsBloom
+        ? this.ensureHexString(logsBloom)
+        : '0x' + '0'.repeat(512);
 
       return {
         number: parseInt(number.toString()),
@@ -358,6 +368,7 @@ export class BlockLevelDBRepository
         stateRoot: this.ensureHexString(stateRoot),
         transactionsRoot: this.ensureHexString(transactionsRoot),
         receiptsRoot: this.ensureHexString(receiptsRoot),
+        logsBloom: blockLogsBloom,
         transactionCount: parseInt(transactionCount.toString()),
       };
     } catch (error: any) {

@@ -18,6 +18,7 @@ export interface BlockHeader {
   stateRoot: Hash;
   transactionsRoot: Hash;
   receiptsRoot: Hash;
+  logsBloom: string;
   transactionCount: number;
 }
 
@@ -163,6 +164,21 @@ export class Block {
    */
   receiptsRoot: Hash;
 
+  /**
+   * Logs Bloom Filter
+   *
+   * 이더리움:
+   * - 블록 내 모든 Receipt의 logsBloom을 OR 연산한 결과
+   * - 2048비트 (256바이트) Bloom Filter
+   * - 로그 조회 최적화에 사용 (eth_getLogs)
+   * - Block Header에 포함
+   *
+   * 사용처:
+   * - 블록에 특정 로그가 있는지 빠르게 확인 (확률적)
+   * - Light Client가 로그를 효율적으로 필터링
+   */
+  logsBloom: string;
+
   constructor(
     number: number,
     parentHash: Hash,
@@ -172,6 +188,7 @@ export class Block {
     stateRoot: Hash,
     transactionsRoot: Hash,
     receiptsRoot: Hash,
+    logsBloom: string,
     hash: Hash,
   ) {
     this.number = number;
@@ -182,6 +199,7 @@ export class Block {
     this.stateRoot = stateRoot;
     this.transactionsRoot = transactionsRoot;
     this.receiptsRoot = receiptsRoot;
+    this.logsBloom = logsBloom;
     this.hash = hash;
   }
 
@@ -230,6 +248,7 @@ export class Block {
       stateRoot: this.stateRoot,
       transactionsRoot: this.transactionsRoot,
       receiptsRoot: this.receiptsRoot,
+      logsBloom: this.logsBloom,
     };
   }
 
@@ -252,6 +271,7 @@ export class Block {
       stateRoot: this.stateRoot,
       transactionsRoot: this.transactionsRoot,
       receiptsRoot: this.receiptsRoot,
+      logsBloom: this.logsBloom,
     };
   }
 
@@ -283,6 +303,7 @@ export class Block {
       header.stateRoot,
       header.transactionsRoot,
       header.receiptsRoot,
+      header.logsBloom,
       header.hash,
     );
   }

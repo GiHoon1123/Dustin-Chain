@@ -258,6 +258,9 @@ export class BlockService implements OnApplicationBootstrap {
     const transactionsRoot = await this.calculateTransactionsRoot([]);
     const receiptsRoot = await this.calculateReceiptsRoot([]);
 
+    // Genesis Block의 logsBloom은 빈 bloom (로그 없음)
+    const genesisLogsBloom = '0x' + '0'.repeat(512);
+
     const hash = this.calculateBlockHash(
       0,
       parentHash,
@@ -265,6 +268,7 @@ export class BlockService implements OnApplicationBootstrap {
       this.GENESIS_PROPOSER,
       transactionsRoot,
       receiptsRoot,
+      genesisLogsBloom,
       stateRoot,
     );
 
@@ -277,6 +281,7 @@ export class BlockService implements OnApplicationBootstrap {
       stateRoot,
       transactionsRoot,
       receiptsRoot,
+      genesisLogsBloom,
       hash,
     );
 
@@ -443,7 +448,13 @@ export class BlockService implements OnApplicationBootstrap {
     // 7. Receipts Root 계산
     const receiptsRoot = await this.calculateReceiptsRoot(receipts);
 
-    // 8. Block Hash 계산
+    // 8. Block Logs Bloom 계산 (이더리움 표준)
+    // 모든 Receipt의 logsBloom을 OR 연산
+    const receiptLogsBlooms = receipts.map((receipt) => receipt.logsBloom);
+    const blockLogsBloom =
+      this.cryptoService.combineLogsBlooms(receiptLogsBlooms);
+
+    // 9. Block Hash 계산
     const hash = this.calculateBlockHash(
       blockNumber,
       parentHash,
@@ -451,10 +462,11 @@ export class BlockService implements OnApplicationBootstrap {
       proposer,
       transactionsRoot,
       receiptsRoot,
+      blockLogsBloom,
       stateRoot,
     );
 
-    // 9. Block 생성
+    // 10. Block 생성
     const block = new Block(
       blockNumber,
       parentHash,
@@ -464,6 +476,7 @@ export class BlockService implements OnApplicationBootstrap {
       stateRoot,
       transactionsRoot,
       receiptsRoot,
+      blockLogsBloom,
       hash,
     );
 
@@ -970,7 +983,9 @@ export class BlockService implements OnApplicationBootstrap {
           };
         },
       );
-      const logsBloom = '0x' + '0'.repeat(512);
+
+      // Logs Bloom Filter 계산 (이더리움 표준)
+      const logsBloom = this.cryptoService.calculateLogsBloom(logs);
 
       return { status, gasUsed, contractAddress, logs, logsBloom };
     }
@@ -1031,15 +1046,18 @@ export class BlockService implements OnApplicationBootstrap {
     proposer: Address,
     transactionsRoot: Hash,
     receiptsRoot: Hash,
+    logsBloom: string,
     stateRoot: Hash,
   ): Hash {
     // Header 필드를 배열로 구성 (순서 중요!)
-    // RLP 인코딩: [parentHash, stateRoot, transactionsRoot, receiptsRoot, number, timestamp, proposer]
+    // RLP 인코딩: [parentHash, stateRoot, transactionsRoot, receiptsRoot, logsBloom, number, timestamp, proposer]
+    // 이더리움 표준에 따라 logsBloom이 receiptsRoot 다음에 위치
     const headerArray = [
       this.cryptoService.hexToBytes(parentHash), // 이전 블록 해시
       this.cryptoService.hexToBytes(stateRoot), // 상태 루트
       this.cryptoService.hexToBytes(transactionsRoot), // 트랜잭션 루트
       this.cryptoService.hexToBytes(receiptsRoot), // Receipt 루트
+      this.cryptoService.hexToBytes(logsBloom), // Logs Bloom
       number, // 블록 번호
       timestamp, // 타임스탬프
       this.cryptoService.hexToBytes(proposer), // 블록 생성자
