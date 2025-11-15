@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { GetLogsRequestDto, LogDto } from './dto/get-logs.dto';
 import {
   SendTransactionRequestDto,
   SendTransactionResponseDto,
@@ -138,6 +139,98 @@ export class TransactionController {
    * - 배포 트랜잭션(to=null) 테스트를 위한 임시 엔드포인트
    */
   // 임시 send-raw 엔드포인트 제거됨
+
+  /**
+   * 로그 조회 (eth_getLogs)
+   *
+   * 이더리움 표준:
+   * - eth_getLogs RPC 메서드와 동일한 동작
+   * - logsBloom을 활용한 빠른 필터링
+   *
+   * RPC 표준:
+   * - 파라미터: {fromBlock?, toBlock?, address?, topics?}
+   * - address: 단일 주소 문자열 또는 주소 배열
+   * - topics: 배열 (최대 4개), 각 요소는 null, 단일 topic, 또는 topic 배열
+   * - fromBlock/toBlock 기본값: "latest"
+   *
+   * 주의: 라우트 순서 중요 - :hash 라우트보다 먼저 정의해야 함
+   *
+   * GET /transaction/logs
+   */
+  @Get('logs')
+  @ApiOperation({
+    summary: '로그 조회 (eth_getLogs)',
+    description:
+      '블록 범위와 필터 조건에 맞는 로그를 조회합니다. logsBloom을 활용하여 빠르게 필터링합니다. (Ethereum JSON-RPC 표준)',
+  })
+  @ApiQuery({
+    name: 'fromBlock',
+    required: false,
+    description: '시작 블록 번호 (hex string 또는 "latest")',
+    example: '0x0',
+  })
+  @ApiQuery({
+    name: 'toBlock',
+    required: false,
+    description: '끝 블록 번호 (hex string 또는 "latest")',
+    example: 'latest',
+  })
+  @ApiQuery({
+    name: 'address',
+    required: false,
+    description: '컨트랙트 주소 (단일 주소 또는 쉼표로 구분된 배열)',
+    example: '0x29ee51dd76197743f997cdf76a6d3aa4d16d2bca',
+    type: String,
+  })
+  @ApiQuery({
+    name: 'topics',
+    required: false,
+    description: '토픽 필터 배열 (JSON 문자열, 최대 4개)',
+    example: '["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: '필터링된 로그 배열 (이더리움 표준 형식)',
+    type: [LogDto],
+  })
+  async getLogs(
+    @Query('fromBlock') fromBlock?: string,
+    @Query('toBlock') toBlock?: string,
+    @Query('address') address?: string | string[],
+    @Query('topics') topics?: string,
+  ): Promise<LogDto[]> {
+    // address 파싱 (단일 주소 문자열 또는 쉼표로 구분된 배열)
+    let addresses: string[] | undefined;
+    if (address) {
+      if (Array.isArray(address)) {
+        addresses = address;
+      } else if (address.includes(',')) {
+        addresses = address.split(',').map((addr) => addr.trim());
+      } else {
+        addresses = [address];
+      }
+    }
+
+    // topics 파싱 (JSON 문자열)
+    let parsedTopics: (string | string[] | null)[] | undefined;
+    if (topics) {
+      try {
+        parsedTopics = JSON.parse(topics);
+      } catch {
+        parsedTopics = undefined;
+      }
+    }
+
+    const logs = await this.transactionService.getLogs(
+      fromBlock,
+      toBlock,
+      addresses,
+      parsedTopics,
+    );
+
+    return logs;
+  }
 
   /**
    * 트랜잭션 조회

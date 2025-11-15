@@ -4,11 +4,20 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { BlockService } from './block.service';
 import { BlockDto, ChainStatsDto } from './dto/block.dto';
 import { BlockProducer } from './producer/block.producer';
+import { TransactionService } from '../transaction/transaction.service';
+import { LogDto } from '../transaction/dto/get-logs.dto';
 
 /**
  * Block Controller
@@ -36,6 +45,7 @@ export class BlockController {
   constructor(
     private readonly blockService: BlockService,
     private readonly blockProducer: BlockProducer,
+    private readonly transactionService: TransactionService,
   ) {}
 
   /**
@@ -239,5 +249,90 @@ export class BlockController {
       message: 'Block mining stopped',
       status: this.blockProducer.getStatus(),
     };
+  }
+
+  /**
+   * 로그 조회 (eth_getLogs)
+   *
+   * 이더리움 표준:
+   * - eth_getLogs RPC 메서드와 동일한 동작
+   * - logsBloom을 활용한 빠른 필터링
+   * - 블록 범위와 필터 조건에 맞는 로그 조회
+   *
+   * GET /block/logs
+   */
+  @Get('logs')
+  @ApiOperation({
+    summary: '로그 조회 (eth_getLogs)',
+    description:
+      '블록 범위와 필터 조건에 맞는 로그를 조회합니다. logsBloom을 활용하여 빠르게 필터링합니다. (Ethereum JSON-RPC 표준)',
+  })
+  @ApiQuery({
+    name: 'fromBlock',
+    required: false,
+    description: '시작 블록 번호 (hex string 또는 "latest")',
+    example: '0x0',
+  })
+  @ApiQuery({
+    name: 'toBlock',
+    required: false,
+    description: '끝 블록 번호 (hex string 또는 "latest")',
+    example: 'latest',
+  })
+  @ApiQuery({
+    name: 'address',
+    required: false,
+    description: '컨트랙트 주소 (단일 주소 또는 쉼표로 구분된 배열)',
+    example: '0x29ee51dd76197743f997cdf76a6d3aa4d16d2bca',
+    type: String,
+  })
+  @ApiQuery({
+    name: 'topics',
+    required: false,
+    description: '토픽 필터 배열 (JSON 문자열, 최대 4개)',
+    example: '["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: '필터링된 로그 배열 (이더리움 표준 형식)',
+    type: [LogDto],
+  })
+  async getLogs(
+    @Query('fromBlock') fromBlock?: string,
+    @Query('toBlock') toBlock?: string,
+    @Query('address') address?: string | string[],
+    @Query('topics') topics?: string,
+  ): Promise<LogDto[]> {
+    // address 파싱 (단일 주소 문자열 또는 쉼표로 구분된 배열)
+    let addresses: string[] | undefined;
+    if (address) {
+      if (Array.isArray(address)) {
+        addresses = address;
+      } else if (address.includes(',')) {
+        addresses = address.split(',').map((addr) => addr.trim());
+      } else {
+        addresses = [address];
+      }
+    }
+
+    // topics 파싱 (JSON 문자열)
+    let parsedTopics: (string | string[] | null)[] | undefined;
+    if (topics) {
+      try {
+        parsedTopics = JSON.parse(topics);
+      } catch {
+        parsedTopics = undefined;
+      }
+    }
+
+    const logs = await this.transactionService.getLogs(
+      fromBlock,
+      toBlock,
+      addresses,
+      parsedTopics,
+    );
+
+    return logs;
   }
 }

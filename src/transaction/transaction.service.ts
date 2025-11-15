@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AccountService } from '../account/account.service';
+import { Block } from '../block/entities/block.entity';
 import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Signature } from '../common/crypto/crypto.types';
@@ -525,6 +526,215 @@ export class TransactionService {
     }
 
     return receipt;
+  }
+
+  /**
+   * 로그 조회 (eth_getLogs)
+   *
+   * 이더리움 표준:
+   * - eth_getLogs RPC 메서드와 동일한 동작
+   * - logsBloom을 활용한 빠른 필터링
+   *
+   * 필터링 과정:
+   * 1. 블록 범위 확인 (fromBlock ~ toBlock)
+   * 2. 각 블록의 logsBloom 확인 (address, topics)
+   * 3. logsBloom에 없으면 스킵 (확실)
+   * 4. logsBloom에 있으면 실제 로그 검사
+   *
+   * @param fromBlock - 시작 블록 번호 (hex string 또는 "latest")
+   * @param toBlock - 끝 블록 번호 (hex string 또는 "latest")
+   * @param addresses - 컨트랙트 주소 배열 (선택)
+   * @param topics - 토픽 필터 배열 (선택, 최대 4개)
+   * @returns 필터링된 로그 배열
+   */
+  async getLogs(
+    fromBlock?: string,
+    toBlock?: string,
+    addresses?: string[],
+    topics?: (string | string[] | null)[],
+  ): Promise<any[]> {
+    const levelDbRepo = this.blockRepository as BlockLevelDBRepository;
+
+    // 블록 번호 파싱
+    const latestBlock = await this.blockRepository.findLatest();
+    if (!latestBlock) {
+      return [];
+    }
+
+    const fromBlockNumber = this.parseBlockNumber(fromBlock, latestBlock.number);
+    const toBlockNumber = this.parseBlockNumber(toBlock, latestBlock.number);
+
+    if (fromBlockNumber > toBlockNumber) {
+      return [];
+    }
+
+    const logs: any[] = [];
+
+    // 각 블록 순회
+    for (
+      let blockNumber = fromBlockNumber;
+      blockNumber <= toBlockNumber;
+      blockNumber++
+    ) {
+      const block = await this.blockRepository.findByNumber(blockNumber);
+      if (!block) {
+        continue;
+      }
+
+      const blockHeader = block.getHeader();
+
+      // logsBloom 확인 (빠른 필터링)
+      if (addresses && addresses.length > 0) {
+        let hasAddress = false;
+        for (const address of addresses) {
+          if (
+            this.cryptoService.isInLogsBloom(
+              blockHeader.logsBloom,
+              address.toLowerCase(),
+            )
+          ) {
+            hasAddress = true;
+            break;
+          }
+        }
+        if (!hasAddress) {
+          continue; // address가 없으면 스킵
+        }
+      }
+
+      if (topics && topics.length > 0) {
+        let hasTopic = false;
+        for (let i = 0; i < topics.length && i < 4; i++) {
+          const topicFilter = topics[i];
+          if (!topicFilter || (Array.isArray(topicFilter) && topicFilter.length === 0)) {
+            hasTopic = true; // null이면 모든 토픽 허용
+            break;
+          }
+
+          const topicArray = Array.isArray(topicFilter)
+            ? topicFilter
+            : [topicFilter];
+
+          for (const topic of topicArray) {
+            if (
+              topic &&
+              this.cryptoService.isInLogsBloom(
+                blockHeader.logsBloom,
+                topic.toLowerCase(),
+              )
+            ) {
+              hasTopic = true;
+              break;
+            }
+          }
+
+          if (hasTopic) {
+            break;
+          }
+        }
+        if (!hasTopic) {
+          continue; // topics가 없으면 스킵
+        }
+      }
+
+      // 실제 로그 검사 (logsBloom에 있으면)
+      // Block의 모든 트랜잭션에 대해 Receipt 조회
+      for (let txIndex = 0; txIndex < block.transactions.length; txIndex++) {
+        const tx = block.transactions[txIndex];
+        const receipt = await levelDbRepo.findReceipt(tx.hash);
+        if (!receipt) {
+          continue;
+        }
+        for (let logIndex = 0; logIndex < receipt.logs.length; logIndex++) {
+          const logObj = receipt.logs[logIndex];
+          // Log 인터페이스 형식으로 변환 (toJSON에서 생성된 형식)
+          const log = {
+            address: logObj.address,
+            topics: logObj.topics,
+            data: logObj.data,
+            blockNumber: `0x${blockNumber.toString(16)}`,
+            transactionHash: receipt.transactionHash,
+            transactionIndex: `0x${txIndex.toString(16)}`,
+            blockHash: receipt.blockHash,
+            logIndex: `0x${logIndex.toString(16)}`,
+            removed: logObj.removed || false,
+          };
+
+          // address 필터
+          if (addresses && addresses.length > 0) {
+            const addressMatch = addresses.some(
+              (addr) => addr.toLowerCase() === log.address.toLowerCase(),
+            );
+            if (!addressMatch) {
+              continue;
+            }
+          }
+
+          // topics 필터
+          if (topics && topics.length > 0) {
+            let topicMatch = true;
+            for (let i = 0; i < topics.length && i < 4; i++) {
+              const topicFilter = topics[i];
+              if (!topicFilter || (Array.isArray(topicFilter) && topicFilter.length === 0)) {
+                continue; // null이면 모든 토픽 허용
+              }
+
+              const logTopic = log.topics[i];
+              if (!logTopic) {
+                topicMatch = false;
+                break;
+              }
+
+              const topicArray = Array.isArray(topicFilter)
+                ? topicFilter
+                : [topicFilter];
+
+              const matches = topicArray.some(
+                (filterTopic) =>
+                  !filterTopic ||
+                  filterTopic.toLowerCase() === logTopic.toLowerCase(),
+              );
+
+              if (!matches) {
+                topicMatch = false;
+                break;
+              }
+            }
+
+            if (!topicMatch) {
+              continue;
+            }
+          }
+
+          // 필터 통과한 로그 추가
+          logs.push(log);
+        }
+      }
+    }
+
+    return logs;
+  }
+
+  /**
+   * 블록 번호 파싱 (헬퍼 메서드)
+   *
+   * @param blockNumber - 블록 번호 (hex string 또는 "latest")
+   * @param latestBlockNumber - 최신 블록 번호
+   * @returns 파싱된 블록 번호
+   */
+  private parseBlockNumber(
+    blockNumber: string | undefined,
+    latestBlockNumber: number,
+  ): number {
+    if (!blockNumber || blockNumber === 'latest') {
+      return latestBlockNumber;
+    }
+
+    if (blockNumber.startsWith('0x')) {
+      return parseInt(blockNumber, 16);
+    }
+
+    return parseInt(blockNumber, 10);
   }
 
   /**
