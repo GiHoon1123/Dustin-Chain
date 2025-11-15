@@ -94,6 +94,168 @@ export class CryptoService {
   }
 
   /**
+   * Logs Bloom Filter 계산
+   *
+   * 이더리움 표준:
+   * - Bloom Filter 크기: 2048비트 (256바이트)
+   * - 각 로그의 address와 topics를 Keccak-256 해시
+   * - 해시에서 3개 비트 위치 계산: (hash[0] * 256 + hash[1]) % 2048 등
+   * - 해당 비트들을 1로 설정 (OR 연산)
+   *
+   * Yellow Paper:
+   * - m(σ,μ) = B(2048) (256바이트 블룸 필터)
+   * - 각 로그의 address와 topics를 포함
+   *
+   * @param logs - 로그 배열 (address, topics 포함)
+   * @returns logsBloom (512 hex chars, "0x" 접두사 포함)
+   */
+  calculateLogsBloom(logs: { address: string; topics: string[] }[]): string {
+    // 2048비트 = 256바이트 배열 초기화
+    const bloom = Buffer.alloc(256, 0);
+
+    for (const log of logs) {
+      // address 해시 및 비트 설정
+      const addressHash = this.hashBuffer(
+        Buffer.from(stripHexPrefix(log.address), 'hex'),
+      );
+      this.setBloomBits(bloom, Buffer.from(stripHexPrefix(addressHash), 'hex'));
+
+      // 각 topic 해시 및 비트 설정
+      for (const topic of log.topics) {
+        const topicHash = this.hashBuffer(
+          Buffer.from(stripHexPrefix(topic), 'hex'),
+        );
+        this.setBloomBits(
+          bloom,
+          Buffer.from(stripHexPrefix(topicHash), 'hex'),
+        );
+      }
+    }
+
+    // Hex 문자열로 변환
+    return addHexPrefix(bloom.toString('hex'));
+  }
+
+  /**
+   * 여러 Logs Bloom을 OR 연산으로 결합
+   *
+   * 이더리움 표준:
+   * - 블록의 logsBloom은 모든 Receipt의 logsBloom을 OR 연산
+   * - Block Header에 포함되어 로그 조회 최적화에 사용
+   *
+   * @param blooms - logsBloom 배열 (각각 "0x" 접두사 포함)
+   * @returns 결합된 logsBloom (512 hex chars, "0x" 접두사 포함)
+   */
+  combineLogsBlooms(blooms: string[]): string {
+    if (blooms.length === 0) {
+      // 빈 경우 0으로 채운 bloom 반환
+      return addHexPrefix('0'.repeat(512));
+    }
+
+    // 2048비트 = 256바이트 배열 초기화
+    const combinedBloom = Buffer.alloc(256, 0);
+
+    // 모든 bloom을 OR 연산으로 결합
+    for (const bloomHex of blooms) {
+      const bloomBytes = Buffer.from(stripHexPrefix(bloomHex), 'hex');
+      for (let i = 0; i < 256; i++) {
+        combinedBloom[i] |= bloomBytes[i];
+      }
+    }
+
+    // Hex 문자열로 변환
+    return addHexPrefix(combinedBloom.toString('hex'));
+  }
+
+  /**
+   * Bloom Filter에 비트 설정 (내부 헬퍼 메서드)
+   *
+   * 이더리움 표준:
+   * - Keccak-256 해시에서 3개 비트 위치 계산
+   * - bit1 = (hash[0] * 256 + hash[1]) % 2048
+   * - bit2 = (hash[2] * 256 + hash[3]) % 2048
+   * - bit3 = (hash[4] * 256 + hash[5]) % 2048
+   *
+   * @param bloom - Bloom Filter 버퍼 (256바이트)
+   * @param hash - Keccak-256 해시 버퍼 (32바이트)
+   */
+  private setBloomBits(bloom: Buffer, hash: Buffer): void {
+    // 3개 비트 위치 계산
+    const bit1 = (hash[0] * 256 + hash[1]) % 2048;
+    const bit2 = (hash[2] * 256 + hash[3]) % 2048;
+    const bit3 = (hash[4] * 256 + hash[5]) % 2048;
+
+    // 비트 설정 (OR 연산)
+    this.setBit(bloom, bit1);
+    this.setBit(bloom, bit2);
+    this.setBit(bloom, bit3);
+  }
+
+  /**
+   * Bloom Filter의 특정 비트를 1로 설정 (내부 헬퍼 메서드)
+   *
+   * @param bloom - Bloom Filter 버퍼 (256바이트)
+   * @param bitIndex - 비트 인덱스 (0-2047)
+   */
+  private setBit(bloom: Buffer, bitIndex: number): void {
+    // 바이트 인덱스: bitIndex / 8 (정수 나눗셈)
+    // 비트 인덱스: bitIndex % 8
+    const byteIndex = Math.floor(bitIndex / 8);
+    const bitOffset = bitIndex % 8;
+
+    // 빅엔디안 비트 설정 (비트 7부터 0까지)
+    bloom[byteIndex] |= 1 << (7 - bitOffset);
+  }
+
+  /**
+   * Bloom Filter에 특정 값이 포함되어 있는지 확인
+   *
+   * 이더리움 표준:
+   * - address나 topic이 logsBloom에 포함되어 있는지 확인
+   * - Bloom Filter는 확률적 구조 (false positive 가능, false negative 없음)
+   * - 3개 비트가 모두 1이면 포함 가능성 있음
+   * - 하나라도 0이면 포함되지 않음
+   *
+   * @param bloomHex - logsBloom (hex string, "0x" 접두사 포함)
+   * @param value - 확인할 값 (address 또는 topic, hex string)
+   * @returns 포함되어 있으면 true (확률적), 없으면 false (확실)
+   */
+  isInLogsBloom(bloomHex: string, value: string): boolean {
+    const bloomBytes = Buffer.from(stripHexPrefix(bloomHex), 'hex');
+    const valueHash = this.hashBuffer(
+      Buffer.from(stripHexPrefix(value), 'hex'),
+    );
+    const hashBytes = Buffer.from(stripHexPrefix(valueHash), 'hex');
+
+    // 3개 비트 위치 계산
+    const bit1 = (hashBytes[0] * 256 + hashBytes[1]) % 2048;
+    const bit2 = (hashBytes[2] * 256 + hashBytes[3]) % 2048;
+    const bit3 = (hashBytes[4] * 256 + hashBytes[5]) % 2048;
+
+    // 3개 비트가 모두 1인지 확인
+    return (
+      this.getBit(bloomBytes, bit1) &&
+      this.getBit(bloomBytes, bit2) &&
+      this.getBit(bloomBytes, bit3)
+    );
+  }
+
+  /**
+   * Bloom Filter의 특정 비트 값 조회 (내부 헬퍼 메서드)
+   *
+   * @param bloom - Bloom Filter 버퍼 (256바이트)
+   * @param bitIndex - 비트 인덱스 (0-2047)
+   * @returns 비트 값 (true: 1, false: 0)
+   */
+  private getBit(bloom: Buffer, bitIndex: number): boolean {
+    const byteIndex = Math.floor(bitIndex / 8);
+    const bitOffset = bitIndex % 8;
+
+    // 빅엔디안 비트 조회 (비트 7부터 0까지)
+    return (bloom[byteIndex] & (1 << (7 - bitOffset))) !== 0;
+  }
+
+  /**
    * 무작위 개인키 생성
    *
    * 이더리움에서의 동작:
