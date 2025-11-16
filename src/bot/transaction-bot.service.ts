@@ -275,7 +275,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
   /**
    * 5분마다 토큰 배포 및 초기 분배 (300,000ms = 5분)
    */
-  @Interval(30000)
+  @Interval(300000)
   async deployTokenAndDistribute() {
     if (!this.isRunning || this.tokenAccounts.length === 0) {
       return;
