@@ -122,6 +122,7 @@ describe('TransactionService - getLogs', () => {
         ],
         getHeader: jest.fn().mockReturnValue({
           logsBloom: '0x' + '1'.repeat(512),
+          timestamp: 1000,
         }),
       } as any;
 
@@ -135,6 +136,7 @@ describe('TransactionService - getLogs', () => {
       expect(result).toHaveLength(1);
       expect(result[0].address).toBe('0xcontract1');
       expect(result[0].blockNumber).toBe('0x1');
+      expect(result[0].timestamp).toBe('0x3e8'); // 1000(dec) = 0x3e8
     });
 
     it('should filter by block range', async () => {
@@ -143,6 +145,7 @@ describe('TransactionService - getLogs', () => {
         transactions: [],
         getHeader: jest.fn().mockReturnValue({
           logsBloom: '0x' + '0'.repeat(512),
+          timestamp: 1000,
         }),
       } as any;
 
@@ -151,6 +154,7 @@ describe('TransactionService - getLogs', () => {
         transactions: [],
         getHeader: jest.fn().mockReturnValue({
           logsBloom: '0x' + '0'.repeat(512),
+          timestamp: 2000,
         }),
       } as any;
 
@@ -200,6 +204,7 @@ describe('TransactionService - getLogs', () => {
         transactions: [{ hash: '0xtx1' }],
         getHeader: jest.fn().mockReturnValue({
           logsBloom: '0x' + '1'.repeat(512),
+          timestamp: 1000,
         }),
       } as any;
 
@@ -251,6 +256,7 @@ describe('TransactionService - getLogs', () => {
         transactions: [{ hash: '0xtx1' }],
         getHeader: jest.fn().mockReturnValue({
           logsBloom: '0x' + '1'.repeat(512),
+          timestamp: 1000,
         }),
       } as any;
 
@@ -275,6 +281,7 @@ describe('TransactionService - getLogs', () => {
         transactions: [],
         getHeader: jest.fn().mockReturnValue({
           logsBloom: '0x' + '0'.repeat(512),
+          timestamp: 1000,
         }),
       } as any;
 
@@ -292,6 +299,7 @@ describe('TransactionService - getLogs', () => {
         transactions: [],
         getHeader: jest.fn().mockReturnValue({
           logsBloom: '0x' + '0'.repeat(512),
+          timestamp: 1000,
         }),
       } as any;
 

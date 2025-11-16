@@ -80,6 +80,11 @@ export class LogDto {
   blockNumber: string;
 
   @ApiProperty({
+    description: '블록 타임스탬프 (Unix timestamp, Hex String)',
+  })
+  timestamp: string;
+
+  @ApiProperty({
     description: '트랜잭션 해시',
   })
   transactionHash: string;

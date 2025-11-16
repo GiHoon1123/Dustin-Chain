@@ -582,6 +582,7 @@ export class TransactionService {
       }
 
       const blockHeader = block.getHeader();
+      const blockTimestampHex = `0x${blockHeader.timestamp.toString(16)}`;
 
       // logsBloom 확인 (빠른 필터링)
       if (addresses && addresses.length > 0) {
@@ -653,6 +654,7 @@ export class TransactionService {
             topics: logObj.topics,
             data: logObj.data,
             blockNumber: `0x${blockNumber.toString(16)}`,
+            timestamp: blockTimestampHex,
             transactionHash: receipt.transactionHash,
             transactionIndex: `0x${txIndex.toString(16)}`,
             blockHash: receipt.blockHash,
