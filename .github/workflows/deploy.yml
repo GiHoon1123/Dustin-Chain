@@ -76,6 +76,8 @@ jobs:
               -v /var/dustin-chain/data:/app/data \
               -v /var/dustin-chain/config/genesis.json:/app/genesis.json \
               -v /var/dustin-chain/config/genesis-accounts.json:/app/genesis-accounts.json \
+              -v /var/dustin-chain/config/contract-bytecodes.json:/app/contract-bytecodes.json \
+              -v /var/dustin-chain/config/token-bytecodes.json:/app/token-bytecodes.json \
               -e NODE_ENV=production \
               $IMAGE
             
