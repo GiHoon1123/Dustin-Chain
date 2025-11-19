@@ -251,7 +251,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
   /**
    * 120초마다 4-5개 트랜잭션 생성
    */
-  @Interval(120000)
+  @Interval(1400000)
   async generateTransactions() {
     if (!this.isRunning || this.accounts.length === 0) {
       return;
@@ -275,7 +275,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
   /**
    * 5분마다 토큰 배포 및 초기 분배 (300,000ms = 5분)
    */
-  @Interval(300000)
+  @Interval(1400000)
   async deployTokenAndDistribute() {
     if (!this.isRunning || this.tokenAccounts.length === 0) {
       return;
@@ -364,7 +364,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
    * 주의: ContractService.deployContract()가 내부적으로 deploymentAccounts 중
    * 랜덤 계정을 선택하여 배포하므로, 봇에서는 단순히 호출만 하면 됩니다.
    */
-  @Interval(600000)
+  @Interval(1400000)
   async deployContract() {
     if (!this.isRunning) {
       return;
@@ -490,7 +490,7 @@ export class TransactionBotService implements OnApplicationBootstrap {
   /**
    * 30초마다 토큰 전송 (30,000ms = 30초)
    */
-  @Interval(30000)
+  @Interval(1400000)
   async generateTokenTransactions() {
     if (!this.isRunning || this.tokenAccounts.length === 0) {
       return;
