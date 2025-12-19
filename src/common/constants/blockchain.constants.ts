@@ -83,6 +83,15 @@ export const GENESIS_BALANCE = {
 };
 
 /**
+ * WALLET_CREATION_BONUS: 새 지갑 생성 시 지급되는 보너스 금액 (DSTN)
+ *
+ * Dustin-Chain:
+ * - 새 지갑 생성 시 자동으로 10,000 DSTN 지급
+ * - 사용자가 즉시 트랜잭션을 수행할 수 있도록 초기 자금 제공
+ */
+export const WALLET_CREATION_BONUS = 10_000; // DSTN
+
+/**
  * CHAIN_ID: 체인 식별자
  *
  * 이더리움에서:

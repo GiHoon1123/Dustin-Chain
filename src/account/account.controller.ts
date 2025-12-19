@@ -1,5 +1,9 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  WALLET_CREATION_BONUS,
+  WEI_PER_DSTN,
+} from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { AccountService } from './account.service';
 import { AccountDto } from './dto/account.dto';
@@ -78,11 +82,17 @@ export class AccountController {
     // 계정을 블록체인 상태에 등록 (잔액 0, nonce 0)
     await this.accountService.getOrCreateAccount(keyPair.address);
 
+    // 새 지갑 생성 시 10,000 DSTN 자동 지급 (스테이블코인, 스테이킹 테스트용)
+    const bonusAmount = BigInt(WALLET_CREATION_BONUS) * WEI_PER_DSTN;
+    await this.accountService.addBalance(keyPair.address, bonusAmount);
+    // 최신 잔액 조회
+    const balance = await this.accountService.getBalance(keyPair.address);
+
     return {
       privateKey: keyPair.privateKey,
       publicKey: keyPair.publicKey,
       address: keyPair.address,
-      balance: '0',
+      balance: balance.toString(),
       nonce: 0,
     };
   }
