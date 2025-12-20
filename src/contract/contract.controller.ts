@@ -193,4 +193,89 @@ export class ContractController {
   ): Promise<ExecuteContractResponseDto> {
     return await this.contractService.executeContract(body.to, body.data);
   }
+
+  /**
+   * 스테이블코인 시스템 전체 배포
+   *
+   * StableCoin과 CollateralVault를 순서대로 배포하고 연결합니다.
+   *
+   * POST /contract/deploy-stablecoin-system
+   */
+  @Post('deploy-stablecoin-system')
+  @ApiOperation({
+    summary: '스테이블코인 시스템 전체 배포',
+    description:
+      'StableCoin과 CollateralVault를 순서대로 배포합니다.\n\n' +
+      '배포 순서:\n' +
+      '1. StableCoin 배포\n' +
+      '2. CollateralVault 배포\n\n' +
+      '주의: 배포 후 setStablecoin()과 setVault()를 호출하여 컨트랙트를 연결해야 합니다.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '배포 성공',
+    schema: {
+      example: {
+        stablecoinAddress: '0x1234567890123456789012345678901234567890',
+        vaultAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+        stablecoinTxHash: '0x...',
+        vaultTxHash: '0x...',
+      },
+    },
+  })
+  async deployStablecoinSystem(): Promise<{
+    stablecoinAddress: string;
+    vaultAddress: string;
+    stablecoinTxHash: string;
+    vaultTxHash: string;
+  }> {
+    return await this.contractService.deployStablecoinSystem();
+  }
+
+  /**
+   * 컨트랙트 ABI 조회
+   *
+   * 스캔 서비스에서 자동으로 ABI를 조회할 수 있습니다.
+   *
+   * GET /contract/:address/abi
+   */
+  @Get(':address/abi')
+  @ApiOperation({
+    summary: '컨트랙트 ABI 조회',
+    description:
+      '배포된 컨트랙트의 ABI를 조회합니다. 배포 시 자동으로 저장된 ABI를 반환합니다.',
+  })
+  @ApiParam({
+    name: 'address',
+    description: '컨트랙트 주소',
+    example: '0x1234567890123456789012345678901234567890',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '컨트랙트 ABI 정보',
+    schema: {
+      example: {
+        address: '0x1234567890123456789012345678901234567890',
+        name: 'StableCoin',
+        abi: [
+          {
+            inputs: [],
+            name: 'name',
+            outputs: [{ type: 'string' }],
+            stateMutability: 'view',
+            type: 'function',
+          },
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'ABI를 찾을 수 없음',
+  })
+  async getContractABI(
+    @Param('address') address: string,
+  ): Promise<{ address: string; name: string; abi: any[] } | null> {
+    return this.contractService.getContractABI(address);
+  }
 }

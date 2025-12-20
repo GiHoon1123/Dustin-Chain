@@ -357,6 +357,93 @@ export class ContractService implements OnApplicationBootstrap {
   }
 
   /**
+   * ABI 저장 (컨트랙트 주소와 ABI 매핑)
+   */
+  private saveContractABI(
+    contractAddress: Address,
+    contractName: string,
+    abi: any[],
+  ): void {
+    try {
+      const abisPath = path.resolve(process.cwd(), 'contract-abis.json');
+      let abisData: {
+        contracts: Array<{
+          address: string;
+          name: string;
+          abi: any[];
+        }>;
+      } = { contracts: [] };
+
+      // 기존 파일이 있으면 읽기
+      if (fs.existsSync(abisPath)) {
+        const content = fs.readFileSync(abisPath, 'utf8');
+        abisData = JSON.parse(content);
+      }
+
+      // 이미 존재하는 주소면 업데이트, 없으면 추가
+      const existingIndex = abisData.contracts.findIndex(
+        (c) => c.address.toLowerCase() === contractAddress.toLowerCase(),
+      );
+
+      if (existingIndex >= 0) {
+        abisData.contracts[existingIndex] = {
+          address: contractAddress,
+          name: contractName,
+          abi,
+        };
+      } else {
+        abisData.contracts.push({
+          address: contractAddress,
+          name: contractName,
+          abi,
+        });
+      }
+
+      // 파일에 저장
+      fs.writeFileSync(abisPath, JSON.stringify(abisData, null, 2), 'utf8');
+      this.logger.log(
+        `Contract ABI saved: ${contractName} at ${contractAddress}`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to save contract ABI: ${error.message}`);
+    }
+  }
+
+  /**
+   * 컨트랙트 ABI 조회
+   */
+  getContractABI(contractAddress: Address): {
+    address: string;
+    name: string;
+    abi: any[];
+  } | null {
+    try {
+      const abisPath = path.resolve(process.cwd(), 'contract-abis.json');
+      if (!fs.existsSync(abisPath)) {
+        return null;
+      }
+
+      const content = fs.readFileSync(abisPath, 'utf8');
+      const abisData: {
+        contracts: Array<{
+          address: string;
+          name: string;
+          abi: any[];
+        }>;
+      } = JSON.parse(content);
+
+      const contract = abisData.contracts.find(
+        (c) => c.address.toLowerCase() === contractAddress.toLowerCase(),
+      );
+
+      return contract || null;
+    } catch (error: any) {
+      this.logger.error(`Failed to get contract ABI: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
    * 컨트랙트 배포
    *
    * 0-100번 계정 중 랜덤으로 하나를 선택하여 컨트랙트를 배포합니다.
@@ -365,21 +452,22 @@ export class ContractService implements OnApplicationBootstrap {
    * 임시 기능으로 UX 개선을 위해 구현되었습니다.
    *
    * @param bytecode - 컴파일된 컨트랙트 바이트코드 (hex string)
+   * @param contractName - 컨트랙트 이름 (선택사항, ABI 저장용)
+   * @param abi - 컨트랙트 ABI (선택사항, 자동 저장)
    * @returns 트랜잭션 해시 및 상태
    */
   async deployContract(
     bytecode: string,
-  ): Promise<{ hash: string; status: string }> {
-    if (this.deploymentAccounts.length === 0) {
-      throw new Error('Deployment accounts are not loaded');
+    contractName?: string,
+    abi?: any[],
+  ): Promise<{ hash: string; status: string; address?: string }> {
+    if (!this.genesisAccount0) {
+      throw new Error('Genesis account 0 is not loaded');
     }
 
     try {
-      // 0-100번 계정 중 랜덤으로 하나 선택
-      const randomAccountIndex = Math.floor(
-        Math.random() * this.deploymentAccounts.length,
-      );
-      const deployerAccount = this.deploymentAccounts[randomAccountIndex];
+      // 계정 0번으로 고정 (컨트랙트 쓰기 호출 시 동일 계정 사용)
+      const deployerAccount = this.genesisAccount0;
 
       // 컨트랙트 배포는 to가 null, data에 바이트코드
       const tx = await this.transactionService.signTransaction(
@@ -410,6 +498,27 @@ export class ContractService implements OnApplicationBootstrap {
         `Contract deployment transaction submitted: ${submittedTx.hash} (from: account #${deployerAccount.index}, ${deployerAccount.address.slice(0, 10)}...)`,
       );
 
+      // ABI가 제공되었고 컨트랙트 이름이 있으면, 주소를 계산하여 저장
+      if (abi && contractName) {
+        // 배포 계정의 nonce로 컨트랙트 주소 계산
+        const account = await this.accountService.getOrCreateAccount(
+          deployerAccount.address,
+        );
+        const contractAddress = this.calculateContractAddress(
+          deployerAccount.address,
+          account.nonce, // 배포 후 nonce가 증가하므로 현재 nonce 사용
+        );
+
+        // ABI 저장 (비동기로 처리, 실패해도 배포는 성공)
+        this.saveContractABI(contractAddress, contractName, abi);
+
+        return {
+          hash: submittedTx.hash,
+          status: 'pending',
+          address: contractAddress, // 예상 주소 반환
+        };
+      }
+
       return {
         hash: submittedTx.hash,
         status: 'pending',
@@ -419,5 +528,163 @@ export class ContractService implements OnApplicationBootstrap {
       this.logger.error(`Contract deployment failed: ${errorMsg}`);
       throw error;
     }
+  }
+
+  /**
+   * 컨트랙트 주소 계산 (이더리움 표준: keccak256(rlp([sender, nonce]))[12:])
+   */
+  private calculateContractAddress(sender: Address, nonce: number): Address {
+    const senderBytes = this.cryptoService.hexToBytes(sender);
+    const hash = this.cryptoService.rlpHashBuffer([senderBytes, nonce]);
+    return `0x${this.cryptoService.bytesToHex(hash.slice(12))}`;
+  }
+
+  /**
+   * 배포 트랜잭션의 receipt를 조회하여 컨트랙트 주소 가져오기
+   */
+  private async waitForContractAddress(
+    txHash: string,
+    maxRetries: number = 20,
+    delayMs: number = 3000,
+  ): Promise<string | null> {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const receipt = await this.transactionService.getReceipt(txHash);
+        if (receipt && receipt.contractAddress) {
+          return receipt.contractAddress;
+        }
+      } catch {
+        // Receipt가 아직 생성되지 않음
+      }
+
+      if (i < maxRetries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    this.logger.warn(
+      `Failed to get contract address for deployment tx: ${txHash}`,
+    );
+    return null;
+  }
+
+  /**
+   * 스테이블코인 시스템 전체 배포
+   *
+   * 배포 순서:
+   * 1. StableCoin 배포
+   * 2. CollateralVault 배포
+   * 3. CollateralVault.setStablecoin(StableCoin주소) 호출
+   * 4. StableCoin.setVault(CollateralVault주소) 호출
+   *
+   * @returns 배포된 컨트랙트 주소들
+   */
+  async deployStablecoinSystem(): Promise<{
+    stablecoinAddress: string;
+    vaultAddress: string;
+    stablecoinTxHash: string;
+    vaultTxHash: string;
+  }> {
+    // contract-bytecodes.json에서 바이트코드 읽기
+    const bytecodesPath = path.resolve(
+      process.cwd(),
+      'contract-bytecodes.json',
+    );
+    if (!fs.existsSync(bytecodesPath)) {
+      throw new Error('contract-bytecodes.json not found');
+    }
+
+    const bytecodesContent = fs.readFileSync(bytecodesPath, 'utf8');
+    const bytecodesData: {
+      contracts: Array<{
+        name: string;
+        bytecode: string;
+        abi?: any[];
+      }>;
+    } = JSON.parse(bytecodesContent);
+
+    const stablecoinContract = bytecodesData.contracts.find(
+      (c) => c.name === 'StableCoin',
+    );
+    const vaultContract = bytecodesData.contracts.find(
+      (c) => c.name === 'CollateralVault',
+    );
+
+    if (!stablecoinContract?.bytecode || !vaultContract?.bytecode) {
+      throw new Error('StableCoin or CollateralVault bytecode not found');
+    }
+
+    const stablecoinBytecode = stablecoinContract.bytecode;
+    const vaultBytecode = vaultContract.bytecode;
+    const stablecoinABI = stablecoinContract.abi;
+    const vaultABI = vaultContract.abi;
+
+    this.logger.log('Starting stablecoin system deployment...');
+
+    // 1. StableCoin 배포
+    this.logger.log('Deploying StableCoin...');
+    const stablecoinDeployResult = await this.deployContract(
+      stablecoinBytecode,
+      'StableCoin',
+      stablecoinABI,
+    );
+    const stablecoinAddress = await this.waitForContractAddress(
+      stablecoinDeployResult.hash,
+    );
+
+    if (!stablecoinAddress) {
+      throw new Error('Failed to get StableCoin address');
+    }
+
+    this.logger.log(`StableCoin deployed at: ${stablecoinAddress}`);
+
+    // ABI가 있으면 저장 (배포 시 주소 계산하여 저장됨)
+    if (stablecoinABI) {
+      this.saveContractABI(stablecoinAddress, 'StableCoin', stablecoinABI);
+    }
+
+    // 2. CollateralVault 배포
+    this.logger.log('Deploying CollateralVault...');
+    const vaultDeployResult = await this.deployContract(
+      vaultBytecode,
+      'CollateralVault',
+      vaultABI,
+    );
+    const vaultAddress = await this.waitForContractAddress(
+      vaultDeployResult.hash,
+    );
+
+    if (!vaultAddress) {
+      throw new Error('Failed to get CollateralVault address');
+    }
+
+    this.logger.log(`CollateralVault deployed at: ${vaultAddress}`);
+
+    // ABI가 있으면 저장 (배포 시 주소 계산하여 저장됨)
+    if (vaultABI) {
+      this.saveContractABI(vaultAddress, 'CollateralVault', vaultABI);
+    }
+
+    // 3. CollateralVault.setStablecoin(StableCoin주소) 호출
+    // 함수 선택자: setStablecoin(address) = keccak256("setStablecoin(address)")[0:4]
+    // TODO: ABI 인코딩 필요 (나중에 구현)
+
+    // 4. StableCoin.setVault(CollateralVault주소) 호출
+    // 함수 선택자: setVault(address) = keccak256("setVault(address)")[0:4]
+    // TODO: ABI 인코딩 필요 (나중에 구현)
+
+    this.logger.log('Stablecoin system deployment completed!');
+    this.logger.log(`StableCoin: ${stablecoinAddress}`);
+    this.logger.log(`CollateralVault: ${vaultAddress}`);
+    this.logger.warn(
+      'Remember to call setStablecoin() and setVault() to link contracts',
+    );
+
+    return {
+      stablecoinAddress,
+      vaultAddress,
+      stablecoinTxHash: stablecoinDeployResult.hash,
+      vaultTxHash: vaultDeployResult.hash,
+    };
   }
 }

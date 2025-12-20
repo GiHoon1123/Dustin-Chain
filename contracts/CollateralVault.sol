@@ -30,6 +30,7 @@ contract CollateralVault {
     /**
      * @dev StableCoin 컨트랙트 인스턴스
      * 이 컨트랙트를 통해 mint()와 burn()을 호출합니다.
+     * 초기값은 address(0), 나중에 setStablecoin()으로 설정
      */
     StableCoin public stablecoin;
 
@@ -128,17 +129,37 @@ contract CollateralVault {
     /**
      * @dev 컨트랙트 배포 시 실행
      * 
-     * @param _stablecoin StableCoin 컨트랙트 주소
+     * 생성자 파라미터 없이 배포됩니다.
+     * 나중에 setStablecoin()으로 StableCoin 주소를 설정합니다.
      * 
-     * 주의:
-     * - StableCoin이 먼저 배포되어 있어야 함
-     * - 배포 순서: 1) StableCoin, 2) CollateralVault
+     * 배포 순서:
+     * 1. StableCoin 배포 (파라미터 없이)
+     * 2. CollateralVault 배포 (파라미터 없이)
+     * 3. CollateralVault.setStablecoin(StableCoin 주소) 호출
+     * 4. StableCoin.setVault(CollateralVault 주소) 호출
      */
-    constructor(address _stablecoin) {
-        stablecoin = StableCoin(_stablecoin);
+    constructor() {
+        // 빈 생성자, 나중에 setStablecoin()으로 설정
     }
 
     // ============ 주요 함수 ============
+    
+    /**
+     * @dev StableCoin 컨트랙트 주소 설정
+     * 
+     * 배포 후 StableCoin 주소를 연결하기 위해 사용됩니다.
+     * 
+     * 조건:
+     * - stablecoin 주소가 아직 설정되지 않았을 때 (address(0)일 때)만 호출 가능
+     * - _stablecoin 주소가 0 주소가 아니어야 함
+     * 
+     * @param _stablecoin 설정할 StableCoin 컨트랙트 주소
+     */
+    function setStablecoin(address _stablecoin) external {
+        require(address(stablecoin) == address(0), "Stablecoin already set");
+        require(_stablecoin != address(0), "Cannot set stablecoin to zero address");
+        stablecoin = StableCoin(_stablecoin);
+    }
     
     /**
      * @dev 담보 예치

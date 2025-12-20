@@ -25,12 +25,12 @@ contract StableCoin {
     /**
      * @dev 토큰 이름 (예: "USD Stable Token")
      */
-    string public name;
+    string public name = "USD Stable Token";
     
     /**
      * @dev 토큰 심볼 (예: "USDST")
      */
-    string public symbol;
+    string public symbol = "USDST";
     
     /**
      * @dev 소수점 자릿수 (18 = 이더리움 표준)
@@ -47,8 +47,9 @@ contract StableCoin {
     /**
      * @dev Vault 컨트랙트 주소
      * 이 주소만 mint()와 burn()을 호출할 수 있습니다.
+     * 초기값은 address(0), 나중에 setVault()로 설정
      */
-    address public vault;
+    address public vault = address(0);
 
     /**
      * @dev 각 주소의 토큰 잔액
@@ -114,24 +115,17 @@ contract StableCoin {
     /**
      * @dev 컨트랙트 배포 시 한 번만 실행되는 함수
      * 
-     * @param _name 토큰 이름 (예: "USD Stable Token")
-     * @param _symbol 토큰 심볼 (예: "USDST")
-     * @param _vault Vault 컨트랙트 주소 (mint/burn 권한 부여)
-     *                아직 배포되지 않았으면 address(0)을 넣고, 나중에 setVault()로 설정
+     * 생성자 파라미터 없이 기본값으로 배포됩니다.
+     * - name: "USD Stable Token"
+     * - symbol: "USDST"
+     * - vault: address(0) (나중에 setVault()로 설정)
      * 
      * 배포 순서:
-     * 1. StableCoin 배포 (vault = address(0))
+     * 1. StableCoin 배포 (파라미터 없이)
      * 2. CollateralVault 배포 (StableCoin 주소 전달)
      * 3. StableCoin.setVault(CollateralVault 주소) 호출
      */
-    constructor(
-        string memory _name,
-        string memory _symbol,
-        address _vault
-    ) {
-        name = _name;
-        symbol = _symbol;
-        vault = _vault; // 초기에는 address(0) 가능, 나중에 setVault()로 설정
+    constructor() {
         totalSupply = 0; // 초기 발행량은 0
     }
 
