@@ -540,6 +540,140 @@ export class ContractService implements OnApplicationBootstrap {
   }
 
   /**
+   * 함수 선택자 계산 (이더리움 표준)
+   *
+   * 함수 선택자 = keccak256("함수명(파라미터타입)")[0:4]
+   *
+   * 예시:
+   * - "setVault(address)" → keccak256("setVault(address)")[0:4]
+   * - "mintStablecoin(uint256)" → keccak256("mintStablecoin(uint256)")[0:4]
+   *
+   * @param functionName - 함수명 (예: "setVault")
+   * @param paramTypes - 파라미터 타입 배열 (예: ["address"])
+   * @returns 함수 선택자 (4바이트 hex string, "0x" 접두사 포함)
+   */
+  private getFunctionSelector(
+    functionName: string,
+    paramTypes: string[],
+  ): string {
+    const signature = `${functionName}(${paramTypes.join(',')})`;
+    const hash = this.cryptoService.hashUtf8(signature);
+    return hash.slice(0, 10); // "0x" + 8 hex chars = 4 bytes
+  }
+
+  /**
+   * 파라미터 ABI 인코딩 (기본 타입만 지원)
+   *
+   * 지원 타입:
+   * - address: 32바이트 패딩 (왼쪽에 0 추가)
+   * - uint256: 32바이트 빅엔디안
+   *
+   * @param paramType - 파라미터 타입 (예: "address", "uint256")
+   * @param value - 파라미터 값 (address는 hex string, uint256은 bigint 또는 string)
+   * @returns 인코딩된 파라미터 (32바이트 hex string)
+   */
+  private encodeParameter(
+    paramType: string,
+    value: string | bigint | number,
+  ): string {
+    if (paramType === 'address') {
+      // address: 32바이트 패딩 (왼쪽에 0 추가)
+      if (typeof value !== 'string') {
+        throw new Error('Address parameter must be a string');
+      }
+      const address = value.startsWith('0x') ? value.slice(2) : value;
+      return address.padStart(64, '0');
+    } else if (paramType === 'uint256' || paramType === 'uint') {
+      // uint256: 32바이트 빅엔디안
+      const num = typeof value === 'bigint' ? value : BigInt(value);
+      const hex = num.toString(16);
+      return hex.padStart(64, '0');
+    } else {
+      throw new Error(`Unsupported parameter type: ${paramType}`);
+    }
+  }
+
+  /**
+   * 함수 호출 데이터 생성 (ABI 인코딩)
+   *
+   * 이더리움 표준:
+   * - data = 함수선택자(4바이트) + 인코딩된파라미터들
+   *
+   * 예시:
+   * - setVault(address) 호출
+   *   - 함수 선택자: keccak256("setVault(address)")[0:4]
+   *   - 파라미터: address를 32바이트로 패딩
+   *   - data = 함수선택자 + 인코딩된주소
+   *
+   * @param functionName - 함수명 (예: "setVault")
+   * @param paramTypes - 파라미터 타입 배열 (예: ["address"])
+   * @param paramValues - 파라미터 값 배열 (예: ["0x1234..."])
+   * @returns ABI 인코딩된 함수 호출 데이터 (hex string, "0x" 접두사 포함)
+   */
+  encodeFunctionCall(
+    functionName: string,
+    paramTypes: string[],
+    paramValues: any[],
+  ): string {
+    if (paramTypes.length !== paramValues.length) {
+      throw new Error(
+        `Parameter count mismatch: ${paramTypes.length} types but ${paramValues.length} values`,
+      );
+    }
+
+    // 함수 선택자 계산 (4바이트)
+    const selector = this.getFunctionSelector(functionName, paramTypes);
+    const selectorHex = selector.slice(2); // "0x" 제거
+
+    // 파라미터 인코딩
+    const encodedParams = paramTypes.map((type, index) =>
+      this.encodeParameter(type, paramValues[index]),
+    );
+
+    // 함수 선택자 + 인코딩된 파라미터들 결합
+    const data = '0x' + selectorHex + encodedParams.join('');
+
+    return data;
+  }
+
+  /**
+   * 트랜잭션이 블록에 포함될 때까지 대기
+   *
+   * @param txHash - 트랜잭션 해시
+   * @param maxRetries - 최대 재시도 횟수 (기본값: 20)
+   * @param delayMs - 재시도 간격 (기본값: 3000ms)
+   * @returns 트랜잭션이 블록에 포함되었는지 여부
+   */
+  private async waitForTransaction(
+    txHash: string,
+    maxRetries: number = 20,
+    delayMs: number = 3000,
+  ): Promise<boolean> {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const receipt = await this.transactionService.getReceipt(txHash);
+        if (receipt && receipt.blockNumber) {
+          this.logger.log(
+            `Transaction ${txHash} included in block ${receipt.blockNumber}`,
+          );
+          return true;
+        }
+      } catch {
+        // Receipt가 아직 생성되지 않음
+      }
+
+      if (i < maxRetries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    this.logger.warn(
+      `Transaction ${txHash} not included in block after ${maxRetries} retries`,
+    );
+    return false;
+  }
+
+  /**
    * 배포 트랜잭션의 receipt를 조회하여 컨트랙트 주소 가져오기
    */
   private async waitForContractAddress(
@@ -666,19 +800,39 @@ export class ContractService implements OnApplicationBootstrap {
     }
 
     // 3. CollateralVault.setStablecoin(StableCoin주소) 호출
-    // 함수 선택자: setStablecoin(address) = keccak256("setStablecoin(address)")[0:4]
-    // TODO: ABI 인코딩 필요 (나중에 구현)
+    this.logger.log('Linking CollateralVault to StableCoin...');
+    const setStablecoinData = this.encodeFunctionCall(
+      'setStablecoin',
+      ['address'],
+      [stablecoinAddress],
+    );
+    const setStablecoinResult = await this.executeContract(
+      vaultAddress,
+      setStablecoinData,
+    );
+    // 트랜잭션이 블록에 포함될 때까지 대기
+    await this.waitForTransaction(setStablecoinResult.hash);
+    this.logger.log('CollateralVault.setStablecoin() completed');
 
     // 4. StableCoin.setVault(CollateralVault주소) 호출
-    // 함수 선택자: setVault(address) = keccak256("setVault(address)")[0:4]
-    // TODO: ABI 인코딩 필요 (나중에 구현)
+    this.logger.log('Linking StableCoin to CollateralVault...');
+    const setVaultData = this.encodeFunctionCall(
+      'setVault',
+      ['address'],
+      [vaultAddress],
+    );
+    const setVaultResult = await this.executeContract(
+      stablecoinAddress,
+      setVaultData,
+    );
+    // 트랜잭션이 블록에 포함될 때까지 대기
+    await this.waitForTransaction(setVaultResult.hash);
+    this.logger.log('StableCoin.setVault() completed');
 
     this.logger.log('Stablecoin system deployment completed!');
     this.logger.log(`StableCoin: ${stablecoinAddress}`);
     this.logger.log(`CollateralVault: ${vaultAddress}`);
-    this.logger.warn(
-      'Remember to call setStablecoin() and setVault() to link contracts',
-    );
+    this.logger.log('Contracts are now linked and ready to use');
 
     return {
       stablecoinAddress,
