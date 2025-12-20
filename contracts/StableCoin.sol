@@ -86,6 +86,11 @@ contract StableCoin {
      * @dev 토큰 소각 이벤트
      */
     event Burn(address indexed from, uint256 amount);
+    
+    /**
+     * @dev Vault 주소 변경 이벤트
+     */
+    event VaultSet(address indexed oldVault, address indexed newVault);
 
     // ============ 모디파이어 ============
     
@@ -112,9 +117,12 @@ contract StableCoin {
      * @param _name 토큰 이름 (예: "USD Stable Token")
      * @param _symbol 토큰 심볼 (예: "USDST")
      * @param _vault Vault 컨트랙트 주소 (mint/burn 권한 부여)
+     *                아직 배포되지 않았으면 address(0)을 넣고, 나중에 setVault()로 설정
      * 
-     * 주의: Vault 컨트랙트가 아직 배포되지 않았으면 address(0)을 넣고,
-     *      나중에 setVault()로 설정해야 합니다. (현재는 생성자에서만 설정)
+     * 배포 순서:
+     * 1. StableCoin 배포 (vault = address(0))
+     * 2. CollateralVault 배포 (StableCoin 주소 전달)
+     * 3. StableCoin.setVault(CollateralVault 주소) 호출
      */
     constructor(
         string memory _name,
@@ -123,7 +131,7 @@ contract StableCoin {
     ) {
         name = _name;
         symbol = _symbol;
-        vault = _vault;
+        vault = _vault; // 초기에는 address(0) 가능, 나중에 setVault()로 설정
         totalSupply = 0; // 초기 발행량은 0
     }
 
@@ -181,6 +189,36 @@ contract StableCoin {
         
         emit Burn(from, amount);
         emit Transfer(from, address(0), amount); // address(0)으로 전송되는 것처럼 표시
+    }
+
+    /**
+     * @dev Vault 주소 설정
+     * 
+     * 사용 시나리오:
+     * 1. StableCoin을 먼저 배포 (vault = address(0))
+     * 2. CollateralVault 배포
+     * 3. 이 함수로 CollateralVault 주소 설정
+     * 
+     * @param _vault 새로운 Vault 컨트랙트 주소
+     * 
+     * 조건:
+     * - 현재 vault가 address(0)이어야 함 (한 번만 설정 가능)
+     * - _vault가 address(0)이 아니어야 함
+     * 
+     * 동작:
+     * 1. 현재 vault가 0인지 확인
+     * 2. 새로운 vault 주소 유효성 확인
+     * 3. vault 주소 업데이트
+     * 4. 이벤트 발생
+     */
+    function setVault(address _vault) external {
+        require(vault == address(0), "Vault already set");
+        require(_vault != address(0), "Cannot set vault to zero address");
+        
+        address oldVault = vault;
+        vault = _vault;
+        
+        emit VaultSet(oldVault, _vault);
     }
 
     // ============ ERC20 표준 함수 ============
