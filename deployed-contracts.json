@@ -1,0 +1,12 @@
+{
+  "stablecoin": {
+    "address": "0x80d1c8df91ff31c5eb5f38ed3b9287113bed78a4",
+    "name": "StableCoin",
+    "deployedAt": "2025-12-20T04:12:48.589Z"
+  },
+  "vault": {
+    "address": "0x2d5abd96421d9f8d18f62a57939adf55ada154c1",
+    "name": "CollateralVault",
+    "deployedAt": "2025-12-20T04:12:48.589Z"
+  }
+}

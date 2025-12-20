@@ -278,4 +278,44 @@ export class ContractController {
   ): Promise<{ address: string; name: string; abi: any[] } | null> {
     return this.contractService.getContractABI(address);
   }
+
+  /**
+   * 배포된 스테이블코인 컨트랙트 주소 조회
+   *
+   * GET /contract/deployed
+   */
+  @Get('deployed')
+  @ApiOperation({
+    summary: '배포된 스테이블코인 컨트랙트 주소 조회',
+    description:
+      '최신 배포된 StableCoin과 CollateralVault 컨트랙트 주소를 조회합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '배포된 컨트랙트 주소 정보',
+    schema: {
+      example: {
+        stablecoin: {
+          address: '0x723ea324bc2e40c648cc59ccbcf52dfd553a8749',
+          name: 'StableCoin',
+          deployedAt: '2025-12-20T03:48:49.000Z',
+        },
+        vault: {
+          address: '0xf7ad28c7f7aaa50a0d340f5dd900d1699c5cc7f2',
+          name: 'CollateralVault',
+          deployedAt: '2025-12-20T03:48:49.000Z',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: '배포된 컨트랙트 정보를 찾을 수 없음',
+  })
+  getDeployedContracts(): {
+    stablecoin: { address: string; name: string; deployedAt: string };
+    vault: { address: string; name: string; deployedAt: string };
+  } | null {
+    return this.contractService.getDeployedContracts();
+  }
 }

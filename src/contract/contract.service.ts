@@ -380,24 +380,23 @@ export class ContractService implements OnApplicationBootstrap {
         abisData = JSON.parse(content);
       }
 
-      // 이미 존재하는 주소면 업데이트, 없으면 추가
-      const existingIndex = abisData.contracts.findIndex(
-        (c) => c.address.toLowerCase() === contractAddress.toLowerCase(),
+      // 이름별로 하나만 유지 (같은 이름이면 모두 제거하고 새로 추가)
+      // 이렇게 하면 파일이 커지지 않음
+      // 기존에 같은 이름이 있으면 모두 제거
+      abisData.contracts = abisData.contracts.filter(
+        (c) => c.name !== contractName,
       );
 
-      if (existingIndex >= 0) {
-        abisData.contracts[existingIndex] = {
-          address: contractAddress,
-          name: contractName,
-          abi,
-        };
-      } else {
-        abisData.contracts.push({
-          address: contractAddress,
-          name: contractName,
-          abi,
-        });
-      }
+      // 새로 추가 (이름별로 하나만 유지)
+      abisData.contracts.push({
+        address: contractAddress,
+        name: contractName,
+        abi,
+      });
+
+      this.logger.log(
+        `Contract ABI saved: ${contractName} at ${contractAddress} (replaced existing entries)`,
+      );
 
       // 파일에 저장
       fs.writeFileSync(abisPath, JSON.stringify(abisData, null, 2), 'utf8');
@@ -834,11 +833,91 @@ export class ContractService implements OnApplicationBootstrap {
     this.logger.log(`CollateralVault: ${vaultAddress}`);
     this.logger.log('Contracts are now linked and ready to use');
 
+    // 배포된 컨트랙트 주소 저장
+    this.saveDeployedContracts(stablecoinAddress, vaultAddress);
+
     return {
       stablecoinAddress,
       vaultAddress,
       stablecoinTxHash: stablecoinDeployResult.hash,
       vaultTxHash: vaultDeployResult.hash,
     };
+  }
+
+  /**
+   * 배포된 컨트랙트 주소 저장
+   *
+   * deployed-contracts.json 파일에 최신 배포 주소를 저장합니다.
+   * API에서 배포된 컨트랙트 주소를 빠르게 조회할 수 있습니다.
+   *
+   * @param stablecoinAddress - StableCoin 컨트랙트 주소
+   * @param vaultAddress - CollateralVault 컨트랙트 주소
+   */
+  private saveDeployedContracts(
+    stablecoinAddress: Address,
+    vaultAddress: Address,
+  ): void {
+    try {
+      const deployedPath = path.resolve(
+        process.cwd(),
+        'deployed-contracts.json',
+      );
+      const deployedData = {
+        stablecoin: {
+          address: stablecoinAddress,
+          name: 'StableCoin',
+          deployedAt: new Date().toISOString(),
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: new Date().toISOString(),
+        },
+      };
+
+      fs.writeFileSync(
+        deployedPath,
+        JSON.stringify(deployedData, null, 2),
+        'utf8',
+      );
+      this.logger.log(
+        `Deployed contracts saved: StableCoin=${stablecoinAddress}, Vault=${vaultAddress}`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to save deployed contracts: ${error.message}`);
+    }
+  }
+
+  /**
+   * 배포된 컨트랙트 주소 조회
+   *
+   * deployed-contracts.json에서 최신 배포 주소를 조회합니다.
+   *
+   * @returns 배포된 컨트랙트 주소 정보
+   */
+  getDeployedContracts(): {
+    stablecoin: { address: string; name: string; deployedAt: string };
+    vault: { address: string; name: string; deployedAt: string };
+  } | null {
+    try {
+      const deployedPath = path.resolve(
+        process.cwd(),
+        'deployed-contracts.json',
+      );
+      if (!fs.existsSync(deployedPath)) {
+        return null;
+      }
+
+      const content = fs.readFileSync(deployedPath, 'utf8');
+      const deployedData: {
+        stablecoin: { address: string; name: string; deployedAt: string };
+        vault: { address: string; name: string; deployedAt: string };
+      } = JSON.parse(content);
+
+      return deployedData;
+    } catch (error: any) {
+      this.logger.error(`Failed to get deployed contracts: ${error.message}`);
+      return null;
+    }
   }
 }
