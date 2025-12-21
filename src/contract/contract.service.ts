@@ -613,8 +613,11 @@ export class ContractService implements OnApplicationBootstrap {
     paramTypes: string[],
   ): string {
     const signature = `${functionName}(${paramTypes.join(',')})`;
-    const hash = this.cryptoService.hashUtf8(signature);
-    return hash.slice(0, 10); // "0x" + 8 hex chars = 4 bytes
+    // ⚠️ 중요: 이더리움 함수 선택자는 Keccak-256 해시의 첫 4바이트
+    // hashUtf8은 SHA3-256을 사용하므로 keccak 라이브러리를 직접 사용해야 함
+    const keccak = require('keccak');
+    const hash = keccak('keccak256').update(signature).digest('hex');
+    return '0x' + hash.slice(0, 8); // "0x" + 8 hex chars = 4 bytes
   }
 
   /**
@@ -709,8 +712,21 @@ export class ContractService implements OnApplicationBootstrap {
       try {
         const receipt = await this.transactionService.getReceipt(txHash);
         if (receipt && receipt.blockNumber) {
+          // ⚠️ 중요: receipt.status를 확인하여 트랜잭션 성공 여부 확인
+          const status =
+            typeof receipt.status === 'string'
+              ? parseInt(receipt.status, 16)
+              : receipt.status;
+
+          if (status === 0) {
+            this.logger.error(
+              `Transaction ${txHash} failed (status: 0x0) in block ${receipt.blockNumber}`,
+            );
+            return false;
+          }
+
           this.logger.log(
-            `Transaction ${txHash} included in block ${receipt.blockNumber}`,
+            `Transaction ${txHash} succeeded (status: 0x1) in block ${receipt.blockNumber}`,
           );
           return true;
         }
@@ -866,8 +882,15 @@ export class ContractService implements OnApplicationBootstrap {
       vaultAddress,
       setStablecoinData,
     );
-    // 트랜잭션이 블록에 포함될 때까지 대기
-    await this.waitForTransaction(setStablecoinResult.hash);
+    // 트랜잭션이 블록에 포함될 때까지 대기 및 성공 여부 확인
+    const setStablecoinSuccess = await this.waitForTransaction(
+      setStablecoinResult.hash,
+    );
+    if (!setStablecoinSuccess) {
+      throw new Error(
+        `Failed to link CollateralVault to StableCoin. Transaction hash: ${setStablecoinResult.hash}`,
+      );
+    }
     this.logger.log('CollateralVault.setStablecoin() completed');
 
     // 4. StableCoin.setVault(CollateralVault주소) 호출
@@ -881,9 +904,39 @@ export class ContractService implements OnApplicationBootstrap {
       stablecoinAddress,
       setVaultData,
     );
-    // 트랜잭션이 블록에 포함될 때까지 대기
-    await this.waitForTransaction(setVaultResult.hash);
+    // 트랜잭션이 블록에 포함될 때까지 대기 및 성공 여부 확인
+    const setVaultSuccess = await this.waitForTransaction(setVaultResult.hash);
+    if (!setVaultSuccess) {
+      throw new Error(
+        `Failed to link StableCoin to CollateralVault. Transaction hash: ${setVaultResult.hash}`,
+      );
+    }
     this.logger.log('StableCoin.setVault() completed');
+
+    // 5. 연결 검증: 실제로 연결되었는지 확인
+    this.logger.log('Verifying contract linkage...');
+    const vaultStablecoinCheck = await this.callContract(
+      vaultAddress,
+      this.encodeFunctionCall('stablecoin', [], []),
+    );
+    const stablecoinVaultCheck = await this.callContract(
+      stablecoinAddress,
+      this.encodeFunctionCall('vault', [], []),
+    );
+
+    // 결과에서 주소 추출 (마지막 20바이트 = 40 hex characters)
+    const vaultStablecoinAddr = `0x${vaultStablecoinCheck.result.slice(-40)}`;
+    const stablecoinVaultAddr = `0x${stablecoinVaultCheck.result.slice(-40)}`;
+
+    if (
+      vaultStablecoinAddr.toLowerCase() !== stablecoinAddress.toLowerCase() ||
+      stablecoinVaultAddr.toLowerCase() !== vaultAddress.toLowerCase()
+    ) {
+      throw new Error(
+        `Contract linkage verification failed. Vault.stablecoin=${vaultStablecoinAddr} (expected ${stablecoinAddress}), StableCoin.vault=${stablecoinVaultAddr} (expected ${vaultAddress})`,
+      );
+    }
+    this.logger.log('Contract linkage verified successfully');
 
     this.logger.log('Stablecoin system deployment completed!');
     this.logger.log(`StableCoin: ${stablecoinAddress}`);

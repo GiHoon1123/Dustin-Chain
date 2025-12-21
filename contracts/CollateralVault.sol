@@ -221,8 +221,10 @@ contract CollateralVault {
         uint256 collateralValue = (collateral[msg.sender] * DSTN_PRICE) / 1e18;
         
         // 발행하려는 스테이블 코인에 필요한 담보 가치 계산 (USD)
-        // 예: 100,000 USDST * 150 / 100 = 150,000 USD
-        uint256 requiredCollateral = (stablecoinAmount * COLLATERAL_RATIO) / 100;
+        // stablecoinAmount는 Wei 단위이므로 1e18로 나눈 후 계산
+        // 예: (100,000 * 10^18 / 1e18) * 150 / 100 = 150,000 USD
+        uint256 stablecoinAmountInUSD = stablecoinAmount / 1e18;
+        uint256 requiredCollateral = (stablecoinAmountInUSD * COLLATERAL_RATIO) / 100;
 
         // 담보비율 검증 (150% 이상이어야 함)
         require(
@@ -325,8 +327,9 @@ contract CollateralVault {
         uint256 collateralValue = (newCollateral * DSTN_PRICE) / 1e18;
         
         // 필요 담보 계산 (USD)
-        uint256 requiredCollateral = (stablecoinDebt[msg.sender] *
-            COLLATERAL_RATIO) / 100;
+        // stablecoinDebt는 Wei 단위이므로 1e18로 나눈 후 계산
+        uint256 debtInUSD = stablecoinDebt[msg.sender] / 1e18;
+        uint256 requiredCollateral = (debtInUSD * COLLATERAL_RATIO) / 100;
 
         // 인출 후에도 담보비율 150% 이상 유지되어야 함
         require(
@@ -389,8 +392,9 @@ contract CollateralVault {
         uint256 collateralValue = (collateral[user] * DSTN_PRICE) / 1e18;
         
         // 필요 담보 계산 (USD)
-        uint256 requiredCollateral = (stablecoinDebt[user] *
-            COLLATERAL_RATIO) / 100;
+        // stablecoinDebt는 Wei 단위이므로 1e18로 나눈 후 계산
+        uint256 debtInUSD = stablecoinDebt[user] / 1e18;
+        uint256 requiredCollateral = (debtInUSD * COLLATERAL_RATIO) / 100;
 
         // 담보비율이 150% 미만이어야 청산 가능
         require(
@@ -463,8 +467,10 @@ contract CollateralVault {
         } else {
             // 담보 가치 계산 (USD)
             uint256 collateralValue = (collateralAmount * DSTN_PRICE) / 1e18;
+            // 부채를 USD 단위로 변환 (Wei 단위이므로 1e18로 나눔)
+            uint256 debtInUSD = debtAmount / 1e18;
             // 담보비율 계산 (퍼센트)
-            collateralRatio = (collateralValue * 100) / debtAmount;
+            collateralRatio = (collateralValue * 100) / debtInUSD;
         }
     }
 
@@ -490,8 +496,9 @@ contract CollateralVault {
         uint256 collateralValue = (collateral[user] * DSTN_PRICE) / 1e18;
         
         // 필요 담보 계산 (USD)
-        uint256 requiredCollateral = (stablecoinDebt[user] *
-            COLLATERAL_RATIO) / 100;
+        // stablecoinDebt는 Wei 단위이므로 1e18로 나눈 후 계산
+        uint256 debtInUSD = stablecoinDebt[user] / 1e18;
+        uint256 requiredCollateral = (debtInUSD * COLLATERAL_RATIO) / 100;
 
         // 담보비율 150% 이상이면 건강함
         return collateralValue >= requiredCollateral;

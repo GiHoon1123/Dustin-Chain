@@ -377,7 +377,14 @@ export class CustomStateManager {
       if (hex) {
         const bytesBuffer = Buffer.from(hex, 'hex');
         const bytes = new Uint8Array(bytesBuffer);
+        this.logger.debug(
+          `[getContractCode] ${_address} → ${bytes.byteLength} bytes (fallback: account_codehash)`,
+        );
         return bytes;
+      } else {
+        this.logger.warn(
+          `[getContractCode] ${_address} account_codehash found but code not found`,
+        );
       }
     }
 
@@ -386,9 +393,15 @@ export class CustomStateManager {
     const hex = await this.kv!.get(fallbackKey).catch(() => '');
     const bytesBuffer = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
     const bytes = new Uint8Array(bytesBuffer);
-    // this.logger.debug(
-    //   `getContractCode(${_address}) → ${bytes.byteLength} bytes (fallback)`,
-    // );
+    if (bytes.byteLength > 0) {
+      this.logger.debug(
+        `[getContractCode] ${_address} → ${bytes.byteLength} bytes (fallback: code:addr)`,
+      );
+    } else {
+      this.logger.warn(
+        `[getContractCode] ${_address} → 0 bytes (no code found, all fallbacks failed)`,
+      );
+    }
     return bytes;
   }
 

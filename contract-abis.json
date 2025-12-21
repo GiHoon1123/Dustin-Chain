@@ -1,7 +1,7 @@
 {
   "contracts": [
     {
-      "address": "0x80d1c8df91ff31c5eb5f38ed3b9287113bed78a4",
+      "address": "0xd3d5b0ff7333c4d28e370739f79d16de9f7a7d35",
       "name": "StableCoin",
       "abi": [
         {
@@ -353,7 +353,7 @@
       ]
     },
     {
-      "address": "0x2d5abd96421d9f8d18f62a57939adf55ada154c1",
+      "address": "0xf4a612fdaa63d4f289ae940217330997844bf86b",
       "name": "CollateralVault",
       "abi": [
         {

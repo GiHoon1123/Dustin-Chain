@@ -251,6 +251,8 @@ export class StateLevelDBRepository
       this.currentRoot = this.cryptoService.hexToBytes(root);
 
       // LevelDB에서 모든 계정을 읽어서 Trie 재구성
+      // TODO: 실제로는 해당 root의 노드들을 로드해야 하지만,
+      // 현재 구현에서는 모든 계정을 읽어서 Trie 재구성
       this.trie = await createMPT();
 
       for await (const [key, value] of this.db.iterator({
