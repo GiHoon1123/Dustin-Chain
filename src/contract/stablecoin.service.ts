@@ -228,9 +228,9 @@ export class StablecoinService {
    * 건강도 확인 (View 함수)
    *
    * @param userAddress - 사용자 주소
-   * @returns 건강도 여부
+   * @returns 건강도 여부 (원본 hex string)
    */
-  async isHealthy(userAddress: Address): Promise<boolean> {
+  async isHealthy(userAddress: Address): Promise<string> {
     const deployed = this.contractService.getDeployedContracts();
     if (!deployed || !deployed.vault) {
       throw new Error('CollateralVault is not deployed');
@@ -246,10 +246,8 @@ export class StablecoinService {
 
     const result = await this.contractService.callContract(vaultAddress, data);
 
-    // 결과 디코딩 (스캔 백엔드에서 처리하므로 여기서는 hex 반환)
-    // TODO: 나중에 ABI 디코딩 추가 가능 (스캔 백엔드로 이동 예정)
-    // boolean 반환값 디코딩 필요
-    return result.result !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+    // 스캔 백엔드에서 디코딩하므로 여기서는 원본 hex 반환
+    return result.result;
   }
 }
 

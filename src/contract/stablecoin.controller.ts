@@ -196,8 +196,9 @@ export class StablecoinController {
   async getHealth(
     @Param('userAddress') userAddress: string,
   ): Promise<HealthResponseDto> {
-    const isHealthy = await this.stablecoinService.isHealthy(userAddress);
-    return { isHealthy };
+    const result = await this.stablecoinService.isHealthy(userAddress);
+    // 스캔 백엔드에서 디코딩하므로 여기서는 원본 hex 반환
+    return { result };
   }
 }
 

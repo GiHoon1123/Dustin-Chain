@@ -689,6 +689,18 @@
           "type": "receive"
         }
       ]
+    },
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "name": "TestContract",
+      "abi": [
+        {
+          "type": "function",
+          "name": "test",
+          "inputs": [],
+          "outputs": []
+        }
+      ]
     }
   ]
 }

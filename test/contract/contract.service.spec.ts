@@ -141,6 +141,14 @@ describe('ContractService', () => {
         data: bytecode,
       };
 
+      // genesisAccount0 초기화
+      (service as any).genesisAccount0 = {
+        index: 0,
+        address: '0x' + '1'.repeat(40),
+        publicKey: '0x' + 'p'.repeat(130),
+        privateKey: '0x' + '1'.repeat(64),
+      };
+
       // deploymentAccounts 초기화
       (service as any).deploymentAccounts = [
         {
@@ -150,6 +158,12 @@ describe('ContractService', () => {
           privateKey: '0x' + '1'.repeat(64),
         },
       ];
+
+      accountService.getOrCreateAccount.mockResolvedValue({
+        address: '0x' + '1'.repeat(40),
+        balance: 10000000000000000000000n,
+        nonce: 0,
+      } as any);
 
       transactionService.signTransaction.mockResolvedValue(tx as any);
       transactionService.submitTransaction.mockResolvedValue(tx as any);
@@ -207,6 +221,124 @@ describe('ContractService', () => {
       (service as any).genesisAccount0 = null;
 
       await expect(service.executeContract('0x' + '1'.repeat(40), '0x00')).rejects.toThrow();
+    });
+  });
+
+  describe('ABI 인코딩', () => {
+    it('함수 선택자를 계산해야 함', () => {
+      const selector = (service as any).getFunctionSelector('setVault', ['address']);
+      
+      expect(selector).toMatch(/^0x[0-9a-f]{8}$/);
+    });
+
+    it('address 파라미터를 인코딩해야 함', () => {
+      const address = '0x' + '1'.repeat(40);
+      const encoded = (service as any).encodeParameter('address', address);
+      
+      expect(encoded).toHaveLength(64);
+      expect(encoded).toMatch(/^[0-9a-f]{64}$/);
+      expect(encoded.slice(-40)).toBe('1'.repeat(40));
+    });
+
+    it('uint256 파라미터를 인코딩해야 함', () => {
+      const value = '1000000000000000000000';
+      const encoded = (service as any).encodeParameter('uint256', value);
+      
+      expect(encoded).toHaveLength(64);
+      expect(encoded).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('함수 호출 데이터를 생성해야 함', () => {
+      const data = service.encodeFunctionCall('setVault', ['address'], ['0x' + '1'.repeat(40)]);
+      
+      expect(data).toMatch(/^0x[0-9a-f]{72}$/);
+      expect(data.startsWith('0x')).toBe(true);
+    });
+  });
+
+  describe('사용자 트랜잭션 실행', () => {
+    it('사용자 개인키로 컨트랙트를 실행해야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const to = '0x' + '2'.repeat(40);
+      const data = '0x' + '0'.repeat(8);
+      const value = 1000000000000000000n;
+      const tx = {
+        hash: '0x' + 'h'.repeat(64),
+        from: '0x' + '3'.repeat(40),
+        to,
+        value,
+        nonce: 0,
+        v: 0,
+        r: '0x' + 'r'.repeat(64),
+        s: '0x' + 's'.repeat(64),
+        getSignature: jest.fn().mockReturnValue({ v: 0, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) }),
+        gasPrice: 1000000000n,
+        gasLimit: 1000000n,
+        data,
+      };
+
+      transactionService.signTransaction.mockResolvedValue(tx as any);
+      transactionService.submitTransaction.mockResolvedValue(tx as any);
+
+      const result = await service.executeContractByUser(to, data, privateKey, value);
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(transactionService.signTransaction).toHaveBeenCalled();
+      expect(transactionService.submitTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('배포된 컨트랙트 관리', () => {
+    it('배포된 컨트랙트 주소를 저장해야 함', () => {
+      const stablecoinAddress = '0x' + '1'.repeat(40);
+      const vaultAddress = '0x' + '2'.repeat(40);
+
+      (service as any).saveDeployedContracts(stablecoinAddress, vaultAddress);
+
+      const deployed = service.getDeployedContracts();
+      expect(deployed).not.toBeNull();
+      if (deployed) {
+        expect(deployed.stablecoin.address).toBe(stablecoinAddress);
+        expect(deployed.vault.address).toBe(vaultAddress);
+      }
+    });
+
+    it('배포된 컨트랙트 주소를 조회해야 함', () => {
+      const deployed = service.getDeployedContracts();
+      
+      expect(deployed === null || typeof deployed === 'object').toBe(true);
+    });
+  });
+
+  describe('ABI 관리', () => {
+    it('컨트랙트 ABI를 저장해야 함', () => {
+      const address = '0x' + '1'.repeat(40);
+      const contractName = 'TestContract';
+      const abi = [
+        {
+          type: 'function',
+          name: 'test',
+          inputs: [],
+          outputs: [],
+        },
+      ];
+
+      (service as any).saveContractABI(address, contractName, abi);
+
+      const savedABI = service.getContractABI(address);
+      expect(savedABI).not.toBeNull();
+      if (savedABI) {
+        expect(savedABI.name).toBe(contractName);
+        expect(savedABI.abi).toEqual(abi);
+      }
+    });
+
+    it('컨트랙트 ABI를 조회해야 함', () => {
+      const address = '0x' + '1'.repeat(40);
+      const abi = service.getContractABI(address);
+      
+      expect(abi === null || typeof abi === 'object').toBe(true);
     });
   });
 

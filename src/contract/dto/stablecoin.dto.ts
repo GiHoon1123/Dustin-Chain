@@ -181,9 +181,9 @@ export class PositionResponseDto {
  */
 export class HealthResponseDto {
   @ApiProperty({
-    description: '건강도 여부',
-    example: true,
+    description: '건강도 여부 (원본 hex string, 스캔 백엔드에서 디코딩)',
+    example: '0x0000000000000000000000000000000000000000000000000000000000000001',
   })
-  isHealthy: boolean;
+  result: string;
 }
 
