@@ -357,6 +357,63 @@ export class ContractService implements OnApplicationBootstrap {
   }
 
   /**
+   * 컨트랙트 쓰기 메서드 실행 (사용자 계정으로 트랜잭션 생성 및 제출)
+   *
+   * 기존 executeContract()와 동일하지만 사용자가 지정한 privateKey로 실행
+   *
+   * @param to - 컨트랙트 주소
+   * @param data - ABI 인코딩된 함수 호출 데이터
+   * @param privateKey - 사용자 개인키
+   * @param value - 전송할 금액 (Wei, 담보 예치 시 사용)
+   * @returns 트랜잭션 해시 및 상태
+   */
+  async executeContractByUser(
+    to: Address,
+    data: string,
+    privateKey: string,
+    value: bigint = 0n,
+  ): Promise<{ hash: string; status: string }> {
+    try {
+      const tx = await this.transactionService.signTransaction(
+        privateKey,
+        to,
+        value,
+        {
+          data,
+          gasPrice: 1000000000n,
+          gasLimit: 1000000n,
+        },
+      );
+
+      const submittedTx = await this.transactionService.submitTransaction(
+        tx.from,
+        tx.to,
+        tx.value,
+        tx.nonce,
+        tx.getSignature(),
+        {
+          gasPrice: tx.gasPrice,
+          gasLimit: tx.gasLimit,
+          data: tx.data,
+        },
+      );
+
+      this.logger.log(
+        `Contract execute transaction submitted by user: ${submittedTx.hash} (from: ${tx.from}, to: ${to})`,
+      );
+
+      return {
+        hash: submittedTx.hash,
+        status: 'pending',
+      };
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Contract execute by user failed: ${errorMsg}`);
+      throw error;
+    }
+  }
+
+  /**
    * ABI 저장 (컨트랙트 주소와 ABI 매핑)
    */
   private saveContractABI(

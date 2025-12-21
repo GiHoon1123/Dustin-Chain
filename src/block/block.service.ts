@@ -5,6 +5,7 @@ import {
   Mainnet,
   StateManagerInterface,
 } from '@ethereumjs/common';
+import { Block as EthereumBlock, BlockHeader as EthereumBlockHeader } from '@ethereumjs/block';
 import { createMPT } from '@ethereumjs/mpt';
 import { createLegacyTx, createTxFromRLP } from '@ethereumjs/tx';
 import { createVM, runTx, VM } from '@ethereumjs/vm';
@@ -349,14 +350,19 @@ export class BlockService implements OnApplicationBootstrap {
     const parentHash = latestBlock.hash;
     const timestamp = Date.now();
 
-    // 2. Mempool에서 pending 트랜잭션 가져오기
+    // 2. StateManager가 최신 블록의 stateRoot를 사용하도록 설정
+    // (트랜잭션 실행 전에 최신 상태를 보장)
+    // BlockProducer에서 이미 startBlock()을 호출했으므로 여기서는 setStateRoot만 호출
+    await this.stateRepository.setStateRoot(latestBlock.stateRoot);
+
+    // 3. Mempool에서 pending 트랜잭션 가져오기
     const pendingTxs = this.txPool.getPending();
 
     // this.logger.log(
     //   `Creating Block #${blockNumber} with ${pendingTxs.length} transactions`,
     // );
 
-    // 3. 트랜잭션 실행 및 Receipt 생성
+    // 4. 트랜잭션 실행 및 Receipt 생성
     const executedTxs: Transaction[] = [];
     const receipts: TransactionReceipt[] = [];
     let cumulativeGasUsed = BigInt(0);
@@ -370,7 +376,7 @@ export class BlockService implements OnApplicationBootstrap {
       let logsBloom = '0x' + '0'.repeat(512);
 
       try {
-        const exec = await this.executeTransaction(tx);
+        const exec = await this.executeTransaction(tx, blockNumber, timestamp);
         if (exec) {
           status = exec.status;
           gasUsed = exec.gasUsed;
@@ -583,6 +589,8 @@ export class BlockService implements OnApplicationBootstrap {
    */
   private async executeTransaction(
     tx: Transaction,
+    blockNumber: number,
+    timestamp: number,
   ): Promise<ExecutionResultSummary | void> {
     // VM이 있으면: 모든 트랜잭션을 runTx로 실행 (배포/호출/송금 공통)
     // - 이유: 가스/리버트/로그/스토리지/코드 저장 등 EVM 규칙을 일관 적용하기 위함
@@ -831,9 +839,48 @@ export class BlockService implements OnApplicationBootstrap {
       //     `\n  data=${txForVMTyped.data instanceof Buffer ? `Buffer(${txForVMTyped.data.length})` : txForVMTyped.data instanceof Uint8Array ? `Uint8Array(${txForVMTyped.data.length})` : typeof txForVMTyped.data}`,
       // );
 
+      // VM 실행 시 새 블록 컨텍스트 사용 (현재 생성 중인 블록)
+      // 주의: 우리의 Block 엔티티는 코어 로직이므로 유지하되,
+      // runTx에 전달할 때만 @ethereumjs/block의 Block 객체로 변환
       let result;
       try {
-        result = await runTx(this.vm, { tx: txForVM });
+        // runTx에 전달하기 위한 임시 Block 객체 생성
+        // 실제 블록 저장/조회는 우리의 Block 엔티티 사용
+        // @ethereumjs/block v10에서는 BlockHeader를 먼저 생성하고 Block에 전달
+        const blockHeader = new EthereumBlockHeader(
+          {
+            number: BigInt(blockNumber),
+            gasLimit: 30000000n,
+            timestamp: BigInt(timestamp),
+            // 기본값들 추가 (runTx가 요구하는 필수 필드)
+            parentHash: Buffer.alloc(32, 0), // 임시값 (실제 값은 나중에 계산됨)
+            stateRoot: Buffer.alloc(32, 0), // 임시값
+            transactionsTrie: Buffer.alloc(32, 0), // 임시값
+            receiptTrie: Buffer.alloc(32, 0), // 임시값
+            logsBloom: Buffer.alloc(256, 0), // 임시값
+            difficulty: 0n,
+            extraData: Buffer.alloc(0),
+            gasUsed: 0n,
+            mixHash: Buffer.alloc(32, 0),
+            nonce: Buffer.alloc(8, 0),
+          },
+          { common: this.common },
+        );
+
+        // @ethereumjs/block v10: Block 생성자는 (header, transactions, uncleHeaders, options) 형식
+        // options는 네 번째 인자로 전달
+        const vmBlock = new EthereumBlock(
+          blockHeader,
+          [], // transactions
+          [], // uncleHeaders
+          undefined, // withdrawals (optional)
+          { common: this.common }, // options
+        );
+
+        result = await runTx(this.vm, {
+          tx: txForVM,
+          block: vmBlock, // 임시 Block 객체만 runTx에 전달
+        });
       } catch (vmError: unknown) {
         const errorMsg =
           vmError instanceof Error ? vmError.message : String(vmError);
@@ -868,8 +915,42 @@ export class BlockService implements OnApplicationBootstrap {
 
       const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
 
-      const gasUsed: bigint =
-        result.gasUsed ?? result.execResult.gasUsed ?? BigInt(21000);
+      // gasUsed 계산: VM 실행 결과에서 가스 사용량 추출
+      let gasUsed: bigint;
+      if (result.gasUsed !== undefined) {
+        gasUsed = result.gasUsed;
+      } else if (result.execResult.gasUsed !== undefined) {
+        gasUsed = result.execResult.gasUsed;
+      } else {
+        // 가스 사용량이 없는 경우: 트랜잭션이 실행되지 않았거나 초기 단계에서 실패
+        // 컨트랙트 호출인 경우 최소 가스 사용량 설정
+        gasUsed = tx.to !== null && tx.data && tx.data !== '0x' && tx.data.length > 2 
+          ? BigInt(21000) // 기본 가스 (실제로는 더 많이 사용했을 수 있음)
+          : BigInt(21000); // 일반 송금 기본 가스
+        this.logger.warn(
+          `[VM] Gas used not found in result, using default: ${gasUsed} (tx: ${tx.hash})`,
+        );
+      }
+
+      // 담보 예치 트랜잭션 디버깅: runTx 성공 후 결과 확인
+      if (tx.to && tx.data && tx.data.startsWith('0x6f758140')) {
+        this.logger.error(
+          `[VM] 🔍 DEPOSIT COLLATERAL - runTx completed: tx=${tx.hash}, status=${status}, gasUsed=${gasUsed.toString()}, hasExceptionError=${!!result.execResult.exceptionError}`,
+        );
+        if (result.execResult.exceptionError) {
+          const err = result.execResult.exceptionError;
+          this.logger.error(
+            `[VM] 🔍 Exception error: ${JSON.stringify({
+              error: err.error?.toString(),
+              errorType: err.errorType,
+              reason: err.reason,
+            }, null, 2)}`,
+          );
+        }
+        this.logger.error(
+          `[VM] 🔍 Result summary: gasUsed=${result.gasUsed?.toString() || 'undefined'}, execResult.gasUsed=${result.execResult.gasUsed?.toString() || 'undefined'}, returnValue length=${result.execResult.returnValue?.length || 0}`,
+        );
+      }
 
       // 생성자 실행 결과 확인 (컨트랙트 배포인 경우)
       if (tx.to === null) {
@@ -918,6 +999,19 @@ export class BlockService implements OnApplicationBootstrap {
               errorType: errorInfo.errorType,
               reason: errorInfo.reason,
             })}`,
+          );
+        }
+        // 트랜잭션 상세 정보 로깅 (디버깅용)
+        this.logger.error(
+          `[VM] Failed transaction details: to=${tx.to}, value=${tx.value}, data=${tx.data?.slice(0, 20)}..., gasLimit=${tx.gasLimit}, gasPrice=${tx.gasPrice}`,
+        );
+        // 담보 예치 트랜잭션 디버깅을 위한 추가 로깅
+        if (tx.to && tx.data && tx.data.startsWith('0x6f758140')) {
+          this.logger.error(
+            `[VM] 🔍 DEPOSIT COLLATERAL DEBUG: tx=${tx.hash}, to=${tx.to}, value=${tx.value.toString()}, data=${tx.data}, gasUsed=${gasUsed.toString()}, status=${status}`,
+          );
+          this.logger.error(
+            `[VM] 🔍 Exception error full: ${JSON.stringify(errorInfo, null, 2)}`,
           );
         }
       }

@@ -4,6 +4,8 @@ import { BlockModule } from '../block/block.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { ContractController } from './contract.controller';
 import { ContractService } from './contract.service';
+import { StablecoinController } from './stablecoin.controller';
+import { StablecoinService } from './stablecoin.service';
 
 /**
  * Contract Module
@@ -25,8 +27,8 @@ import { ContractService } from './contract.service';
  */
 @Module({
   imports: [AccountModule, BlockModule, TransactionModule],
-  controllers: [ContractController],
-  providers: [ContractService],
-  exports: [ContractService],
+  controllers: [ContractController, StablecoinController],
+  providers: [ContractService, StablecoinService],
+  exports: [ContractService, StablecoinService],
 })
 export class ContractModule {}

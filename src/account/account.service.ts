@@ -112,6 +112,10 @@ export class AccountService {
     // StateManager에 변경사항 저장 (저널에 기록)
     this.stateManager.setAccount(address, account);
 
+    // ⚠️ 중요: addBalance는 테스트용이므로 즉시 StateRepository에 커밋
+    // 블록 생성 시 StateManager가 이 잔액을 읽을 수 있도록 보장
+    await this.stateManager.commitBlock();
+
     // this.logger.log(
     //   `Added ${amount} Wei to ${address}, new balance: ${account.balance}`,
     // );
