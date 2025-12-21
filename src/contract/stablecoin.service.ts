@@ -39,6 +39,7 @@ export class StablecoinService {
       [],
     );
 
+    // Hex string을 BigInt로 변환 (이더리움 JSON-RPC 표준)
     const amountBigInt = BigInt(amount);
 
     return await this.contractService.executeContractByUser(
@@ -208,10 +209,10 @@ export class StablecoinService {
     // 두 번째 32바이트: debtAmount
     // 세 번째 32바이트: collateralRatio
     // 스캔 백엔드에서 디코딩하므로 여기서는 hex string을 분리만 함
-    const hexResult = result.result.startsWith('0x') 
-      ? result.result.slice(2) 
+    const hexResult = result.result.startsWith('0x')
+      ? result.result.slice(2)
       : result.result;
-    
+
     // 각 32바이트(64 hex chars)씩 분리
     const collateralAmountHex = '0x' + hexResult.slice(0, 64);
     const debtAmountHex = '0x' + hexResult.slice(64, 128);
@@ -250,4 +251,3 @@ export class StablecoinService {
     return result.result;
   }
 }
-

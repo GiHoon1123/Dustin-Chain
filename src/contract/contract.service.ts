@@ -9,6 +9,7 @@ import { Address as EthAddress } from '@ethereumjs/util';
 import { createVM, VM } from '@ethereumjs/vm';
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as fs from 'fs';
+import * as keccak from 'keccak';
 import * as path from 'path';
 import { AccountService } from '../account/account.service';
 import { BlockService } from '../block/block.service';
@@ -615,7 +616,6 @@ export class ContractService implements OnApplicationBootstrap {
     const signature = `${functionName}(${paramTypes.join(',')})`;
     // ⚠️ 중요: 이더리움 함수 선택자는 Keccak-256 해시의 첫 4바이트
     // hashUtf8은 SHA3-256을 사용하므로 keccak 라이브러리를 직접 사용해야 함
-    const keccak = require('keccak');
     const hash = keccak('keccak256').update(signature).digest('hex');
     return '0x' + hash.slice(0, 8); // "0x" + 8 hex chars = 4 bytes
   }
@@ -644,6 +644,7 @@ export class ContractService implements OnApplicationBootstrap {
       return address.padStart(64, '0');
     } else if (paramType === 'uint256' || paramType === 'uint') {
       // uint256: 32바이트 빅엔디안
+      // value는 hex string (0x 접두사 포함) 또는 bigint 또는 number
       const num = typeof value === 'bigint' ? value : BigInt(value);
       const hex = num.toString(16);
       return hex.padStart(64, '0');

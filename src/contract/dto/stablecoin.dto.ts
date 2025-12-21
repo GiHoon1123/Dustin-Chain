@@ -17,13 +17,13 @@ export class DepositCollateralRequestDto {
   privateKey: string;
 
   @ApiProperty({
-    description: '예치할 금액 (Wei 단위)',
-    example: '1000000000000000000000',
+    description: '예치할 금액 (Wei 단위, Hex String)',
+    example: '0x3635c9adc5dea00000', // 1000 DSTN = 1000 * 10^18 Wei
   })
   @IsString()
   @IsNotEmpty()
-  @Matches(/^\d+$/, {
-    message: 'amount must be a non-negative integer string',
+  @Matches(/^0x[0-9a-fA-F]+$/, {
+    message: 'amount must be a hex string with 0x prefix',
   })
   amount: string;
 }
@@ -44,13 +44,13 @@ export class MintStablecoinRequestDto {
   privateKey: string;
 
   @ApiProperty({
-    description: '발행할 스테이블코인 양 (Wei 단위)',
-    example: '500000000000000000000',
+    description: '발행할 스테이블코인 양 (Wei 단위, Hex String)',
+    example: '0x1b1ae4d6e2ef500000', // 500 DSTN = 500 * 10^18 Wei
   })
   @IsString()
   @IsNotEmpty()
-  @Matches(/^\d+$/, {
-    message: 'stablecoinAmount must be a non-negative integer string',
+  @Matches(/^0x[0-9a-fA-F]+$/, {
+    message: 'stablecoinAmount must be a hex string with 0x prefix',
   })
   stablecoinAmount: string;
 }
@@ -71,13 +71,13 @@ export class RedeemStablecoinRequestDto {
   privateKey: string;
 
   @ApiProperty({
-    description: '상환할 스테이블코인 양 (Wei 단위)',
-    example: '500000000000000000000',
+    description: '상환할 스테이블코인 양 (Wei 단위, Hex String)',
+    example: '0x1b1ae4d6e2ef500000', // 500 DSTN = 500 * 10^18 Wei
   })
   @IsString()
   @IsNotEmpty()
-  @Matches(/^\d+$/, {
-    message: 'stablecoinAmount must be a non-negative integer string',
+  @Matches(/^0x[0-9a-fA-F]+$/, {
+    message: 'stablecoinAmount must be a hex string with 0x prefix',
   })
   stablecoinAmount: string;
 }
@@ -98,13 +98,13 @@ export class WithdrawCollateralRequestDto {
   privateKey: string;
 
   @ApiProperty({
-    description: '인출할 금액 (Wei 단위)',
-    example: '1000000000000000000000',
+    description: '인출할 금액 (Wei 단위, Hex String)',
+    example: '0x3635c9adc5dea00000', // 1000 DSTN = 1000 * 10^18 Wei
   })
   @IsString()
   @IsNotEmpty()
-  @Matches(/^\d+$/, {
-    message: 'amount must be a non-negative integer string',
+  @Matches(/^0x[0-9a-fA-F]+$/, {
+    message: 'amount must be a hex string with 0x prefix',
   })
   amount: string;
 }

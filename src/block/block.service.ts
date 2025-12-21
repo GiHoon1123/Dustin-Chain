@@ -934,11 +934,12 @@ export class BlockService implements OnApplicationBootstrap {
 
       // 담보 예치 트랜잭션 디버깅: runTx 성공 후 결과 확인
       if (tx.to && tx.data && tx.data.startsWith('0x6f758140')) {
-        this.logger.error(
-          `[VM] 🔍 DEPOSIT COLLATERAL - runTx completed: tx=${tx.hash}, status=${status}, gasUsed=${gasUsed.toString()}, hasExceptionError=${!!result.execResult.exceptionError}`,
-        );
         if (result.execResult.exceptionError) {
+          // 실제 에러인 경우에만 ERROR 레벨
           const err = result.execResult.exceptionError;
+          this.logger.error(
+            `[VM] 🔍 DEPOSIT COLLATERAL FAILED - tx=${tx.hash}, status=${status}, gasUsed=${gasUsed.toString()}`,
+          );
           this.logger.error(
             `[VM] 🔍 Exception error: ${JSON.stringify({
               error: err.error?.toString(),
@@ -946,10 +947,15 @@ export class BlockService implements OnApplicationBootstrap {
               reason: err.reason,
             }, null, 2)}`,
           );
+        } else {
+          // 성공한 경우 DEBUG 레벨
+          this.logger.debug(
+            `[VM] 🔍 DEPOSIT COLLATERAL SUCCESS - tx=${tx.hash}, status=${status}, gasUsed=${gasUsed.toString()}`,
+          );
+          this.logger.debug(
+            `[VM] 🔍 Result summary: gasUsed=${result.gasUsed?.toString() || 'undefined'}, execResult.gasUsed=${result.execResult.gasUsed?.toString() || 'undefined'}, returnValue length=${result.execResult.returnValue?.length || 0}`,
+          );
         }
-        this.logger.error(
-          `[VM] 🔍 Result summary: gasUsed=${result.gasUsed?.toString() || 'undefined'}, execResult.gasUsed=${result.execResult.gasUsed?.toString() || 'undefined'}, returnValue length=${result.execResult.returnValue?.length || 0}`,
-        );
       }
 
       // 생성자 실행 결과 확인 (컨트랙트 배포인 경우)
@@ -1005,10 +1011,10 @@ export class BlockService implements OnApplicationBootstrap {
         this.logger.error(
           `[VM] Failed transaction details: to=${tx.to}, value=${tx.value}, data=${tx.data?.slice(0, 20)}..., gasLimit=${tx.gasLimit}, gasPrice=${tx.gasPrice}`,
         );
-        // 담보 예치 트랜잭션 디버깅을 위한 추가 로깅
+        // 담보 예치 트랜잭션 디버깅을 위한 추가 로깅 (실제 에러인 경우만)
         if (tx.to && tx.data && tx.data.startsWith('0x6f758140')) {
           this.logger.error(
-            `[VM] 🔍 DEPOSIT COLLATERAL DEBUG: tx=${tx.hash}, to=${tx.to}, value=${tx.value.toString()}, data=${tx.data}, gasUsed=${gasUsed.toString()}, status=${status}`,
+            `[VM] 🔍 DEPOSIT COLLATERAL FAILED: tx=${tx.hash}, to=${tx.to}, value=${tx.value.toString()}, data=${tx.data}, gasUsed=${gasUsed.toString()}, status=${status}`,
           );
           this.logger.error(
             `[VM] 🔍 Exception error full: ${JSON.stringify(errorInfo, null, 2)}`,

@@ -1,7 +1,19 @@
 {
   "contracts": [
     {
-      "address": "0xd3d5b0ff7333c4d28e370739f79d16de9f7a7d35",
+      "address": "0x1111111111111111111111111111111111111111",
+      "name": "TestContract",
+      "abi": [
+        {
+          "type": "function",
+          "name": "test",
+          "inputs": [],
+          "outputs": []
+        }
+      ]
+    },
+    {
+      "address": "0x290ce6ada00eff35b18a96dabe4bf0735ea4d555",
       "name": "StableCoin",
       "abi": [
         {
@@ -353,7 +365,7 @@
       ]
     },
     {
-      "address": "0xf4a612fdaa63d4f289ae940217330997844bf86b",
+      "address": "0xad51a3cbdb49eb8a33d075fe1bc4a171de9d6915",
       "name": "CollateralVault",
       "abi": [
         {
@@ -687,18 +699,6 @@
         {
           "stateMutability": "payable",
           "type": "receive"
-        }
-      ]
-    },
-    {
-      "address": "0x1111111111111111111111111111111111111111",
-      "name": "TestContract",
-      "abi": [
-        {
-          "type": "function",
-          "name": "test",
-          "inputs": [],
-          "outputs": []
         }
       ]
     }
