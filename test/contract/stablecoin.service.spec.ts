@@ -53,7 +53,7 @@ describe('StablecoinService', () => {
   describe('담보 예치', () => {
     it('담보를 예치해야 함', async () => {
       const privateKey = '0x' + '1'.repeat(64);
-      const amount = '1000000000000000000000';
+      const amount = '0x3635c9adc5dea00000'; // 1000 DSTN
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
@@ -84,7 +84,7 @@ describe('StablecoinService', () => {
       contractService.getDeployedContracts.mockReturnValue(null);
 
       await expect(
-        service.depositCollateral('0x' + '1'.repeat(64), '1000000000000000000000'),
+        service.depositCollateral('0x' + '1'.repeat(64), '0x3635c9adc5dea00000'), // 1000 DSTN
       ).rejects.toThrow('CollateralVault is not deployed');
     });
   });
@@ -92,7 +92,7 @@ describe('StablecoinService', () => {
   describe('스테이블코인 발행', () => {
     it('스테이블코인을 발행해야 함', async () => {
       const privateKey = '0x' + '1'.repeat(64);
-      const stablecoinAmount = '500000000000000000000';
+      const stablecoinAmount = '0x1b1ae4d6e2ef500000'; // 500 DSTN
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
@@ -121,7 +121,7 @@ describe('StablecoinService', () => {
   describe('스테이블코인 상환', () => {
     it('스테이블코인을 상환해야 함', async () => {
       const privateKey = '0x' + '1'.repeat(64);
-      const stablecoinAmount = '200000000000000000000';
+      const stablecoinAmount = '0x2c68af0bb1400000000'; // 200 DSTN
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
@@ -150,7 +150,7 @@ describe('StablecoinService', () => {
   describe('담보 인출', () => {
     it('담보를 인출해야 함', async () => {
       const privateKey = '0x' + '1'.repeat(64);
-      const amount = '100000000000000000000';
+      const amount = '0x56bc75e2d63100000'; // 100 DSTN
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
@@ -249,7 +249,7 @@ describe('StablecoinService', () => {
       // 시나리오: 담보 1000 DSTN, 부채 500 USDST
       // 필요 담보: 500 * 1.5 = 750 USD = 0.75 DSTN
       // 담보를 0.7 DSTN만 남기면 청산 가능 (담보비율: 0.7 * 1000 / 750 = 93%)
-      const withdrawAmount = '999300000000000000000'; // 999.3 DSTN 인출
+      const withdrawAmount = '0x362c12c77b4fda0000'; // 999.3 DSTN 인출
 
       contractService.encodeFunctionCall.mockReturnValue('0x' + 'c'.repeat(8) + '0'.repeat(56));
       contractService.executeContractByUser.mockResolvedValue({
@@ -282,7 +282,7 @@ describe('StablecoinService', () => {
       // 담보비율 150% 미만이 되려면: 필요 담보 > 1,000,000
       // 필요 담보 = 부채 * 1.5 > 1,000,000
       // 부채 > 666,666 USDST
-      const largeDebtAmount = '700000000000000000000000'; // 700,000 USDST
+      const largeDebtAmount = '0x943b1377290cbd800000'; // 700,000 USDST
 
       contractService.encodeFunctionCall.mockReturnValue('0x' + 'a'.repeat(8) + '0'.repeat(56));
       contractService.executeContractByUser.mockResolvedValue({

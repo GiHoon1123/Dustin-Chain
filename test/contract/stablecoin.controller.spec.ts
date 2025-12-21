@@ -42,7 +42,7 @@ describe('StablecoinController', () => {
     it('담보를 예치해야 함', async () => {
       const request = {
         privateKey: '0x' + '1'.repeat(64),
-        amount: '1000000000000000000000',
+        amount: '0x3635c9adc5dea00000', // 1000 DSTN
       };
       const response = {
         hash: '0x' + 'h'.repeat(64),
@@ -65,7 +65,7 @@ describe('StablecoinController', () => {
     it('스테이블코인을 발행해야 함', async () => {
       const request = {
         privateKey: '0x' + '1'.repeat(64),
-        stablecoinAmount: '500000000000000000000',
+        stablecoinAmount: '0x1b1ae4d6e2ef500000', // 500 DSTN
       };
       const response = {
         hash: '0x' + 'h'.repeat(64),
@@ -88,7 +88,7 @@ describe('StablecoinController', () => {
     it('스테이블코인을 상환해야 함', async () => {
       const request = {
         privateKey: '0x' + '1'.repeat(64),
-        stablecoinAmount: '200000000000000000000',
+        stablecoinAmount: '0x2c68af0bb1400000000', // 200 DSTN
       };
       const response = {
         hash: '0x' + 'h'.repeat(64),
@@ -111,7 +111,7 @@ describe('StablecoinController', () => {
     it('담보를 인출해야 함', async () => {
       const request = {
         privateKey: '0x' + '1'.repeat(64),
-        amount: '100000000000000000000',
+        amount: '0x56bc75e2d63100000', // 100 DSTN
       };
       const response = {
         hash: '0x' + 'h'.repeat(64),
