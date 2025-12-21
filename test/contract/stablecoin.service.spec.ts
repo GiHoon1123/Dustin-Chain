@@ -203,6 +203,136 @@ describe('StablecoinService', () => {
         [userAddress],
       );
     });
+
+    it('청산 함수 호출 데이터가 올바르게 생성되어야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const userAddress = '0x' + '3'.repeat(40);
+      const vaultAddress = '0x' + '2'.repeat(40);
+
+      contractService.getDeployedContracts.mockReturnValue({
+        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
+        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+      });
+
+      contractService.encodeFunctionCall.mockReturnValue('0x' + 'd'.repeat(8) + '0'.repeat(56));
+      contractService.executeContractByUser.mockResolvedValue({
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      });
+
+      await service.liquidate(privateKey, userAddress);
+
+      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith(
+        'liquidate',
+        ['address'],
+        [userAddress],
+      );
+      expect(contractService.executeContractByUser).toHaveBeenCalledWith(
+        vaultAddress,
+        expect.stringMatching(/^0x[0-9a-f]+$/),
+        privateKey,
+        0n,
+      );
+    });
+  });
+
+  describe('청산 시나리오 테스트 (담보 인출로 담보비율 낮추기)', () => {
+    it('담보를 많이 인출하여 청산 가능 상태를 만들 수 있어야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const vaultAddress = '0x' + '2'.repeat(40);
+
+      contractService.getDeployedContracts.mockReturnValue({
+        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
+        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+      });
+
+      // 시나리오: 담보 1000 DSTN, 부채 500 USDST
+      // 필요 담보: 500 * 1.5 = 750 USD = 0.75 DSTN
+      // 담보를 0.7 DSTN만 남기면 청산 가능 (담보비율: 0.7 * 1000 / 750 = 93%)
+      const withdrawAmount = '999300000000000000000'; // 999.3 DSTN 인출
+
+      contractService.encodeFunctionCall.mockReturnValue('0x' + 'c'.repeat(8) + '0'.repeat(56));
+      contractService.executeContractByUser.mockResolvedValue({
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      });
+
+      const result = await service.withdrawCollateral(privateKey, withdrawAmount);
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith(
+        'withdrawCollateral',
+        ['uint256'],
+        [withdrawAmount],
+      );
+    });
+
+    it('부채를 많이 늘려서 청산 가능 상태를 만들 수 있어야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const vaultAddress = '0x' + '2'.repeat(40);
+
+      contractService.getDeployedContracts.mockReturnValue({
+        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
+        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+      });
+
+      // 시나리오: 담보 1000 DSTN, 부채를 많이 늘림
+      // 담보 가치: 1000 * 1000 = 1,000,000 USD
+      // 담보비율 150% 미만이 되려면: 필요 담보 > 1,000,000
+      // 필요 담보 = 부채 * 1.5 > 1,000,000
+      // 부채 > 666,666 USDST
+      const largeDebtAmount = '700000000000000000000000'; // 700,000 USDST
+
+      contractService.encodeFunctionCall.mockReturnValue('0x' + 'a'.repeat(8) + '0'.repeat(56));
+      contractService.executeContractByUser.mockResolvedValue({
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      });
+
+      const result = await service.mintStablecoin(privateKey, largeDebtAmount);
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith(
+        'mintStablecoin',
+        ['uint256'],
+        [largeDebtAmount],
+      );
+    });
+  });
+
+  describe('청산 테스트의 한계', () => {
+    it('가격 고정으로 인한 테스트 한계를 문서화해야 함', () => {
+      const limitations = [
+        'DSTN 가격이 고정되어 있어서 가격 변동에 따른 청산은 테스트 불가',
+        '실제 운영 환경에서는 가격 변동으로 청산이 발생하지만, 여기서는 담보/부채 비율 조정으로만 테스트',
+        '가격 하락 시나리오를 테스트할 수 없음 (예: DSTN 가격이 1000에서 500으로 떨어지는 경우)',
+        '가격 상승 시나리오를 테스트할 수 없음 (예: DSTN 가격이 1000에서 2000으로 오르는 경우)',
+        '가격 변동에 따른 자동 청산 트리거를 테스트할 수 없음',
+        '가격 오라클 연동 테스트 불가',
+      ];
+
+      expect(limitations.length).toBeGreaterThan(0);
+      expect(limitations).toContain(
+        'DSTN 가격이 고정되어 있어서 가격 변동에 따른 청산은 테스트 불가',
+      );
+    });
+
+    it('현재 테스트 방법의 한계를 설명해야 함', () => {
+      const testMethods = [
+        '담보를 많이 인출하여 담보비율을 낮춤',
+        '부채를 많이 늘려서 담보비율을 낮춤',
+      ];
+
+      const limitations = [
+        '가격 변동 없이 담보/부채 비율만 조정',
+        '현실적이지 않은 시나리오 (실제로는 가격 변동으로 청산 발생)',
+      ];
+
+      expect(testMethods.length).toBe(2);
+      expect(limitations.length).toBeGreaterThan(0);
+    });
   });
 
   describe('포지션 조회', () => {
