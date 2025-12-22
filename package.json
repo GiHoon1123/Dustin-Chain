@@ -19,7 +19,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "generate:accounts": "ts-node src/scripts/generate-genesis-accounts.ts",
-    "generate:genesis": "ts-node src/scripts/generate-genesis.ts"
+    "generate:genesis": "ts-node src/scripts/generate-genesis.ts",
+    "compile:contracts": "ts-node -e \"import('./src/compiler/compiler.service').then(m => new m.CompilerService().compileAll())\""
   },
   "dependencies": {
     "@ethereumjs/block": "^10.0.0",
@@ -44,7 +45,8 @@
     "level": "^10.0.0",
     "lru-cache": "^11.2.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "solc": "^0.8.33"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
