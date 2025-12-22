@@ -8,6 +8,7 @@ import {
   MintStablecoinRequestDto,
   PositionResponseDto,
   RedeemStablecoinRequestDto,
+  StablecoinBalanceResponseDto,
   TransactionResponseDto,
   TransferStablecoinRequestDto,
   WithdrawCollateralRequestDto,
@@ -220,5 +221,34 @@ export class StablecoinController {
       body.to,
       body.amount,
     );
+  }
+
+  /**
+   * 스테이블코인 잔액 조회
+   *
+   * GET /stablecoin/balance/:userAddress
+   */
+  @Get('balance/:userAddress')
+  @ApiOperation({
+    summary: '스테이블코인 잔액 조회',
+    description: '사용자의 스테이블코인(USDST) 잔액을 조회합니다.',
+  })
+  @ApiParam({
+    name: 'userAddress',
+    description: '사용자 주소',
+    example: '0x742d35cc6634c0532925a3b844bc9e7595f0beb0',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '스테이블코인 잔액 조회 성공',
+    type: StablecoinBalanceResponseDto,
+  })
+  async getStablecoinBalance(
+    @Param('userAddress') userAddress: string,
+  ): Promise<StablecoinBalanceResponseDto> {
+    const balance = await this.stablecoinService.getStablecoinBalance(
+      userAddress,
+    );
+    return { balance };
   }
 }

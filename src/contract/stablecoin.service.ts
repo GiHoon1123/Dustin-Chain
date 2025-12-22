@@ -285,4 +285,30 @@ export class StablecoinService {
       0n,
     );
   }
+
+  /**
+   * 스테이블코인 잔액 조회
+   *
+   * @param userAddress - 사용자 주소
+   * @returns 스테이블코인 잔액 (Wei 단위, Hex String)
+   */
+  async getStablecoinBalance(userAddress: Address): Promise<string> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.stablecoin) {
+      throw new Error('StableCoin contract is not deployed');
+    }
+    const stablecoinAddress = deployed.stablecoin.address;
+    const data = this.contractService.encodeFunctionCall(
+      'balanceOf',
+      ['address'],
+      [userAddress],
+    );
+    const result = await this.contractService.callContract(
+      stablecoinAddress,
+      data,
+      userAddress,
+    );
+    // 원본 hex 반환 (스캔 백엔드에서 디코딩)
+    return result.result;
+  }
 }

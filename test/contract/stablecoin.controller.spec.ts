@@ -19,6 +19,7 @@ describe('StablecoinController', () => {
       getPosition: jest.fn(),
       isHealthy: jest.fn(),
       transferStablecoin: jest.fn(),
+      getStablecoinBalance: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -234,6 +235,36 @@ describe('StablecoinController', () => {
         request.to,
         request.amount,
       );
+    });
+  });
+
+  describe('getStablecoinBalance', () => {
+    it('스테이블코인 잔액을 조회해야 함', async () => {
+      const userAddress = '0x' + '3'.repeat(40);
+      const balance =
+        '0x0000000000000000000000000000000000000000000000056bc75e2d63100000'; // 100 USDST
+
+      stablecoinService.getStablecoinBalance.mockResolvedValue(balance);
+
+      const result = await controller.getStablecoinBalance(userAddress);
+
+      expect(result).toEqual({ balance });
+      expect(stablecoinService.getStablecoinBalance).toHaveBeenCalledWith(
+        userAddress,
+      );
+    });
+
+    it('잔액이 0인 경우도 정상적으로 조회해야 함', async () => {
+      const userAddress = '0x' + '3'.repeat(40);
+      const balance =
+        '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+      stablecoinService.getStablecoinBalance.mockResolvedValue(balance);
+
+      const result = await controller.getStablecoinBalance(userAddress);
+
+      expect(result).toEqual({ balance });
+      expect(result.balance).toBe(balance);
     });
   });
 });

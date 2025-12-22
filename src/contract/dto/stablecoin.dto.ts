@@ -30,6 +30,18 @@ export class DepositCollateralRequestDto {
 }
 
 /**
+ * 스테이블코인 잔액 응답 DTO
+ */
+export class StablecoinBalanceResponseDto {
+  @ApiProperty({
+    description: '스테이블코인 잔액 (Wei 단위, Hex String)',
+    example:
+      '0x0000000000000000000000000000000000000000000000056bc75e2d63100000', // 100 USDST
+  })
+  balance: string;
+}
+
+/**
  * 스테이블코인 발행 요청 DTO
  */
 export class MintStablecoinRequestDto {

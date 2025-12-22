@@ -599,4 +599,91 @@ describe('StablecoinService', () => {
       );
     });
   });
+
+  describe('스테이블코인 잔액 조회', () => {
+    it('스테이블코인 잔액을 조회해야 함', async () => {
+      const userAddress = '0x' + '3'.repeat(40);
+      const stablecoinAddress = '0x' + '5'.repeat(40);
+      const balanceHex =
+        '0x0000000000000000000000000000000000000000000000056bc75e2d63100000'; // 100 USDST
+
+      contractService.getDeployedContracts.mockReturnValue({
+        stablecoin: {
+          address: stablecoinAddress,
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: '0x' + '2'.repeat(40),
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
+      });
+
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'a'.repeat(8) + '0'.repeat(56),
+      );
+      contractService.callContract.mockResolvedValue({
+        result: balanceHex,
+        gasUsed: '0xb1f',
+      });
+
+      const result = await service.getStablecoinBalance(userAddress);
+
+      expect(typeof result).toBe('string');
+      expect(result).toMatch(/^0x[0-9a-f]+$/);
+      expect(result).toBe(balanceHex);
+      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith(
+        'balanceOf',
+        ['address'],
+        [userAddress],
+      );
+      expect(contractService.callContract).toHaveBeenCalledWith(
+        stablecoinAddress,
+        expect.stringMatching(/^0x[0-9a-f]+$/),
+        userAddress,
+      );
+    });
+
+    it('StableCoin이 배포되지 않았으면 에러를 발생시켜야 함', async () => {
+      contractService.getDeployedContracts.mockReturnValue(null);
+
+      await expect(
+        service.getStablecoinBalance('0x' + '3'.repeat(40)),
+      ).rejects.toThrow('StableCoin contract is not deployed');
+    });
+
+    it('잔액이 0인 경우도 정상적으로 조회해야 함', async () => {
+      const userAddress = '0x' + '3'.repeat(40);
+      const stablecoinAddress = '0x' + '5'.repeat(40);
+
+      contractService.getDeployedContracts.mockReturnValue({
+        stablecoin: {
+          address: stablecoinAddress,
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: '0x' + '2'.repeat(40),
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
+      });
+
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'a'.repeat(8) + '0'.repeat(56),
+      );
+      contractService.callContract.mockResolvedValue({
+        result:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+        gasUsed: '0xb1f',
+      });
+
+      const result = await service.getStablecoinBalance(userAddress);
+
+      expect(result).toBe(
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+      );
+    });
+  });
 });
