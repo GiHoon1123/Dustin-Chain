@@ -536,6 +536,106 @@ export class StakingService implements OnApplicationBootstrap {
   }
 
   /**
+   * Proposer 보상 지급 (Backend에서 호출)
+   *
+   * StakingContract의 rewardProposer() 함수를 호출하여
+   * Proposer에게 즉시 보상을 지급합니다.
+   *
+   * 이더리움:
+   * - 블록 생성 시 즉시 Proposer에게 보상 지급
+   *
+   * 우리:
+   * - 동일하게 구현
+   * - BlockProducer에서 블록 생성 시마다 호출
+   *
+   * @param validatorAddress - Proposer 주소
+   * @param amount - 보상 금액 (Wei, BigInt)
+   * @returns 트랜잭션 해시 및 상태
+   */
+  async rewardProposer(
+    validatorAddress: Address,
+    amount: bigint,
+  ): Promise<{ hash: string; status: string }> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    const data = this.contractService.encodeFunctionCall(
+      'rewardProposer',
+      ['address', 'uint256'],
+      [validatorAddress, `0x${amount.toString(16)}`],
+    );
+
+    // Genesis Account 0 (배포 계정)으로 실행
+    const genesisAccount0 = this.contractService.getGenesisAccount0();
+    if (!genesisAccount0) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    return await this.contractService.executeContractByUser(
+      stakingAddress,
+      data,
+      genesisAccount0.privateKey,
+      0n,
+    );
+  }
+
+  /**
+   * Committee 보상 누적 (Backend에서 호출)
+   *
+   * StakingContract의 accumulateCommitteeReward() 함수를 호출하여
+   * Committee 멤버의 보상을 Epoch 단위로 누적합니다.
+   *
+   * 이더리움:
+   * - Attestation 제출 시 보상을 Epoch 단위로 누적
+   * - Epoch 완료 시 일괄 지급
+   *
+   * 우리:
+   * - 동일하게 구현
+   * - BlockProducer에서 Attestation 제출 시마다 호출
+   * - distributeEpochRewards()에서 일괄 지급
+   *
+   * @param epoch - Epoch 번호
+   * @param validatorAddress - Committee 멤버 주소
+   * @param amount - 보상 금액 (Wei, BigInt)
+   * @returns 트랜잭션 해시 및 상태
+   */
+  async accumulateCommitteeReward(
+    epoch: number,
+    validatorAddress: Address,
+    amount: bigint,
+  ): Promise<{ hash: string; status: string }> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    const data = this.contractService.encodeFunctionCall(
+      'accumulateCommitteeReward',
+      ['uint256', 'address', 'uint256'],
+      [`0x${BigInt(epoch).toString(16)}`, validatorAddress, `0x${amount.toString(16)}`],
+    );
+
+    // Genesis Account 0 (배포 계정)으로 실행
+    const genesisAccount0 = this.contractService.getGenesisAccount0();
+    if (!genesisAccount0) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    return await this.contractService.executeContractByUser(
+      stakingAddress,
+      data,
+      genesisAccount0.privateKey,
+      0n,
+    );
+  }
+
+  /**
    * 서버 시작 시 자동 실행
    *
    * Genesis 계정 중 처음 90명을 StakingContract에 자동 등록합니다.

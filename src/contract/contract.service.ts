@@ -7,15 +7,15 @@ import {
 } from '@ethereumjs/common';
 import { Address as EthAddress } from '@ethereumjs/util';
 import { createVM, VM } from '@ethereumjs/vm';
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as fs from 'fs';
 import * as keccak from 'keccak';
 import * as path from 'path';
 import { AccountService } from '../account/account.service';
-import { BlockService } from '../block/block.service';
 import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
+import { IBlockRepository } from '../storage/repositories/block.repository.interface';
 import { CustomStateManager } from '../state/custom-state-manager';
 import { TransactionService } from '../transaction/transaction.service';
 
@@ -48,7 +48,8 @@ export class ContractService implements OnApplicationBootstrap {
     private readonly evmState: CustomStateManager,
     private readonly accountService: AccountService,
     private readonly cryptoService: CryptoService,
-    private readonly blockService: BlockService,
+    @Inject(IBlockRepository)
+    private readonly blockRepository: IBlockRepository,
     private readonly transactionService: TransactionService,
   ) {
     // Common 객체 초기화 (체인 파라미터)
@@ -247,7 +248,8 @@ export class ContractService implements OnApplicationBootstrap {
       const callerEthAddress = new EthAddress(callerBytes);
 
       // 최신 블록 가져오기 (블록 컨텍스트용)
-      const latestBlock = await this.blockService.getLatestBlock();
+      // 순환 의존성 해결: BlockService 대신 IBlockRepository 직접 사용
+      const latestBlock = await this.blockRepository.findLatest();
       if (!latestBlock) {
         throw new Error('No blocks found');
       }

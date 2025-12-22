@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AccountModule } from '../account/account.module';
 import { ConsensusModule } from '../consensus/consensus.module';
+import { StakingModule } from '../staking/staking.module';
 import { TransactionModule } from '../transaction/transaction.module';
 import { ValidatorModule } from '../validator/validator.module';
 import { BlockController } from './block.controller';
@@ -20,7 +21,8 @@ import { BlockProducer } from './producer/block.producer';
  * 의존성:
  * - AccountModule: 계정 상태 관리 (잔액, nonce)
  * - TransactionModule: 트랜잭션 실행
- * - ValidatorModule: Validator 관리 (Proposer 선택)
+ * - ValidatorModule: Validator 관리 (Genesis Validator, Proposer 선택)
+ * - StakingModule: StakingContract Validator 관리 (스테이킹 Validator)
  * - ConsensusModule: POS 합의 (Attestation)
  * - StorageModule (Global): 블록 저장소 (자동 주입)
  *
@@ -29,7 +31,13 @@ import { BlockProducer } from './producer/block.producer';
  * - Genesis Block 생성 후 12초마다 블록 생성
  */
 @Module({
-  imports: [AccountModule, TransactionModule, ValidatorModule, ConsensusModule],
+  imports: [
+    AccountModule,
+    TransactionModule,
+    ValidatorModule,
+    StakingModule, // StakingContract Validator 통합
+    ConsensusModule,
+  ],
   controllers: [BlockController],
   providers: [BlockService, BlockProducer],
   exports: [BlockService, BlockProducer],
