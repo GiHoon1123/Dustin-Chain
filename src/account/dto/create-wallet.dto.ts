@@ -25,8 +25,8 @@ export class CreateWalletResponseDto {
   address: string;
 
   @ApiProperty({
-    description: '잔액 (Wei 단위)',
-    example: '0',
+    description: '잔액 (Wei 단위, Hex String)',
+    example: '0x21e19e0c9bab2400000', // 10,000 DSTN = 10,000 * 10^18 Wei
   })
   balance: string;
 

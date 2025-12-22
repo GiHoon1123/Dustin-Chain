@@ -92,7 +92,7 @@ export class AccountController {
       privateKey: keyPair.privateKey,
       publicKey: keyPair.publicKey,
       address: keyPair.address,
-      balance: balance.toString(),
+      balance: `0x${balance.toString(16)}`, // Hex String (Wei 단위)
       nonce: 0,
     };
   }

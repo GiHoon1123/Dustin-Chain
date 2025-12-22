@@ -134,13 +134,11 @@ describe('ContractService', () => {
         v: 0,
         r: '0x' + 'r'.repeat(64),
         s: '0x' + 's'.repeat(64),
-        getSignature: jest
-          .fn()
-          .mockReturnValue({
-            v: 0,
-            r: '0x' + 'r'.repeat(64),
-            s: '0x' + 's'.repeat(64),
-          }),
+        getSignature: jest.fn().mockReturnValue({
+          v: 0,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        }),
         gasPrice: 1000000000n,
         gasLimit: 5000000n,
         data: bytecode,
@@ -199,13 +197,11 @@ describe('ContractService', () => {
         v: 0,
         r: '0x' + 'r'.repeat(64),
         s: '0x' + 's'.repeat(64),
-        getSignature: jest
-          .fn()
-          .mockReturnValue({
-            v: 0,
-            r: '0x' + 'r'.repeat(64),
-            s: '0x' + 's'.repeat(64),
-          }),
+        getSignature: jest.fn().mockReturnValue({
+          v: 0,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        }),
         gasPrice: 1000000000n,
         gasLimit: 1000000n,
         data,
@@ -290,13 +286,11 @@ describe('ContractService', () => {
         v: 0,
         r: '0x' + 'r'.repeat(64),
         s: '0x' + 's'.repeat(64),
-        getSignature: jest
-          .fn()
-          .mockReturnValue({
-            v: 0,
-            r: '0x' + 'r'.repeat(64),
-            s: '0x' + 's'.repeat(64),
-          }),
+        getSignature: jest.fn().mockReturnValue({
+          v: 0,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        }),
         gasPrice: 1000000000n,
         gasLimit: 1000000n,
         data,

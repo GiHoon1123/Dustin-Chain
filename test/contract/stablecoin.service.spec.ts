@@ -532,11 +532,7 @@ describe('StablecoinService', () => {
         status: 'pending',
       });
 
-      const result = await service.transferStablecoin(
-        privateKey,
-        to,
-        amount,
-      );
+      const result = await service.transferStablecoin(privateKey, to, amount);
 
       expect(result).toHaveProperty('hash');
       expect(result).toHaveProperty('status');
@@ -592,11 +588,7 @@ describe('StablecoinService', () => {
         status: 'pending',
       });
 
-      const result = await service.transferStablecoin(
-        privateKey,
-        to,
-        amount,
-      );
+      const result = await service.transferStablecoin(privateKey, to, amount);
 
       expect(result).toHaveProperty('hash');
       expect(result).toHaveProperty('status');

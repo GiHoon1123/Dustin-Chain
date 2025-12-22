@@ -56,15 +56,19 @@ describe('AccountController', () => {
       };
 
       const account = new Account(keyPair.address);
+      const bonusAmount = 10000n * BigInt(10 ** 18); // 10,000 DSTN
 
       cryptoService.generateKeyPair.mockReturnValue(keyPair);
       accountService.getOrCreateAccount.mockResolvedValue(account);
+      accountService.getBalance.mockResolvedValue(bonusAmount);
 
       const result = await controller.createWallet();
 
       expect(result).toHaveProperty('privateKey');
       expect(result).toHaveProperty('address');
       expect(result.address).toBe(keyPair.address);
+      expect(result.balance).toBe(`0x${bonusAmount.toString(16)}`); // Hex String
+      expect(result.balance).toMatch(/^0x[0-9a-f]+$/); // Hex 형식 확인
     });
   });
 
