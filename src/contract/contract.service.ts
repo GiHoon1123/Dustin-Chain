@@ -513,10 +513,39 @@ export class ContractService implements OnApplicationBootstrap {
    * @param abi - 컨트랙트 ABI (선택사항, 자동 저장)
    * @returns 트랜잭션 해시 및 상태
    */
+  /**
+   * 생성자 파라미터 인코딩 (ABI 인코딩)
+   *
+   * 생성자 파라미터는 함수 선택자 없이 파라미터만 인코딩합니다.
+   *
+   * @param paramTypes 파라미터 타입 배열 (예: ["address"])
+   * @param paramValues 파라미터 값 배열 (예: ["0x..."])
+   * @returns 인코딩된 파라미터 (Hex String)
+   */
+  encodeConstructorParams(paramTypes: string[], paramValues: any[]): string {
+    if (paramTypes.length !== paramValues.length) {
+      throw new Error(
+        `Parameter count mismatch: ${paramTypes.length} types but ${paramValues.length} values`,
+      );
+    }
+
+    if (paramTypes.length === 0) {
+      return ''; // 파라미터 없으면 빈 문자열
+    }
+
+    // 파라미터 인코딩 (함수 선택자 없이)
+    const encodedParams = paramTypes.map((type, index) =>
+      this.encodeParameter(type, paramValues[index]),
+    );
+
+    return encodedParams.join('');
+  }
+
   async deployContract(
     bytecode: string,
     contractName?: string,
     abi?: any[],
+    constructorParams?: { types: string[]; values: any[] },
   ): Promise<{ hash: string; status: string; address?: string }> {
     if (!this.genesisAccount0) {
       throw new Error('Genesis account 0 is not loaded');
@@ -526,13 +555,24 @@ export class ContractService implements OnApplicationBootstrap {
       // 계정 0번으로 고정 (컨트랙트 쓰기 호출 시 동일 계정 사용)
       const deployerAccount = this.genesisAccount0;
 
-      // 컨트랙트 배포는 to가 null, data에 바이트코드
+      // 생성자 파라미터 인코딩 (있는 경우)
+      let deploymentData = bytecode;
+      if (constructorParams && constructorParams.types.length > 0) {
+        const encodedParams = this.encodeConstructorParams(
+          constructorParams.types,
+          constructorParams.values,
+        );
+        // bytecode + 인코딩된 생성자 파라미터
+        deploymentData = bytecode + encodedParams;
+      }
+
+      // 컨트랙트 배포는 to가 null, data에 바이트코드 + 생성자 파라미터
       const tx = await this.transactionService.signTransaction(
         deployerAccount.privateKey,
         null, // 컨트랙트 배포는 to가 null
         0n,
         {
-          data: bytecode,
+          data: deploymentData,
           gasPrice: 1000000000n,
           gasLimit: 5000000n, // 컨트랙트 배포는 가스가 많이 필요
         },
