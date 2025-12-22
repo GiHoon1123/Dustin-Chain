@@ -703,17 +703,11 @@
       ]
     },
     {
-      "address": "0x09015ce603957fbc5d515dbbc212f01ff944ae0c",
+      "address": "0x4594d2bc7bc272109ab1a44358e9dfef35cd60a2",
       "name": "StakingContract",
       "abi": [
         {
-          "inputs": [
-            {
-              "internalType": "address",
-              "name": "_admin",
-              "type": "address"
-            }
-          ],
+          "inputs": [],
           "stateMutability": "nonpayable",
           "type": "constructor"
         },
@@ -941,19 +935,6 @@
           "name": "activateValidator",
           "outputs": [],
           "stateMutability": "nonpayable",
-          "type": "function"
-        },
-        {
-          "inputs": [],
-          "name": "admin",
-          "outputs": [
-            {
-              "internalType": "address",
-              "name": "",
-              "type": "address"
-            }
-          ],
-          "stateMutability": "view",
           "type": "function"
         },
         {

@@ -76,19 +76,6 @@ contract StakingContract {
      */
     uint256 public constant MAX_VALIDATORS = 100;
     
-    /**
-     * @dev 관리자 주소
-     * Backend에서 Validator 활성화, 보상 지급, 슬래싱 등을 수행
-     * 
-     * 이더리움:
-     * - Beacon Chain이 자동으로 처리
-     * 
-     * 우리:
-     * - Backend가 이 역할을 수행
-     * - genesis-accounts.json의 0번 계정을 생성자에서 받아서 설정
-     * - 배포 시 genesis-accounts.json을 읽어서 0번 계정 주소를 전달
-     */
-    address public immutable admin;
     
     /**
      * @dev Validator 상태
@@ -249,21 +236,6 @@ contract StakingContract {
     // ============ 모디파이어 ============
     
     /**
-     * @dev 관리자만 호출 가능하도록 제한하는 모디파이어
-     * 
-     * 사용법:
-     * function activateValidator(...) external onlyAdmin { ... }
-     * 
-     * 동작:
-     * 1. msg.sender가 admin 주소와 같은지 확인
-     * 2. 다르면 에러 발생, 같으면 함수 실행 계속
-     */
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin can call this");
-        _;
-    }
-    
-    /**
      * @dev Validator만 호출 가능하도록 제한하는 모디파이어
      * 
      * 사용법:
@@ -286,14 +258,14 @@ contract StakingContract {
     /**
      * @dev 컨트랙트 배포 시 실행
      * 
-     * 관리자 주소를 설정합니다.
-     * 배포 스크립트에서 genesis-accounts.json의 0번 계정 주소를 읽어서 전달합니다.
+     * 이더리움:
+     * - Beacon Chain이 자동으로 모든 것을 처리
      * 
-     * @param _admin 관리자 주소 (genesis-accounts.json의 0번 계정)
+     * 우리:
+     * - Backend가 Beacon Chain 역할을 수행하여 자동으로 호출
+     * - Admin 없음 (이더리움과 동일)
      */
-    constructor(address _admin) {
-        require(_admin != address(0), "Admin cannot be zero address");
-        admin = _admin;
+    constructor() {
         currentEpoch = 0;
     }
     
@@ -429,7 +401,7 @@ contract StakingContract {
      * 
      * @param validatorAddress 활성화할 Validator 주소
      */
-    function activateValidator(address validatorAddress) external onlyAdmin {
+    function activateValidator(address validatorAddress) external {
         Validator storage validator = validators[validatorAddress];
         require(
             validator.status == ValidatorStatus.pending_queued ||
@@ -497,7 +469,7 @@ contract StakingContract {
      * @param maxProcess 최대 처리할 출금 요청 수 (가스 제한 방지)
      * @return processed 처리된 출금 요청 수
      */
-    function processWithdrawals(uint256 maxProcess) external onlyAdmin returns (uint256 processed) {
+    function processWithdrawals(uint256 maxProcess) external returns (uint256 processed) {
         uint256 queueLength = withdrawalQueue.length;
         if (queueLength == 0) {
             return 0;
@@ -564,7 +536,7 @@ contract StakingContract {
      * @param validatorAddress Proposer 주소
      * @param amount 보상 금액 (Wei)
      */
-    function rewardProposer(address validatorAddress, uint256 amount) external onlyAdmin {
+    function rewardProposer(address validatorAddress, uint256 amount) external {
         Validator storage validator = validators[validatorAddress];
         require(validator.status == ValidatorStatus.active_ongoing, "Not active");
         require(amount > 0, "Amount must be greater than 0");
@@ -599,7 +571,7 @@ contract StakingContract {
         uint256 epoch,
         address validatorAddress,
         uint256 amount
-    ) external onlyAdmin {
+    ) external {
         Validator storage validator = validators[validatorAddress];
         require(validator.status == ValidatorStatus.active_ongoing, "Not active");
         require(amount > 0, "Amount must be greater than 0");
@@ -625,7 +597,7 @@ contract StakingContract {
     function distributeEpochRewards(
         uint256 epoch,
         address[] calldata validatorAddresses
-    ) external onlyAdmin returns (uint256 totalDistributed) {
+    ) external returns (uint256 totalDistributed) {
         for (uint256 i = 0; i < validatorAddresses.length; i++) {
             address validatorAddress = validatorAddresses[i];
             uint256 reward = epochRewards[epoch][validatorAddress];
@@ -680,7 +652,7 @@ contract StakingContract {
         address validatorAddress,
         uint256 amount,
         string memory reason
-    ) external onlyAdmin {
+    ) external {
         Validator storage validator = validators[validatorAddress];
         require(validator.status == ValidatorStatus.active_ongoing, "Not active");
         require(amount <= validator.stakedAmount, "Amount exceeds stake");

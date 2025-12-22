@@ -300,11 +300,11 @@ export class ContractController {
       'StakingContract를 배포하고 검증합니다.\n\n' +
       '배포 프로세스:\n' +
       '1. contract-bytecodes.json에서 StakingContract 바이트코드 읽기\n' +
-      '2. genesis-accounts.json에서 0번 계정 주소 읽기 (admin)\n' +
-      '3. StakingContract 배포 (생성자에 admin 주소 전달)\n' +
-      '4. 배포 검증 (admin 주소, 상수 값 확인)\n' +
-      '5. deployed-contracts.json에 저장\n\n' +
-      '배포 후 바로 사용 가능합니다.',
+      '2. StakingContract 배포 (생성자 파라미터 없음 - admin 제거됨)\n' +
+      '3. 배포 검증 (상수 값 확인: MIN_STAKE, WITHDRAWAL_DELAY, MAX_VALIDATORS)\n' +
+      '4. deployed-contracts.json에 저장\n\n' +
+      '배포 후 바로 사용 가능합니다.\n' +
+      'Backend가 Beacon Chain 역할을 수행하여 보상 지급 및 출금 처리를 자동으로 수행합니다.',
   })
   @ApiResponse({
     status: 201,
@@ -313,14 +313,12 @@ export class ContractController {
       example: {
         stakingAddress: '0x1234567890123456789012345678901234567890',
         stakingTxHash: '0xabcdef...',
-        adminAddress: '0xd03e1f882cc295f85fa3172af6df65e4a3609a7c',
       },
     },
   })
   async deployStakingContract(): Promise<{
     stakingAddress: string;
     stakingTxHash: string;
-    adminAddress: string;
   }> {
     return await this.contractService.deployStakingContract();
   }

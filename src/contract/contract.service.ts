@@ -1082,7 +1082,6 @@ export class ContractService implements OnApplicationBootstrap {
   async deployStakingContract(): Promise<{
     stakingAddress: string;
     stakingTxHash: string;
-    adminAddress: string;
   }> {
     // contract-bytecodes.json에서 바이트코드 읽기
     const bytecodesPath = path.resolve(
@@ -1138,26 +1137,14 @@ export class ContractService implements OnApplicationBootstrap {
       }
     }
 
-    // genesis-accounts.json에서 0번 계정 주소 읽기
-    if (!this.genesisAccount0) {
-      throw new Error('Genesis account 0 is not loaded');
-    }
-
-    const adminAddress = this.genesisAccount0.address;
-
     this.logger.log('Starting StakingContract deployment...');
-    this.logger.log(`Admin address: ${adminAddress}`);
 
-    // StakingContract 배포 (생성자에 admin 주소 전달)
+    // StakingContract 배포 (생성자 파라미터 없음 - admin 제거됨)
     this.logger.log('Deploying StakingContract...');
     const stakingDeployResult = await this.deployContract(
       stakingBytecode,
       'StakingContract',
       finalABI,
-      {
-        types: ['address'],
-        values: [adminAddress],
-      },
     );
 
     const stakingAddress = await this.waitForContractAddress(
@@ -1175,23 +1162,8 @@ export class ContractService implements OnApplicationBootstrap {
       this.saveContractABI(stakingAddress, 'StakingContract', finalABI);
     }
 
-    // 배포 검증: admin 주소 확인
+    // 배포 검증: 상수 값 확인 (MIN_STAKE, WITHDRAWAL_DELAY, MAX_VALIDATORS)
     this.logger.log('Verifying StakingContract deployment...');
-    const adminCheck = await this.callContract(
-      stakingAddress,
-      this.encodeFunctionCall('admin', [], []),
-    );
-
-    // 결과에서 주소 추출 (마지막 20바이트 = 40 hex characters)
-    const deployedAdminAddr = `0x${adminCheck.result.slice(-40)}`;
-
-    if (deployedAdminAddr.toLowerCase() !== adminAddress.toLowerCase()) {
-      throw new Error(
-        `Admin address verification failed. Deployed admin=${deployedAdminAddr} (expected ${adminAddress})`,
-      );
-    }
-
-    // 상수 값 확인 (MIN_STAKE, WITHDRAWAL_DELAY, MAX_VALIDATORS)
     const minStakeCheck = await this.callContract(
       stakingAddress,
       this.encodeFunctionCall('MIN_STAKE', [], []),
@@ -1212,8 +1184,9 @@ export class ContractService implements OnApplicationBootstrap {
 
     this.logger.log('StakingContract deployment completed!');
     this.logger.log(`StakingContract: ${stakingAddress}`);
-    this.logger.log(`Admin: ${adminAddress}`);
-    this.logger.log('StakingContract is ready to use');
+    this.logger.log(
+      'StakingContract is ready to use (Backend will automatically handle rewards and withdrawals)',
+    );
 
     // 배포된 컨트랙트 주소 저장
     this.saveDeployedContracts(undefined, undefined, stakingAddress);
@@ -1221,7 +1194,6 @@ export class ContractService implements OnApplicationBootstrap {
     return {
       stakingAddress,
       stakingTxHash: stakingDeployResult.hash,
-      adminAddress,
     };
   }
 
