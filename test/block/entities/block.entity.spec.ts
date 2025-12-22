@@ -36,7 +36,11 @@ describe('Block Entity', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -63,7 +67,11 @@ describe('Block Entity', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + '1'.repeat(64),
       );
 
@@ -72,7 +80,11 @@ describe('Block Entity', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + '2'.repeat(64),
       );
 
@@ -178,7 +190,11 @@ describe('Block Entity', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -208,7 +224,11 @@ describe('Block Entity', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -237,4 +257,3 @@ describe('Block Entity', () => {
     });
   });
 });
-

@@ -139,7 +139,9 @@ describe('TransactionBotService', () => {
       };
 
       // contractBytecodes 초기화
-      (service as any).contractBytecodes = ['0x6080604052348015600f57600080fd5b'];
+      (service as any).contractBytecodes = [
+        '0x6080604052348015600f57600080fd5b',
+      ];
       (service as any).isRunning = true;
 
       accountService.getNonce.mockResolvedValue(0);
@@ -157,47 +159,72 @@ describe('TransactionBotService', () => {
   describe('Private 메서드 테스트 (any 캐스팅)', () => {
     it('무작위 계정을 선택해야 함', () => {
       const accounts = [
-        { index: 100, address: '0x' + '1'.repeat(40), publicKey: '0x1', privateKey: '0x1' },
-        { index: 101, address: '0x' + '2'.repeat(40), publicKey: '0x2', privateKey: '0x2' },
-        { index: 102, address: '0x' + '3'.repeat(40), publicKey: '0x3', privateKey: '0x3' },
+        {
+          index: 100,
+          address: '0x' + '1'.repeat(40),
+          publicKey: '0x1',
+          privateKey: '0x1',
+        },
+        {
+          index: 101,
+          address: '0x' + '2'.repeat(40),
+          publicKey: '0x2',
+          privateKey: '0x2',
+        },
+        {
+          index: 102,
+          address: '0x' + '3'.repeat(40),
+          publicKey: '0x3',
+          privateKey: '0x3',
+        },
       ];
       (service as any).accounts = accounts;
 
       const selected = (service as any).selectRandomAccount();
-      
+
       expect(accounts).toContain(selected);
     });
 
     it('제외 주소를 고려하여 계정을 선택해야 함', () => {
       const excludeAddress = '0x' + '1'.repeat(40);
       const accounts = [
-        { index: 100, address: excludeAddress, publicKey: '0x1', privateKey: '0x1' },
-        { index: 101, address: '0x' + '2'.repeat(40), publicKey: '0x2', privateKey: '0x2' },
+        {
+          index: 100,
+          address: excludeAddress,
+          publicKey: '0x1',
+          privateKey: '0x1',
+        },
+        {
+          index: 101,
+          address: '0x' + '2'.repeat(40),
+          publicKey: '0x2',
+          privateKey: '0x2',
+        },
       ];
       (service as any).accounts = accounts;
 
       const selected = (service as any).selectRandomAccount(excludeAddress);
-      
+
       expect(selected.address).not.toBe(excludeAddress);
     });
 
     it('Wei를 DSTN으로 포맷해야 함', () => {
       const wei = BigInt(1500000000000000000); // 1.5 DSTN
       const formatted = (service as any).formatDSTN(wei);
-      
+
       expect(formatted).toBe('1.50');
     });
 
     it('genesis-accounts.json 파일을 찾아야 함', () => {
       const path = (service as any).findAccountsFile();
-      
+
       // 파일이 있을 수도 없을 수도 있음
       expect(path === null || typeof path === 'string').toBe(true);
     });
 
     it('contract-bytecodes.json 파일을 찾아야 함', () => {
       const path = (service as any).findBytecodesFile();
-      
+
       // 파일이 있을 수도 없을 수도 있음
       expect(path === null || typeof path === 'string').toBe(true);
     });
@@ -241,4 +268,3 @@ describe('TransactionBotService', () => {
     });
   });
 });
-

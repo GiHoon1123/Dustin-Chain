@@ -250,4 +250,39 @@ export class StablecoinService {
     // 스캔 백엔드에서 디코딩하므로 여기서는 원본 hex 반환
     return result.result;
   }
+
+  /**
+   * 스테이블코인 전송
+   *
+   * @param privateKey - 사용자 개인키
+   * @param to - 수신자 주소
+   * @param amount - 전송할 스테이블코인 양 (Wei 단위, Hex String)
+   * @returns 트랜잭션 해시
+   */
+  async transferStablecoin(
+    privateKey: string,
+    to: Address,
+    amount: string,
+  ): Promise<{ hash: string; status: string }> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.stablecoin) {
+      throw new Error('StableCoin is not deployed');
+    }
+
+    const stablecoinAddress = deployed.stablecoin.address;
+
+    // transfer(address to, uint256 amount) 함수 호출
+    const data = this.contractService.encodeFunctionCall(
+      'transfer',
+      ['address', 'uint256'],
+      [to, amount],
+    );
+
+    return await this.contractService.executeContractByUser(
+      stablecoinAddress,
+      data,
+      privateKey,
+      0n,
+    );
+  }
 }

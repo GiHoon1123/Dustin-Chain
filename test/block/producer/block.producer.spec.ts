@@ -172,8 +172,9 @@ describe('BlockProducer', () => {
     it('블록 생성이 성공해야 함 (Supermajority)', async () => {
       const genesisTime = Date.now();
       const proposer = '0x' + '1'.repeat(40);
-      const committee = Array.from({ length: 128 }, (_, i) => 
-        '0x' + (i + 1).toString(16).padStart(40, '0')
+      const committee = Array.from(
+        { length: 128 },
+        (_, i) => '0x' + (i + 1).toString(16).padStart(40, '0'),
       );
       const block = new Block(
         1,
@@ -188,12 +189,11 @@ describe('BlockProducer', () => {
       );
 
       const attestations = committee.slice(0, 90).map((validator) => {
-        return new Attestation(
-          0,
-          block.hash,
-          validator,
-          { v: 27, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
-        );
+        return new Attestation(0, block.hash, validator, {
+          v: 27,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        });
       });
 
       (producer as any).genesisTime = genesisTime;
@@ -214,8 +214,9 @@ describe('BlockProducer', () => {
     it('블록 생성이 실패해야 함 (Supermajority 미달)', async () => {
       const genesisTime = Date.now();
       const proposer = '0x' + '1'.repeat(40);
-      const committee = Array.from({ length: 128 }, (_, i) => 
-        '0x' + (i + 1).toString(16).padStart(40, '0')
+      const committee = Array.from(
+        { length: 128 },
+        (_, i) => '0x' + (i + 1).toString(16).padStart(40, '0'),
       );
       const block = new Block(
         1,
@@ -230,12 +231,11 @@ describe('BlockProducer', () => {
       );
 
       const attestations = committee.slice(0, 50).map((validator) => {
-        return new Attestation(
-          0,
-          block.hash,
-          validator,
-          { v: 27, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
-        );
+        return new Attestation(0, block.hash, validator, {
+          v: 27,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        });
       });
 
       (producer as any).genesisTime = genesisTime;
@@ -263,7 +263,9 @@ describe('BlockProducer', () => {
       const genesisTime = Date.now();
       (producer as any).genesisTime = genesisTime;
 
-      validatorService.selectProposer.mockRejectedValue(new Error('Test error'));
+      validatorService.selectProposer.mockRejectedValue(
+        new Error('Test error'),
+      );
 
       await (producer as any).produceBlock();
 
@@ -274,8 +276,12 @@ describe('BlockProducer', () => {
       const genesisTime = Date.now();
       (producer as any).genesisTime = genesisTime;
 
-      validatorService.selectProposer.mockRejectedValue(new Error('Test error'));
-      (stateManager.rollbackBlock as any).mockRejectedValue(new Error('Rollback failed'));
+      validatorService.selectProposer.mockRejectedValue(
+        new Error('Test error'),
+      );
+      (stateManager.rollbackBlock as any).mockRejectedValue(
+        new Error('Rollback failed'),
+      );
 
       await (producer as any).produceBlock();
 
@@ -304,4 +310,3 @@ describe('BlockProducer', () => {
     });
   });
 });
-

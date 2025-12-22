@@ -123,7 +123,11 @@ describe('TransactionService', () => {
         to,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'e'.repeat(64),
       );
       txPool.add(existingTx, 0);
@@ -154,7 +158,11 @@ describe('TransactionService', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -173,7 +181,11 @@ describe('TransactionService', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -194,7 +206,11 @@ describe('TransactionService', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -210,7 +226,11 @@ describe('TransactionService', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -226,7 +246,11 @@ describe('TransactionService', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -235,7 +259,11 @@ describe('TransactionService', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'e'.repeat(64),
       );
       txPool.add(existingTx, 0);
@@ -316,7 +344,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         BigInt('1000000000'),
@@ -333,7 +365,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         0n,
@@ -350,7 +386,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         BigInt('1000000000'),
@@ -369,7 +409,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         BigInt('1000000000'),
@@ -390,7 +434,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         BigInt('1000000000'),
@@ -412,7 +460,11 @@ describe('TransactionService', () => {
         to,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -433,7 +485,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -456,7 +512,11 @@ describe('TransactionService', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         hash,
       );
 
@@ -485,7 +545,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -505,7 +569,11 @@ describe('TransactionService', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -558,64 +626,66 @@ describe('TransactionService', () => {
   describe('Private 메서드 테스트 (any 캐스팅)', () => {
     it('BigInt를 RLP 버퍼로 변환해야 함', () => {
       const buffer = (service as any).toRlpBuffer(1000n);
-      
+
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThan(0);
     });
 
     it('0을 RLP 버퍼로 변환해야 함', () => {
       const buffer = (service as any).toRlpBuffer(0n);
-      
+
       expect(buffer.length).toBe(0);
     });
 
     it('큰 BigInt를 RLP 버퍼로 변환해야 함', () => {
       const largeValue = BigInt('1000000000000000000000000');
       const buffer = (service as any).toRlpBuffer(largeValue);
-      
+
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThan(0);
     });
 
     it('데이터를 정규화해야 함 (null)', () => {
       const normalized = (service as any).normalizeData(null);
-      
+
       expect(normalized).toBe('0x');
     });
 
     it('데이터를 정규화해야 함 (undefined)', () => {
       const normalized = (service as any).normalizeData(undefined);
-      
+
       expect(normalized).toBe('0x');
     });
 
     it('데이터를 정규화해야 함 (빈 문자열)', () => {
       const normalized = (service as any).normalizeData('');
-      
+
       expect(normalized).toBe('0x');
     });
 
     it('데이터를 정규화해야 함 (0x 없는 문자열)', () => {
       const normalized = (service as any).normalizeData('abc123');
-      
+
       expect(normalized).toBe('0xabc123');
     });
 
     it('데이터를 정규화해야 함 (0x 있는 문자열)', () => {
       const normalized = (service as any).normalizeData('0xabc123');
-      
+
       expect(normalized).toBe('0xabc123');
     });
 
     it('데이터를 정규화해야 함 (0X 대문자)', () => {
       // 0X는 정규화되지만 hex 문자열이 유효해야 함
       // 정규식이 0x로 시작하는지 체크하므로 0X는 에러 발생
-      expect(() => (service as any).normalizeData('0X1234567890abcdef')).toThrow();
+      expect(() =>
+        (service as any).normalizeData('0X1234567890abcdef'),
+      ).toThrow();
     });
 
     it('데이터를 정규화해야 함 (공백)', () => {
       const normalized = (service as any).normalizeData('   ');
-      
+
       expect(normalized).toBe('0x');
     });
   });
@@ -644,7 +714,11 @@ describe('TransactionService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         4, // nonce가 너무 작음 (이미 처리된 트랜잭션)
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -659,7 +733,11 @@ describe('TransactionService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000000000000000000n, // 큰 금액
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         BigInt('1000000000'),
@@ -678,7 +756,11 @@ describe('TransactionService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         0n, // 0 가스 가격
@@ -694,7 +776,11 @@ describe('TransactionService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         BigInt('1000000000'),
@@ -705,4 +791,3 @@ describe('TransactionService', () => {
     });
   });
 });
-

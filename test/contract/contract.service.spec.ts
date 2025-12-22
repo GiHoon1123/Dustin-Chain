@@ -37,7 +37,9 @@ describe('ContractService', () => {
     } as any;
 
     const mockCryptoService = {
-      bytesToHex: jest.fn((bytes: Uint8Array) => '0x' + Buffer.from(bytes).toString('hex')),
+      bytesToHex: jest.fn(
+        (bytes: Uint8Array) => '0x' + Buffer.from(bytes).toString('hex'),
+      ),
     } as any;
 
     const mockBlockService = {
@@ -115,10 +117,7 @@ describe('ContractService', () => {
     it('VM이 초기화되지 않았으면 에러를 발생시켜야 함', async () => {
       // VM이 초기화되지 않은 상태
       await expect(
-        service.callContract(
-          '0x' + '1'.repeat(40),
-          '0x' + '0'.repeat(8),
-        ),
+        service.callContract('0x' + '1'.repeat(40), '0x' + '0'.repeat(8)),
       ).rejects.toThrow('Call VM is not initialized');
     });
   });
@@ -135,7 +134,13 @@ describe('ContractService', () => {
         v: 0,
         r: '0x' + 'r'.repeat(64),
         s: '0x' + 's'.repeat(64),
-        getSignature: jest.fn().mockReturnValue({ v: 0, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) }),
+        getSignature: jest
+          .fn()
+          .mockReturnValue({
+            v: 0,
+            r: '0x' + 'r'.repeat(64),
+            s: '0x' + 's'.repeat(64),
+          }),
         gasPrice: 1000000000n,
         gasLimit: 5000000n,
         data: bytecode,
@@ -194,7 +199,13 @@ describe('ContractService', () => {
         v: 0,
         r: '0x' + 'r'.repeat(64),
         s: '0x' + 's'.repeat(64),
-        getSignature: jest.fn().mockReturnValue({ v: 0, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) }),
+        getSignature: jest
+          .fn()
+          .mockReturnValue({
+            v: 0,
+            r: '0x' + 'r'.repeat(64),
+            s: '0x' + 's'.repeat(64),
+          }),
         gasPrice: 1000000000n,
         gasLimit: 1000000n,
         data,
@@ -220,21 +231,25 @@ describe('ContractService', () => {
     it('계정이 로드되지 않았으면 에러를 발생시켜야 함', async () => {
       (service as any).genesisAccount0 = null;
 
-      await expect(service.executeContract('0x' + '1'.repeat(40), '0x00')).rejects.toThrow();
+      await expect(
+        service.executeContract('0x' + '1'.repeat(40), '0x00'),
+      ).rejects.toThrow();
     });
   });
 
   describe('ABI 인코딩', () => {
     it('함수 선택자를 계산해야 함', () => {
-      const selector = (service as any).getFunctionSelector('setVault', ['address']);
-      
+      const selector = (service as any).getFunctionSelector('setVault', [
+        'address',
+      ]);
+
       expect(selector).toMatch(/^0x[0-9a-f]{8}$/);
     });
 
     it('address 파라미터를 인코딩해야 함', () => {
       const address = '0x' + '1'.repeat(40);
       const encoded = (service as any).encodeParameter('address', address);
-      
+
       expect(encoded).toHaveLength(64);
       expect(encoded).toMatch(/^[0-9a-f]{64}$/);
       expect(encoded.slice(-40)).toBe('1'.repeat(40));
@@ -243,14 +258,18 @@ describe('ContractService', () => {
     it('uint256 파라미터를 인코딩해야 함', () => {
       const value = '1000000000000000000000';
       const encoded = (service as any).encodeParameter('uint256', value);
-      
+
       expect(encoded).toHaveLength(64);
       expect(encoded).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('함수 호출 데이터를 생성해야 함', () => {
-      const data = service.encodeFunctionCall('setVault', ['address'], ['0x' + '1'.repeat(40)]);
-      
+      const data = service.encodeFunctionCall(
+        'setVault',
+        ['address'],
+        ['0x' + '1'.repeat(40)],
+      );
+
       expect(data).toMatch(/^0x[0-9a-f]{72}$/);
       expect(data.startsWith('0x')).toBe(true);
     });
@@ -271,7 +290,13 @@ describe('ContractService', () => {
         v: 0,
         r: '0x' + 'r'.repeat(64),
         s: '0x' + 's'.repeat(64),
-        getSignature: jest.fn().mockReturnValue({ v: 0, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) }),
+        getSignature: jest
+          .fn()
+          .mockReturnValue({
+            v: 0,
+            r: '0x' + 'r'.repeat(64),
+            s: '0x' + 's'.repeat(64),
+          }),
         gasPrice: 1000000000n,
         gasLimit: 1000000n,
         data,
@@ -280,7 +305,12 @@ describe('ContractService', () => {
       transactionService.signTransaction.mockResolvedValue(tx as any);
       transactionService.submitTransaction.mockResolvedValue(tx as any);
 
-      const result = await service.executeContractByUser(to, data, privateKey, value);
+      const result = await service.executeContractByUser(
+        to,
+        data,
+        privateKey,
+        value,
+      );
 
       expect(result).toHaveProperty('hash');
       expect(result).toHaveProperty('status');
@@ -306,7 +336,7 @@ describe('ContractService', () => {
 
     it('배포된 컨트랙트 주소를 조회해야 함', () => {
       const deployed = service.getDeployedContracts();
-      
+
       expect(deployed === null || typeof deployed === 'object').toBe(true);
     });
   });
@@ -337,7 +367,7 @@ describe('ContractService', () => {
     it('컨트랙트 ABI를 조회해야 함', () => {
       const address = '0x' + '1'.repeat(40);
       const abi = service.getContractABI(address);
-      
+
       expect(abi === null || typeof abi === 'object').toBe(true);
     });
   });
@@ -345,7 +375,7 @@ describe('ContractService', () => {
   describe('Private 메서드 테스트 (any 캐스팅)', () => {
     it('genesis-accounts.json 파일을 찾아야 함', () => {
       const path = (service as any).findAccountsFile();
-      
+
       expect(path === null || typeof path === 'string').toBe(true);
     });
 
@@ -368,4 +398,3 @@ describe('ContractService', () => {
     });
   });
 });
-

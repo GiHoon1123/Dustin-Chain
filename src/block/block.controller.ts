@@ -290,7 +290,8 @@ export class BlockController {
     name: 'topics',
     required: false,
     description: '토픽 필터 배열 (JSON 문자열, 최대 4개)',
-    example: '["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]',
+    example:
+      '["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]',
     type: String,
   })
   @ApiResponse({

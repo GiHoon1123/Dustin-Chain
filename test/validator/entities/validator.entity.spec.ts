@@ -46,4 +46,3 @@ describe('Validator Entity', () => {
     });
   });
 });
-

@@ -1,10 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import {
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { StablecoinService } from './stablecoin.service';
 import {
   DepositCollateralRequestDto,
@@ -14,6 +9,7 @@ import {
   PositionResponseDto,
   RedeemStablecoinRequestDto,
   TransactionResponseDto,
+  TransferStablecoinRequestDto,
   WithdrawCollateralRequestDto,
 } from './dto/stablecoin.dto';
 
@@ -200,5 +196,29 @@ export class StablecoinController {
     // 스캔 백엔드에서 디코딩하므로 여기서는 원본 hex 반환
     return { result };
   }
-}
 
+  /**
+   * 스테이블코인 전송
+   *
+   * POST /stablecoin/transfer
+   */
+  @Post('transfer')
+  @ApiOperation({
+    summary: '스테이블코인 전송',
+    description: '스테이블코인(USDST)을 다른 주소로 전송합니다.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '스테이블코인 전송 성공',
+    type: TransactionResponseDto,
+  })
+  async transferStablecoin(
+    @Body() body: TransferStablecoinRequestDto,
+  ): Promise<TransactionResponseDto> {
+    return await this.stablecoinService.transferStablecoin(
+      body.privateKey,
+      body.to,
+      body.amount,
+    );
+  }
+}

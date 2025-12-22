@@ -5,7 +5,10 @@ import {
   Mainnet,
   StateManagerInterface,
 } from '@ethereumjs/common';
-import { Block as EthereumBlock, BlockHeader as EthereumBlockHeader } from '@ethereumjs/block';
+import {
+  Block as EthereumBlock,
+  BlockHeader as EthereumBlockHeader,
+} from '@ethereumjs/block';
 import { createMPT } from '@ethereumjs/mpt';
 import { createLegacyTx, createTxFromRLP } from '@ethereumjs/tx';
 import { createVM, runTx, VM } from '@ethereumjs/vm';
@@ -924,9 +927,10 @@ export class BlockService implements OnApplicationBootstrap {
       } else {
         // 가스 사용량이 없는 경우: 트랜잭션이 실행되지 않았거나 초기 단계에서 실패
         // 컨트랙트 호출인 경우 최소 가스 사용량 설정
-        gasUsed = tx.to !== null && tx.data && tx.data !== '0x' && tx.data.length > 2 
-          ? BigInt(21000) // 기본 가스 (실제로는 더 많이 사용했을 수 있음)
-          : BigInt(21000); // 일반 송금 기본 가스
+        gasUsed =
+          tx.to !== null && tx.data && tx.data !== '0x' && tx.data.length > 2
+            ? BigInt(21000) // 기본 가스 (실제로는 더 많이 사용했을 수 있음)
+            : BigInt(21000); // 일반 송금 기본 가스
         this.logger.warn(
           `[VM] Gas used not found in result, using default: ${gasUsed} (tx: ${tx.hash})`,
         );
@@ -941,11 +945,15 @@ export class BlockService implements OnApplicationBootstrap {
             `[VM] 🔍 DEPOSIT COLLATERAL FAILED - tx=${tx.hash}, status=${status}, gasUsed=${gasUsed.toString()}`,
           );
           this.logger.error(
-            `[VM] 🔍 Exception error: ${JSON.stringify({
-              error: err.error?.toString(),
-              errorType: err.errorType,
-              reason: err.reason,
-            }, null, 2)}`,
+            `[VM] 🔍 Exception error: ${JSON.stringify(
+              {
+                error: err.error?.toString(),
+                errorType: err.errorType,
+                reason: err.reason,
+              },
+              null,
+              2,
+            )}`,
           );
         } else {
           // 성공한 경우 DEBUG 레벨

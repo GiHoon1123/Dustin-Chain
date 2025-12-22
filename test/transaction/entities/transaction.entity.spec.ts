@@ -17,7 +17,11 @@ describe('Transaction Entity', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -34,7 +38,11 @@ describe('Transaction Entity', () => {
         null,
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '0x6080604052348015600f57600080fd5b',
       );
@@ -51,7 +59,11 @@ describe('Transaction Entity', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -67,7 +79,11 @@ describe('Transaction Entity', () => {
         null,
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -107,7 +123,11 @@ describe('Transaction Entity', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -121,4 +141,3 @@ describe('Transaction Entity', () => {
     });
   });
 });
-

@@ -41,7 +41,9 @@ describe('Account Entity', () => {
       const account = new Account('0x' + '1'.repeat(40));
 
       expect(() => account.addBalance(0n)).toThrow('Amount must be positive');
-      expect(() => account.addBalance(-100n)).toThrow('Amount must be positive');
+      expect(() => account.addBalance(-100n)).toThrow(
+        'Amount must be positive',
+      );
     });
   });
 
@@ -58,15 +60,21 @@ describe('Account Entity', () => {
       const account = new Account('0x' + '1'.repeat(40));
       account.balance = 100n;
 
-      expect(() => account.subtractBalance(200n)).toThrow('Insufficient balance');
+      expect(() => account.subtractBalance(200n)).toThrow(
+        'Insufficient balance',
+      );
     });
 
     it('0 이하 금액 차감 시 에러를 발생시켜야 함', () => {
       const account = new Account('0x' + '1'.repeat(40));
       account.balance = 1000n;
 
-      expect(() => account.subtractBalance(0n)).toThrow('Amount must be positive');
-      expect(() => account.subtractBalance(-100n)).toThrow('Amount must be positive');
+      expect(() => account.subtractBalance(0n)).toThrow(
+        'Amount must be positive',
+      );
+      expect(() => account.subtractBalance(-100n)).toThrow(
+        'Amount must be positive',
+      );
     });
   });
 
@@ -96,4 +104,3 @@ describe('Account Entity', () => {
     });
   });
 });
-

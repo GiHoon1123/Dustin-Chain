@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AccountService } from '../../src/account/account.service';
-import { CHAIN_ID, EMPTY_ROOT } from '../../src/common/constants/blockchain.constants';
+import {
+  CHAIN_ID,
+  EMPTY_ROOT,
+} from '../../src/common/constants/blockchain.constants';
 import { CryptoService } from '../../src/common/crypto/crypto.service';
 import { Address, Hash } from '../../src/common/types/common.types';
 import { CustomStateManager } from '../../src/state/custom-state-manager';
@@ -74,7 +77,8 @@ describe('BlockService', () => {
           const serialized = input.map((item) => {
             if (typeof item === 'bigint') return item.toString();
             if (Buffer.isBuffer(item)) return item.toString('hex');
-            if (item instanceof Uint8Array) return Buffer.from(item).toString('hex');
+            if (item instanceof Uint8Array)
+              return Buffer.from(item).toString('hex');
             return item;
           });
           return Buffer.from(JSON.stringify(serialized));
@@ -84,7 +88,13 @@ describe('BlockService', () => {
         }
         if (typeof input === 'bigint') {
           const hex = input.toString(16);
-          return Buffer.from(hex.padStart(hex.length % 2 === 0 ? hex.length : hex.length + 1, '0'), 'hex');
+          return Buffer.from(
+            hex.padStart(
+              hex.length % 2 === 0 ? hex.length : hex.length + 1,
+              '0',
+            ),
+            'hex',
+          );
         }
         if (Buffer.isBuffer(input)) {
           return input;
@@ -315,7 +325,9 @@ describe('BlockService', () => {
     it('Genesis Block이 없으면 에러를 발생시켜야 함', async () => {
       blockRepository.findLatest.mockResolvedValue(null);
 
-      await expect(service.createBlock('0x' + '1'.repeat(40))).rejects.toThrow();
+      await expect(
+        service.createBlock('0x' + '1'.repeat(40)),
+      ).rejects.toThrow();
     });
 
     it('빈 트랜잭션으로 블록을 생성해야 함', async () => {
@@ -372,7 +384,11 @@ describe('BlockService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '',
         BigInt('1000000000'),
@@ -433,7 +449,9 @@ describe('BlockService', () => {
       );
 
       (block as any).receipts = [receipt];
-      (blockRepository as any).saveReceipt = jest.fn().mockResolvedValue(undefined);
+      (blockRepository as any).saveReceipt = jest
+        .fn()
+        .mockResolvedValue(undefined);
 
       await service.saveBlock(block);
 
@@ -563,7 +581,11 @@ describe('BlockService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -655,7 +677,11 @@ describe('BlockService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -697,7 +723,9 @@ describe('BlockService', () => {
 
       await (service as any).restoreState();
 
-      expect(stateRepository.setStateRoot).toHaveBeenCalledWith(block.stateRoot);
+      expect(stateRepository.setStateRoot).toHaveBeenCalledWith(
+        block.stateRoot,
+      );
     });
 
     it('블록이 없을 때 State 복원을 건너뛰어야 함', async () => {
@@ -711,14 +739,14 @@ describe('BlockService', () => {
     it('RLP 버퍼에서 음수 BigInt를 처리해야 함', () => {
       const buffer = Buffer.from([0x80]); // 음수 인코딩
       const value = (service as any).fromRlpBuffer(buffer);
-      
+
       expect(typeof value).toBe('bigint');
     });
 
     it('큰 BigInt를 RLP 버퍼로 변환해야 함', () => {
       const largeValue = BigInt('1000000000000000000000000');
       const buffer = (service as any).toRlpBuffer(largeValue);
-      
+
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThan(0);
     });
@@ -729,7 +757,11 @@ describe('BlockService', () => {
         '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         1000n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
       );
 
@@ -751,7 +783,11 @@ describe('BlockService', () => {
         null, // 컨트랙트 배포
         0n,
         0,
-        { v: CHAIN_ID * 2 + 35, r: '0x' + 'r'.repeat(64), s: '0x' + 's'.repeat(64) },
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
         '0x' + 'h'.repeat(64),
         '0x6080604052348015600f57600080fd5b',
       );
@@ -779,16 +815,17 @@ describe('BlockService', () => {
       );
 
       blockRepository.findLatest.mockResolvedValue(latestBlock);
-      
+
       // 에러 발생시키기
       cryptoService.rlpHash.mockImplementation(() => {
         throw new Error('Test error');
       });
 
-      await expect(service.createBlock('0x' + '1'.repeat(40))).rejects.toThrow();
-      
+      await expect(
+        service.createBlock('0x' + '1'.repeat(40)),
+      ).rejects.toThrow();
+
       expect(stateManager.rollbackBlock).toHaveBeenCalled();
     });
   });
 });
-

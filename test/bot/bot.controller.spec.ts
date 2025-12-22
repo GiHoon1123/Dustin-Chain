@@ -69,6 +69,4 @@ describe('BotController', () => {
       expect(botService.stop).toHaveBeenCalled();
     });
   });
-
 });
-

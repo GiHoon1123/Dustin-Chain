@@ -55,7 +55,8 @@ describe('ContractController', () => {
   describe('callContract', () => {
     it('컨트랙트를 호출해야 함', async () => {
       const result = {
-        result: '0x0000000000000000000000000000000000000000000000000000000000000001',
+        result:
+          '0x0000000000000000000000000000000000000000000000000000000000000001',
         gasUsed: '0x5208',
       };
 
@@ -105,4 +106,3 @@ describe('ContractController', () => {
     });
   });
 });
-

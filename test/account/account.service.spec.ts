@@ -52,10 +52,7 @@ describe('AccountService', () => {
         },
         {
           provide: AccountService,
-          useFactory: (
-            repo: IStateRepository,
-            manager: StateManager,
-          ) => {
+          useFactory: (repo: IStateRepository, manager: StateManager) => {
             return new AccountService(repo, manager);
           },
           inject: [IStateRepository, StateManager],

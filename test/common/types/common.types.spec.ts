@@ -121,4 +121,3 @@ describe('Common Types Utilities', () => {
     });
   });
 });
-

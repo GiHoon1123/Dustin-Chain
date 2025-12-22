@@ -4,7 +4,10 @@ import { CustomStateManager } from '../../src/state/custom-state-manager';
 import { StateManager } from '../../src/state/state-manager';
 import { IStateRepository } from '../../src/storage/repositories/state.repository.interface';
 import { CryptoService } from '../../src/common/crypto/crypto.service';
-import { EMPTY_HASH, EMPTY_ROOT } from '../../src/common/constants/blockchain.constants';
+import {
+  EMPTY_HASH,
+  EMPTY_ROOT,
+} from '../../src/common/constants/blockchain.constants';
 import { Account } from '../../src/account/entities/account.entity';
 
 /**
@@ -141,7 +144,7 @@ describe('CustomStateManager', () => {
   describe('코드 조회/설정', () => {
     it('코드를 조회해야 함', async () => {
       const address = '0x' + '1'.repeat(40);
-      
+
       // kv DB 모킹
       (service as any).kv = {
         get: jest.fn().mockResolvedValue(undefined),
@@ -160,9 +163,11 @@ describe('CustomStateManager', () => {
       (service as any).kv = {
         put: jest.fn().mockResolvedValue(undefined),
       };
-      
+
       // cryptoService에 hashBuffer 추가
-      cryptoService.hashBuffer = jest.fn().mockReturnValue('0x' + 'h'.repeat(64));
+      cryptoService.hashBuffer = jest
+        .fn()
+        .mockReturnValue('0x' + 'h'.repeat(64));
 
       await service.putCode(address, codeBytes);
 
@@ -195,7 +200,7 @@ describe('CustomStateManager', () => {
         put: jest.fn().mockResolvedValue(undefined),
         get: jest.fn().mockResolvedValue(null),
       };
-      
+
       const account = new Account(address);
       account.storageRoot = EMPTY_ROOT;
       stateManager.getAccount.mockResolvedValue(account);
@@ -238,7 +243,7 @@ describe('CustomStateManager', () => {
   describe('Private 메서드 테스트 (any 캐스팅)', () => {
     it('계정 코드를 조회해야 함', async () => {
       const address = '0x' + '1'.repeat(40);
-      
+
       // kv DB 모킹
       (service as any).kv = {
         get: jest.fn().mockResolvedValue(undefined),
@@ -257,7 +262,7 @@ describe('CustomStateManager', () => {
       (service as any).kv = {
         put: jest.fn().mockResolvedValue(undefined),
       };
-      
+
       cryptoService.hashBuffer.mockReturnValue('0x' + 'h'.repeat(64));
       stateManager.getAccount.mockResolvedValue(new Account(address));
 
@@ -308,4 +313,3 @@ describe('CustomStateManager', () => {
     });
   });
 });
-

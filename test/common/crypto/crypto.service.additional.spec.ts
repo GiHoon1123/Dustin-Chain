@@ -116,11 +116,7 @@ describe('CryptoService - Additional', () => {
       const to = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
       const value = 1000n;
 
-      const rlpData = [
-        nonce,
-        to,
-        value,
-      ];
+      const rlpData = [nonce, to, value];
 
       const hash = service.rlpHash(rlpData);
 
@@ -128,4 +124,3 @@ describe('CryptoService - Additional', () => {
     });
   });
 });
-

@@ -224,7 +224,8 @@ describe('TransactionService - getLogs', () => {
     });
 
     it('should filter by topics using logsBloom', async () => {
-      const topic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const topic =
+        '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
       const mockReceipt = new TransactionReceipt(
         '0xtx1',
         0,
@@ -312,4 +313,3 @@ describe('TransactionService - getLogs', () => {
     });
   });
 });
-

@@ -1,6 +1,16 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { GetLogsRequestDto, LogDto } from './dto/get-logs.dto';
+import {
+  SendNativeRequestDto,
+  SendNativeResponseDto,
+} from './dto/send-native.dto';
 import {
   SendTransactionRequestDto,
   SendTransactionResponseDto,
@@ -133,6 +143,33 @@ export class TransactionController {
   }
 
   /**
+   * 네이티브 토큰(DSTN) 전송
+   *
+   * POST /transaction/send-native
+   */
+  @Post('send-native')
+  @ApiOperation({
+    summary: '네이티브 토큰(DSTN) 전송',
+    description: '네이티브 토큰(DSTN)을 다른 주소로 전송합니다.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '네이티브 토큰 전송 성공',
+    type: SendNativeResponseDto,
+  })
+  async sendNative(
+    @Body() body: SendNativeRequestDto,
+  ): Promise<SendNativeResponseDto> {
+    return await this.transactionService.sendNativeToken(
+      body.privateKey,
+      body.to,
+      body.amount,
+      body.gasPrice,
+      body.gasLimit,
+    );
+  }
+
+  /**
    * 임시: 검증 우회 전송 (컨트랙트 배포용 to=null 허용)
    *
    * - class-validator를 거치지 않고 body를 직접 파싱
@@ -186,7 +223,8 @@ export class TransactionController {
     name: 'topics',
     required: false,
     description: '토픽 필터 배열 (JSON 문자열, 최대 4개)',
-    example: '["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]',
+    example:
+      '["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]',
     type: String,
   })
   @ApiResponse({

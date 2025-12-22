@@ -57,8 +57,16 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
       contractService.encodeFunctionCall.mockReturnValue('0x' + '0'.repeat(8));
@@ -71,7 +79,11 @@ describe('StablecoinService', () => {
 
       expect(result).toHaveProperty('hash');
       expect(result).toHaveProperty('status');
-      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith('depositCollateral', [], []);
+      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith(
+        'depositCollateral',
+        [],
+        [],
+      );
       expect(contractService.executeContractByUser).toHaveBeenCalledWith(
         vaultAddress,
         '0x' + '0'.repeat(8),
@@ -84,7 +96,10 @@ describe('StablecoinService', () => {
       contractService.getDeployedContracts.mockReturnValue(null);
 
       await expect(
-        service.depositCollateral('0x' + '1'.repeat(64), '0x3635c9adc5dea00000'), // 1000 DSTN
+        service.depositCollateral(
+          '0x' + '1'.repeat(64),
+          '0x3635c9adc5dea00000',
+        ), // 1000 DSTN
       ).rejects.toThrow('CollateralVault is not deployed');
     });
   });
@@ -96,11 +111,21 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'a'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'a'.repeat(8) + '0'.repeat(56),
+      );
       contractService.executeContractByUser.mockResolvedValue({
         hash: '0x' + 'h'.repeat(64),
         status: 'pending',
@@ -125,17 +150,30 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'b'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'b'.repeat(8) + '0'.repeat(56),
+      );
       contractService.executeContractByUser.mockResolvedValue({
         hash: '0x' + 'h'.repeat(64),
         status: 'pending',
       });
 
-      const result = await service.redeemStablecoin(privateKey, stablecoinAmount);
+      const result = await service.redeemStablecoin(
+        privateKey,
+        stablecoinAmount,
+      );
 
       expect(result).toHaveProperty('hash');
       expect(result).toHaveProperty('status');
@@ -154,11 +192,21 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'c'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'c'.repeat(8) + '0'.repeat(56),
+      );
       contractService.executeContractByUser.mockResolvedValue({
         hash: '0x' + 'h'.repeat(64),
         status: 'pending',
@@ -183,11 +231,21 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'd'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'd'.repeat(8) + '0'.repeat(56),
+      );
       contractService.executeContractByUser.mockResolvedValue({
         hash: '0x' + 'h'.repeat(64),
         status: 'pending',
@@ -210,11 +268,21 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'd'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'd'.repeat(8) + '0'.repeat(56),
+      );
       contractService.executeContractByUser.mockResolvedValue({
         hash: '0x' + 'h'.repeat(64),
         status: 'pending',
@@ -242,8 +310,16 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
       // 시나리오: 담보 1000 DSTN, 부채 500 USDST
@@ -251,13 +327,18 @@ describe('StablecoinService', () => {
       // 담보를 0.7 DSTN만 남기면 청산 가능 (담보비율: 0.7 * 1000 / 750 = 93%)
       const withdrawAmount = '0x362c12c77b4fda0000'; // 999.3 DSTN 인출
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'c'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'c'.repeat(8) + '0'.repeat(56),
+      );
       contractService.executeContractByUser.mockResolvedValue({
         hash: '0x' + 'h'.repeat(64),
         status: 'pending',
       });
 
-      const result = await service.withdrawCollateral(privateKey, withdrawAmount);
+      const result = await service.withdrawCollateral(
+        privateKey,
+        withdrawAmount,
+      );
 
       expect(result).toHaveProperty('hash');
       expect(result).toHaveProperty('status');
@@ -273,8 +354,16 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
       // 시나리오: 담보 1000 DSTN, 부채를 많이 늘림
@@ -284,7 +373,9 @@ describe('StablecoinService', () => {
       // 부채 > 666,666 USDST
       const largeDebtAmount = '0x943b1377290cbd800000'; // 700,000 USDST
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'a'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'a'.repeat(8) + '0'.repeat(56),
+      );
       contractService.executeContractByUser.mockResolvedValue({
         hash: '0x' + 'h'.repeat(64),
         status: 'pending',
@@ -348,11 +439,21 @@ describe('StablecoinService', () => {
         '30d40'.padStart(64 - 24, '0');
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'e'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'e'.repeat(8) + '0'.repeat(56),
+      );
       contractService.callContract.mockResolvedValue({
         result: '0x' + hexResult,
         gasUsed: '0x5208',
@@ -375,13 +476,24 @@ describe('StablecoinService', () => {
       const vaultAddress = '0x' + '2'.repeat(40);
 
       contractService.getDeployedContracts.mockReturnValue({
-        stablecoin: { address: '0x' + '1'.repeat(40), name: 'StableCoin', deployedAt: '2025-01-01' },
-        vault: { address: vaultAddress, name: 'CollateralVault', deployedAt: '2025-01-01' },
+        stablecoin: {
+          address: '0x' + '1'.repeat(40),
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: vaultAddress,
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
       });
 
-      contractService.encodeFunctionCall.mockReturnValue('0x' + 'f'.repeat(8) + '0'.repeat(56));
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'f'.repeat(8) + '0'.repeat(56),
+      );
       contractService.callContract.mockResolvedValue({
-        result: '0x0000000000000000000000000000000000000000000000000000000000000001',
+        result:
+          '0x0000000000000000000000000000000000000000000000000000000000000001',
         gasUsed: '0x5208',
       });
 
@@ -392,4 +504,3 @@ describe('StablecoinService', () => {
     });
   });
 });
-

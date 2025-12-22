@@ -131,7 +131,10 @@ describe('TransactionReceipt Entity', () => {
       expect(json.logs).toBeDefined();
       expect(json.logs.length).toBe(1);
       expect(json.logs[0].address).toBe('0x' + 'a'.repeat(40));
-      expect(json.logs[0].topics).toEqual(['0x' + 't'.repeat(64), '0x' + '1'.repeat(64)]);
+      expect(json.logs[0].topics).toEqual([
+        '0x' + 't'.repeat(64),
+        '0x' + '1'.repeat(64),
+      ]);
       expect(json.logs[0].data).toBe('0x1234');
       expect(json.logs[0].blockNumber).toBe('0x1');
       expect(json.logs[0].transactionHash).toBe(receipt.transactionHash);
@@ -174,4 +177,3 @@ describe('TransactionReceipt Entity', () => {
     });
   });
 });
-

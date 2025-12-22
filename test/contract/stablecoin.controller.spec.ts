@@ -175,7 +175,8 @@ describe('StablecoinController', () => {
     it('건강도를 확인해야 함', async () => {
       const userAddress = '0x' + '3'.repeat(40);
       const response = {
-        result: '0x0000000000000000000000000000000000000000000000000000000000000001',
+        result:
+          '0x0000000000000000000000000000000000000000000000000000000000000001',
       };
 
       stablecoinService.isHealthy.mockResolvedValue(response.result);
@@ -187,4 +188,3 @@ describe('StablecoinController', () => {
     });
   });
 });
-

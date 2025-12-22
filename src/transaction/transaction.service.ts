@@ -442,6 +442,55 @@ export class TransactionService {
   }
 
   /**
+   * 네이티브 토큰(DSTN) 전송
+   *
+   * @param privateKey - 사용자 개인키
+   * @param to - 수신자 주소
+   * @param amount - 전송할 금액 (Wei 단위, Hex String)
+   * @param gasPrice - 가스 가격 (Wei 단위, Hex String, 선택)
+   * @param gasLimit - 가스 한도 (Hex String, 선택)
+   * @returns 트랜잭션 해시 및 상태
+   */
+  async sendNativeToken(
+    privateKey: string,
+    to: Address,
+    amount: string,
+    gasPrice?: string,
+    gasLimit?: string,
+  ): Promise<{ hash: string; status: string }> {
+    // Hex String을 BigInt로 변환
+    const amountBigInt = BigInt(amount);
+    const gasPriceBigInt = gasPrice ? BigInt(gasPrice) : undefined;
+    const gasLimitBigInt = gasLimit ? BigInt(gasLimit) : undefined;
+
+    // 트랜잭션 서명
+    const tx = await this.signTransaction(privateKey, to, amountBigInt, {
+      gasPrice: gasPriceBigInt,
+      gasLimit: gasLimitBigInt,
+      data: '0x', // 네이티브 토큰 전송은 data 필드 없음
+    });
+
+    // 트랜잭션 제출
+    const submittedTx = await this.submitTransaction(
+      tx.from,
+      tx.to,
+      tx.value,
+      tx.nonce,
+      tx.getSignature(),
+      {
+        gasPrice: tx.gasPrice,
+        gasLimit: tx.gasLimit,
+        data: tx.data,
+      },
+    );
+
+    return {
+      hash: submittedTx.hash,
+      status: 'pending',
+    };
+  }
+
+  /**
    * 트랜잭션 조회 (Geth 방식)
    *
    * 이더리움 방식:
@@ -561,7 +610,10 @@ export class TransactionService {
       return [];
     }
 
-    const fromBlockNumber = this.parseBlockNumber(fromBlock, latestBlock.number);
+    const fromBlockNumber = this.parseBlockNumber(
+      fromBlock,
+      latestBlock.number,
+    );
     const toBlockNumber = this.parseBlockNumber(toBlock, latestBlock.number);
 
     if (fromBlockNumber > toBlockNumber) {
@@ -607,7 +659,10 @@ export class TransactionService {
         let hasTopic = false;
         for (let i = 0; i < topics.length && i < 4; i++) {
           const topicFilter = topics[i];
-          if (!topicFilter || (Array.isArray(topicFilter) && topicFilter.length === 0)) {
+          if (
+            !topicFilter ||
+            (Array.isArray(topicFilter) && topicFilter.length === 0)
+          ) {
             hasTopic = true; // null이면 모든 토픽 허용
             break;
           }
@@ -677,7 +732,10 @@ export class TransactionService {
             let topicMatch = true;
             for (let i = 0; i < topics.length && i < 4; i++) {
               const topicFilter = topics[i];
-              if (!topicFilter || (Array.isArray(topicFilter) && topicFilter.length === 0)) {
+              if (
+                !topicFilter ||
+                (Array.isArray(topicFilter) && topicFilter.length === 0)
+              ) {
                 continue; // null이면 모든 토픽 허용
               }
 

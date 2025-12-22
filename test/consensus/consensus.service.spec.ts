@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Block } from '../../src/block/entities/block.entity';
-import { BLOCK_TIME, EPOCH_SIZE } from '../../src/common/constants/blockchain.constants';
+import {
+  BLOCK_TIME,
+  EPOCH_SIZE,
+} from '../../src/common/constants/blockchain.constants';
 import { CryptoService } from '../../src/common/crypto/crypto.service';
 import { Address } from '../../src/common/types/common.types';
 import { ConsensusService } from '../../src/consensus/consensus.service';
@@ -158,4 +161,3 @@ describe('ConsensusService', () => {
     });
   });
 });
-

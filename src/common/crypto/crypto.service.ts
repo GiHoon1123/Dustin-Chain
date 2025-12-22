@@ -125,10 +125,7 @@ export class CryptoService {
         const topicHash = this.hashBuffer(
           Buffer.from(stripHexPrefix(topic), 'hex'),
         );
-        this.setBloomBits(
-          bloom,
-          Buffer.from(stripHexPrefix(topicHash), 'hex'),
-        );
+        this.setBloomBits(bloom, Buffer.from(stripHexPrefix(topicHash), 'hex'));
       }
     }
 

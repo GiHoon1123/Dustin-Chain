@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 
 /**
  * Get Logs Request DTO (eth_getLogs)
@@ -25,8 +31,7 @@ export class GetLogsRequestDto {
   fromBlock?: string;
 
   @ApiPropertyOptional({
-    description:
-      '끝 블록 번호 (hex string 또는 "latest") - 생략 시 최신 블록',
+    description: '끝 블록 번호 (hex string 또는 "latest") - 생략 시 최신 블록',
     example: 'latest',
   })
   @IsOptional()
@@ -109,4 +114,3 @@ export class LogDto {
   })
   removed: boolean;
 }
-

@@ -269,13 +269,13 @@ describe('StateManager', () => {
   describe('에러 케이스 및 엣지 케이스', () => {
     it('checkpoint가 없을 때 revertCheckpoint를 호출하면 에러를 발생시켜야 함', () => {
       stateManager.rollbackBlock();
-      
+
       expect(() => stateManager.revertCheckpoint()).toThrow();
     });
 
     it('checkpoint가 없을 때 commitCheckpoint를 호출하면 에러를 발생시켜야 함', () => {
       stateManager.rollbackBlock();
-      
+
       expect(() => stateManager.commitCheckpoint()).toThrow();
     });
 
@@ -296,7 +296,7 @@ describe('StateManager', () => {
 
     it('캐시 크기 제한을 초과하면 오래된 항목을 제거해야 함', async () => {
       const CACHE_SIZE_LIMIT = (stateManager as any).CACHE_SIZE_LIMIT || 1000;
-      
+
       // 캐시를 가득 채우기
       for (let i = 0; i < CACHE_SIZE_LIMIT + 10; i++) {
         const address = '0x' + i.toString(16).padStart(40, '0');
@@ -311,4 +311,3 @@ describe('StateManager', () => {
     });
   });
 });
-
