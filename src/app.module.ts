@@ -10,6 +10,7 @@ import { StateModule } from './state/state.module';
 import { StorageModule } from './storage/storage.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { ValidatorModule } from './validator/validator.module';
+import { StakingModule } from './staking/staking.module';
 
 /**
  * AppModule
@@ -28,6 +29,9 @@ import { ValidatorModule } from './validator/validator.module';
  * - ConsensusModule: POS 합의 (Attestation, Epoch)
  * - BlockModule: 블록 생성 및 관리 (자동 생성)
  * - BotModule: 트랜잭션 자동 생성 (네트워크 활성화)
+ * - ContractModule: 컨트랙트 관련 기능
+ * - CompilerModule: Solidity 컴파일러
+ * - StakingModule: 스테이킹 시스템
  */
 @Module({
   imports: [
@@ -45,6 +49,7 @@ import { ValidatorModule } from './validator/validator.module';
     ContractModule, // 컨트랙트 관련 기능
     CompilerModule, // Solidity 컴파일러
     BotModule, // 트랜잭션 자동 생성
+    StakingModule, // 스테이킹 시스템
   ],
   controllers: [],
   providers: [],
