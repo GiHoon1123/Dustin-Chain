@@ -38,12 +38,17 @@ export class ValidatorService {
   private readonly logger = new Logger(ValidatorService.name);
 
   /**
-   * Genesis Validators (256개)
+   * Genesis Validators (90개)
    *
    * 이더리움 Committee 크기: 128명
-   * 우리: 256명 (2배) - Committee 선택 알고리즘 테스트용
+   * 우리: 90명 - 테스트 및 개발 환경용
    */
   private readonly genesisValidators: Validator[] = [];
+
+  /**
+   * Genesis Validator 개수 (처음 N개만 등록)
+   */
+  private readonly GENESIS_VALIDATOR_COUNT = 90;
 
   constructor(private readonly cryptoService: CryptoService) {
     this.initializeGenesisValidators();
@@ -52,7 +57,7 @@ export class ValidatorService {
   /**
    * Genesis Validators 초기화
    *
-   * genesis-accounts.json에서 256개 계정 로드
+   * genesis-accounts.json에서 처음 90개 계정만 로드
    */
   private initializeGenesisValidators(): void {
     try {
@@ -67,7 +72,10 @@ export class ValidatorService {
       const fileContent = fs.readFileSync(accountsPath, 'utf8');
       const accounts: GenesisAccount[] = JSON.parse(fileContent);
 
-      for (const account of accounts) {
+      // 처음 90개만 Validator로 등록
+      const accountsToRegister = accounts.slice(0, this.GENESIS_VALIDATOR_COUNT);
+
+      for (const account of accountsToRegister) {
         const validator = new Validator(account.address);
         this.genesisValidators.push(validator);
       }
@@ -100,7 +108,8 @@ export class ValidatorService {
   }
 
   private useFallbackValidators(): void {
-    for (let i = 1; i <= 256; i++) {
+    // Fallback: 90개만 생성
+    for (let i = 1; i <= this.GENESIS_VALIDATOR_COUNT; i++) {
       const address = '0x' + i.toString(16).padStart(40, '0');
       const validator = new Validator(address);
       this.genesisValidators.push(validator);

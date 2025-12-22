@@ -136,6 +136,13 @@ export class ContractService implements OnApplicationBootstrap {
   }
 
   /**
+   * Genesis Account 0 조회 (Backend 자동화용)
+   */
+  getGenesisAccount0(): GenesisAccount | null {
+    return this.genesisAccount0;
+  }
+
+  /**
    * 0-100번 계정 로드 (컨트랙트 배포용)
    */
   private loadDeploymentAccounts(): void {

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AccountModule } from '../account/account.module';
 import { ContractModule } from '../contract/contract.module';
 import { StakingController } from './staking.controller';
 import { StakingService } from './staking.service';
@@ -9,7 +10,7 @@ import { StakingService } from './staking.service';
  * 스테이킹 시스템 관리
  */
 @Module({
-  imports: [ContractModule],
+  imports: [ContractModule, AccountModule],
   controllers: [StakingController],
   providers: [StakingService],
   exports: [StakingService],
