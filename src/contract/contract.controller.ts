@@ -280,15 +280,59 @@ export class ContractController {
   }
 
   /**
-   * 배포된 스테이블코인 컨트랙트 주소 조회
+   * StakingContract 배포 및 설정
+   *
+   * StakingContract를 배포하고 검증합니다.
+   * genesis-accounts.json의 0번 계정을 admin으로 설정합니다.
+   *
+   * POST /contract/deploy-staking
+   */
+  @Post('deploy-staking')
+  @ApiOperation({
+    summary: 'StakingContract 배포 및 설정',
+    description:
+      'StakingContract를 배포하고 검증합니다.\n\n' +
+      '배포 프로세스:\n' +
+      '1. contract-bytecodes.json에서 StakingContract 바이트코드 읽기\n' +
+      '2. genesis-accounts.json에서 0번 계정 주소 읽기 (admin)\n' +
+      '3. StakingContract 배포 (생성자에 admin 주소 전달)\n' +
+      '4. 배포 검증 (admin 주소, 상수 값 확인)\n' +
+      '5. deployed-contracts.json에 저장\n\n' +
+      '배포 후 바로 사용 가능합니다.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '배포 성공',
+    schema: {
+      example: {
+        stakingAddress: '0x1234567890123456789012345678901234567890',
+        stakingTxHash: '0xabcdef...',
+        adminAddress: '0xd03e1f882cc295f85fa3172af6df65e4a3609a7c',
+      },
+    },
+  })
+  async deployStakingContract(): Promise<{
+    stakingAddress: string;
+    stakingTxHash: string;
+    adminAddress: string;
+  }> {
+    return await this.contractService.deployStakingContract();
+  }
+
+  /**
+   * 배포된 컨트랙트 주소 조회
    *
    * GET /contract/deployed
    */
   @Get('deployed')
   @ApiOperation({
-    summary: '배포된 스테이블코인 컨트랙트 주소 조회',
+    summary: '배포된 컨트랙트 주소 조회',
     description:
-      '최신 배포된 StableCoin과 CollateralVault 컨트랙트 주소를 조회합니다.',
+      '최신 배포된 컨트랙트 주소를 조회합니다.\n\n' +
+      '조회 가능한 컨트랙트:\n' +
+      '- StableCoin\n' +
+      '- CollateralVault\n' +
+      '- StakingContract',
   })
   @ApiResponse({
     status: 200,
@@ -305,6 +349,11 @@ export class ContractController {
           name: 'CollateralVault',
           deployedAt: '2025-12-20T03:48:49.000Z',
         },
+        staking: {
+          address: '0x1234567890123456789012345678901234567890',
+          name: 'StakingContract',
+          deployedAt: '2025-12-21T12:00:00.000Z',
+        },
       },
     },
   })
@@ -313,8 +362,9 @@ export class ContractController {
     description: '배포된 컨트랙트 정보를 찾을 수 없음',
   })
   getDeployedContracts(): {
-    stablecoin: { address: string; name: string; deployedAt: string };
-    vault: { address: string; name: string; deployedAt: string };
+    stablecoin?: { address: string; name: string; deployedAt: string };
+    vault?: { address: string; name: string; deployedAt: string };
+    staking?: { address: string; name: string; deployedAt: string };
   } | null {
     return this.contractService.getDeployedContracts();
   }

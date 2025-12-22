@@ -1001,42 +1001,228 @@ export class ContractService implements OnApplicationBootstrap {
    * deployed-contracts.json 파일에 최신 배포 주소를 저장합니다.
    * API에서 배포된 컨트랙트 주소를 빠르게 조회할 수 있습니다.
    *
-   * @param stablecoinAddress - StableCoin 컨트랙트 주소
-   * @param vaultAddress - CollateralVault 컨트랙트 주소
+   * @param stablecoinAddress - StableCoin 컨트랙트 주소 (선택)
+   * @param vaultAddress - CollateralVault 컨트랙트 주소 (선택)
+   * @param stakingAddress - StakingContract 컨트랙트 주소 (선택)
    */
   private saveDeployedContracts(
-    stablecoinAddress: Address,
-    vaultAddress: Address,
+    stablecoinAddress?: Address,
+    vaultAddress?: Address,
+    stakingAddress?: Address,
   ): void {
     try {
       const deployedPath = path.resolve(
         process.cwd(),
         'deployed-contracts.json',
       );
-      const deployedData = {
-        stablecoin: {
+
+      // 기존 파일 읽기 (있는 경우)
+      let deployedData: any = {};
+      if (fs.existsSync(deployedPath)) {
+        try {
+          const content = fs.readFileSync(deployedPath, 'utf8');
+          deployedData = JSON.parse(content);
+        } catch {
+          // 파일이 있지만 파싱 실패 시 빈 객체로 시작
+          deployedData = {};
+        }
+      }
+
+      // 업데이트할 컨트랙트만 덮어쓰기
+      if (stablecoinAddress) {
+        deployedData.stablecoin = {
           address: stablecoinAddress,
           name: 'StableCoin',
           deployedAt: new Date().toISOString(),
-        },
-        vault: {
+        };
+      }
+
+      if (vaultAddress) {
+        deployedData.vault = {
           address: vaultAddress,
           name: 'CollateralVault',
           deployedAt: new Date().toISOString(),
-        },
-      };
+        };
+      }
+
+      if (stakingAddress) {
+        deployedData.staking = {
+          address: stakingAddress,
+          name: 'StakingContract',
+          deployedAt: new Date().toISOString(),
+        };
+      }
 
       fs.writeFileSync(
         deployedPath,
         JSON.stringify(deployedData, null, 2),
         'utf8',
       );
-      this.logger.log(
-        `Deployed contracts saved: StableCoin=${stablecoinAddress}, Vault=${vaultAddress}`,
-      );
+
+      const savedContracts: string[] = [];
+      if (stablecoinAddress)
+        savedContracts.push(`StableCoin=${stablecoinAddress}`);
+      if (vaultAddress) savedContracts.push(`Vault=${vaultAddress}`);
+      if (stakingAddress) savedContracts.push(`Staking=${stakingAddress}`);
+
+      this.logger.log(`Deployed contracts saved: ${savedContracts.join(', ')}`);
     } catch (error: any) {
       this.logger.error(`Failed to save deployed contracts: ${error.message}`);
     }
+  }
+
+  /**
+   * StakingContract 배포 및 설정
+   *
+   * StakingContract를 배포하고 검증합니다.
+   * genesis-accounts.json의 0번 계정을 admin으로 설정합니다.
+   *
+   * @returns 배포된 StakingContract 주소 및 트랜잭션 해시
+   */
+  async deployStakingContract(): Promise<{
+    stakingAddress: string;
+    stakingTxHash: string;
+    adminAddress: string;
+  }> {
+    // contract-bytecodes.json에서 바이트코드 읽기
+    const bytecodesPath = path.resolve(
+      process.cwd(),
+      'contract-bytecodes.json',
+    );
+    if (!fs.existsSync(bytecodesPath)) {
+      throw new Error('contract-bytecodes.json not found');
+    }
+
+    const bytecodesContent = fs.readFileSync(bytecodesPath, 'utf8');
+    const bytecodesData: {
+      contracts: Array<{
+        name: string;
+        bytecode: string;
+        abi?: any[];
+      }>;
+    } = JSON.parse(bytecodesContent);
+
+    const stakingContract = bytecodesData.contracts.find(
+      (c) => c.name === 'StakingContract',
+    );
+
+    if (!stakingContract?.bytecode) {
+      throw new Error('StakingContract bytecode not found');
+    }
+
+    const stakingBytecode = stakingContract.bytecode;
+    const stakingABI = stakingContract.abi;
+
+    // contract-abis.json에서 ABI 읽기 (없으면 bytecodes에서 가져온 것 사용)
+    let finalABI = stakingABI;
+    if (!finalABI) {
+      const abisPath = path.resolve(process.cwd(), 'contract-abis.json');
+      if (fs.existsSync(abisPath)) {
+        try {
+          const abisContent = fs.readFileSync(abisPath, 'utf8');
+          const abisData: {
+            contracts: Array<{
+              name: string;
+              abi: any[];
+            }>;
+          } = JSON.parse(abisContent);
+          const stakingABIFromFile = abisData.contracts.find(
+            (c) => c.name === 'StakingContract',
+          );
+          if (stakingABIFromFile) {
+            finalABI = stakingABIFromFile.abi;
+          }
+        } catch {
+          // ABI 파일 읽기 실패 시 무시
+        }
+      }
+    }
+
+    // genesis-accounts.json에서 0번 계정 주소 읽기
+    if (!this.genesisAccount0) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    const adminAddress = this.genesisAccount0.address;
+
+    this.logger.log('Starting StakingContract deployment...');
+    this.logger.log(`Admin address: ${adminAddress}`);
+
+    // StakingContract 배포 (생성자에 admin 주소 전달)
+    this.logger.log('Deploying StakingContract...');
+    const stakingDeployResult = await this.deployContract(
+      stakingBytecode,
+      'StakingContract',
+      finalABI,
+      {
+        types: ['address'],
+        values: [adminAddress],
+      },
+    );
+
+    const stakingAddress = await this.waitForContractAddress(
+      stakingDeployResult.hash,
+    );
+
+    if (!stakingAddress) {
+      throw new Error('Failed to get StakingContract address');
+    }
+
+    this.logger.log(`StakingContract deployed at: ${stakingAddress}`);
+
+    // ABI가 있으면 저장
+    if (finalABI) {
+      this.saveContractABI(stakingAddress, 'StakingContract', finalABI);
+    }
+
+    // 배포 검증: admin 주소 확인
+    this.logger.log('Verifying StakingContract deployment...');
+    const adminCheck = await this.callContract(
+      stakingAddress,
+      this.encodeFunctionCall('admin', [], []),
+    );
+
+    // 결과에서 주소 추출 (마지막 20바이트 = 40 hex characters)
+    const deployedAdminAddr = `0x${adminCheck.result.slice(-40)}`;
+
+    if (deployedAdminAddr.toLowerCase() !== adminAddress.toLowerCase()) {
+      throw new Error(
+        `Admin address verification failed. Deployed admin=${deployedAdminAddr} (expected ${adminAddress})`,
+      );
+    }
+
+    // 상수 값 확인 (MIN_STAKE, WITHDRAWAL_DELAY, MAX_VALIDATORS)
+    const minStakeCheck = await this.callContract(
+      stakingAddress,
+      this.encodeFunctionCall('MIN_STAKE', [], []),
+    );
+    const withdrawalDelayCheck = await this.callContract(
+      stakingAddress,
+      this.encodeFunctionCall('WITHDRAWAL_DELAY', [], []),
+    );
+    const maxValidatorsCheck = await this.callContract(
+      stakingAddress,
+      this.encodeFunctionCall('MAX_VALIDATORS', [], []),
+    );
+
+    this.logger.log('StakingContract constants verified:');
+    this.logger.log(`  - MIN_STAKE: ${minStakeCheck.result}`);
+    this.logger.log(`  - WITHDRAWAL_DELAY: ${withdrawalDelayCheck.result}`);
+    this.logger.log(`  - MAX_VALIDATORS: ${maxValidatorsCheck.result}`);
+
+    this.logger.log('StakingContract deployment completed!');
+    this.logger.log(`StakingContract: ${stakingAddress}`);
+    this.logger.log(`Admin: ${adminAddress}`);
+    this.logger.log('StakingContract is ready to use');
+
+    // 배포된 컨트랙트 주소 저장
+    this.saveDeployedContracts(undefined, undefined, stakingAddress);
+
+    return {
+      stakingAddress,
+      stakingTxHash: stakingDeployResult.hash,
+      adminAddress,
+    };
   }
 
   /**
@@ -1047,8 +1233,9 @@ export class ContractService implements OnApplicationBootstrap {
    * @returns 배포된 컨트랙트 주소 정보
    */
   getDeployedContracts(): {
-    stablecoin: { address: string; name: string; deployedAt: string };
-    vault: { address: string; name: string; deployedAt: string };
+    stablecoin?: { address: string; name: string; deployedAt: string };
+    vault?: { address: string; name: string; deployedAt: string };
+    staking?: { address: string; name: string; deployedAt: string };
   } | null {
     try {
       const deployedPath = path.resolve(
@@ -1061,8 +1248,9 @@ export class ContractService implements OnApplicationBootstrap {
 
       const content = fs.readFileSync(deployedPath, 'utf8');
       const deployedData: {
-        stablecoin: { address: string; name: string; deployedAt: string };
-        vault: { address: string; name: string; deployedAt: string };
+        stablecoin?: { address: string; name: string; deployedAt: string };
+        vault?: { address: string; name: string; deployedAt: string };
+        staking?: { address: string; name: string; deployedAt: string };
       } = JSON.parse(content);
 
       return deployedData;

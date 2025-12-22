@@ -8,5 +8,10 @@
     "address": "0xad51a3cbdb49eb8a33d075fe1bc4a171de9d6915",
     "name": "CollateralVault",
     "deployedAt": "2025-12-21T12:46:26.433Z"
+  },
+  "staking": {
+    "address": "0x09015ce603957fbc5d515dbbc212f01ff944ae0c",
+    "name": "StakingContract",
+    "deployedAt": "2025-12-22T06:59:14.827Z"
   }
 }
