@@ -826,7 +826,7 @@ export class ContractService implements OnApplicationBootstrap {
    *
    * @returns 배포된 컨트랙트 주소들
    */
-  async deployStablecoinSystem(): Promise<{
+  async deployStablecoin(): Promise<{
     stablecoinAddress: string;
     vaultAddress: string;
     stablecoinTxHash: string;

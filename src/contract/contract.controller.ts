@@ -195,21 +195,27 @@ export class ContractController {
   }
 
   /**
-   * 스테이블코인 시스템 전체 배포
+   * 스테이블코인 배포 및 설정
    *
-   * StableCoin과 CollateralVault를 순서대로 배포하고 연결합니다.
+   * StableCoin과 CollateralVault를 배포하고 연결합니다.
+   * genesis-accounts.json의 0번 계정을 사용하여 배포합니다.
    *
-   * POST /contract/deploy-stablecoin-system
+   * POST /contract/deploy-stablecoin
    */
-  @Post('deploy-stablecoin-system')
+  @Post('deploy-stablecoin')
   @ApiOperation({
-    summary: '스테이블코인 시스템 전체 배포',
+    summary: '스테이블코인 배포 및 설정',
     description:
-      'StableCoin과 CollateralVault를 순서대로 배포합니다.\n\n' +
-      '배포 순서:\n' +
-      '1. StableCoin 배포\n' +
-      '2. CollateralVault 배포\n\n' +
-      '주의: 배포 후 setStablecoin()과 setVault()를 호출하여 컨트랙트를 연결해야 합니다.',
+      'StableCoin과 CollateralVault를 배포하고 검증합니다.\n\n' +
+      '배포 프로세스:\n' +
+      '1. contract-bytecodes.json에서 StableCoin과 CollateralVault 바이트코드 읽기\n' +
+      '2. StableCoin 배포\n' +
+      '3. CollateralVault 배포\n' +
+      '4. CollateralVault.setStablecoin(StableCoin 주소) 호출하여 연결\n' +
+      '5. StableCoin.setVault(CollateralVault 주소) 호출하여 연결\n' +
+      '6. 배포 검증 (컨트랙트 간 연결 확인)\n' +
+      '7. deployed-contracts.json에 저장\n\n' +
+      '배포 후 바로 사용 가능합니다. 모든 설정이 자동으로 완료됩니다.',
   })
   @ApiResponse({
     status: 201,
@@ -218,18 +224,18 @@ export class ContractController {
       example: {
         stablecoinAddress: '0x1234567890123456789012345678901234567890',
         vaultAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-        stablecoinTxHash: '0x...',
-        vaultTxHash: '0x...',
+        stablecoinTxHash: '0x75f527675fc6e9e945c1bde023a87498c729f73a32d48ad0f0a2eb4f3d34a102',
+        vaultTxHash: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',
       },
     },
   })
-  async deployStablecoinSystem(): Promise<{
+  async deployStablecoin(): Promise<{
     stablecoinAddress: string;
     vaultAddress: string;
     stablecoinTxHash: string;
     vaultTxHash: string;
   }> {
-    return await this.contractService.deployStablecoinSystem();
+    return await this.contractService.deployStablecoin();
   }
 
   /**
