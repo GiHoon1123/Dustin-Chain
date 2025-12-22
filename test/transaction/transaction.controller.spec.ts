@@ -17,6 +17,7 @@ describe('TransactionController', () => {
       submitTransaction: jest.fn(),
       getTransaction: jest.fn(),
       getReceipt: jest.fn(),
+      sendNativeToken: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -151,6 +152,85 @@ describe('TransactionController', () => {
       const result = await controller.getReceipt(hash);
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('sendNative', () => {
+    it('네이티브 토큰을 전송해야 함', async () => {
+      const request = {
+        privateKey: '0x' + '1'.repeat(64),
+        to: '0x' + '4'.repeat(40),
+        amount: '0x8ac7230489e80000', // 10 DSTN
+      };
+      const response = {
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      };
+
+      transactionService.sendNativeToken.mockResolvedValue(response);
+
+      const result = await controller.sendNative(request);
+
+      expect(result).toEqual(response);
+      expect(transactionService.sendNativeToken).toHaveBeenCalledWith(
+        request.privateKey,
+        request.to,
+        request.amount,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('가스비를 선택적으로 입력할 수 있어야 함', async () => {
+      const request = {
+        privateKey: '0x' + '1'.repeat(64),
+        to: '0x' + '4'.repeat(40),
+        amount: '0x8ac7230489e80000', // 10 DSTN
+        gasPrice: '0x3b9aca00', // 1 Gwei
+        gasLimit: '0x5208', // 21,000
+      };
+      const response = {
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      };
+
+      transactionService.sendNativeToken.mockResolvedValue(response);
+
+      const result = await controller.sendNative(request);
+
+      expect(result).toEqual(response);
+      expect(transactionService.sendNativeToken).toHaveBeenCalledWith(
+        request.privateKey,
+        request.to,
+        request.amount,
+        request.gasPrice,
+        request.gasLimit,
+      );
+    });
+
+    it('소수점 금액도 전송할 수 있어야 함', async () => {
+      const request = {
+        privateKey: '0x' + '1'.repeat(64),
+        to: '0x' + '4'.repeat(40),
+        amount: '0x16345785d8a0000', // 0.1 DSTN
+      };
+      const response = {
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      };
+
+      transactionService.sendNativeToken.mockResolvedValue(response);
+
+      const result = await controller.sendNative(request);
+
+      expect(result).toEqual(response);
+      expect(transactionService.sendNativeToken).toHaveBeenCalledWith(
+        request.privateKey,
+        request.to,
+        request.amount,
+        undefined,
+        undefined,
+      );
     });
   });
 });

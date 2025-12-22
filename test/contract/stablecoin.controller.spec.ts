@@ -18,6 +18,7 @@ describe('StablecoinController', () => {
       liquidate: jest.fn(),
       getPosition: jest.fn(),
       isHealthy: jest.fn(),
+      transferStablecoin: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -185,6 +186,54 @@ describe('StablecoinController', () => {
 
       expect(result).toEqual(response);
       expect(stablecoinService.isHealthy).toHaveBeenCalledWith(userAddress);
+    });
+  });
+
+  describe('transferStablecoin', () => {
+    it('스테이블코인을 전송해야 함', async () => {
+      const request = {
+        privateKey: '0x' + '1'.repeat(64),
+        to: '0x' + '4'.repeat(40),
+        amount: '0x56bc75e2d63100000', // 100 USDST
+      };
+      const response = {
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      };
+
+      stablecoinService.transferStablecoin.mockResolvedValue(response);
+
+      const result = await controller.transferStablecoin(request);
+
+      expect(result).toEqual(response);
+      expect(stablecoinService.transferStablecoin).toHaveBeenCalledWith(
+        request.privateKey,
+        request.to,
+        request.amount,
+      );
+    });
+
+    it('소수점 금액도 전송할 수 있어야 함', async () => {
+      const request = {
+        privateKey: '0x' + '1'.repeat(64),
+        to: '0x' + '4'.repeat(40),
+        amount: '0x16345785d8a0000', // 0.1 USDST
+      };
+      const response = {
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      };
+
+      stablecoinService.transferStablecoin.mockResolvedValue(response);
+
+      const result = await controller.transferStablecoin(request);
+
+      expect(result).toEqual(response);
+      expect(stablecoinService.transferStablecoin).toHaveBeenCalledWith(
+        request.privateKey,
+        request.to,
+        request.amount,
+      );
     });
   });
 });

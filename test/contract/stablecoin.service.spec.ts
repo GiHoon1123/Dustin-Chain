@@ -503,4 +503,108 @@ describe('StablecoinService', () => {
       expect(result).toMatch(/^0x[0-9a-f]{64}$/);
     });
   });
+
+  describe('스테이블코인 전송', () => {
+    it('스테이블코인을 전송해야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const to = '0x' + '4'.repeat(40);
+      const amount = '0x56bc75e2d63100000'; // 100 USDST
+      const stablecoinAddress = '0x' + '5'.repeat(40);
+
+      contractService.getDeployedContracts.mockReturnValue({
+        stablecoin: {
+          address: stablecoinAddress,
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: '0x' + '2'.repeat(40),
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
+      });
+
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'a'.repeat(8) + '0'.repeat(56),
+      );
+      contractService.executeContractByUser.mockResolvedValue({
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      });
+
+      const result = await service.transferStablecoin(
+        privateKey,
+        to,
+        amount,
+      );
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith(
+        'transfer',
+        ['address', 'uint256'],
+        [to, amount],
+      );
+      expect(contractService.executeContractByUser).toHaveBeenCalledWith(
+        stablecoinAddress,
+        expect.stringMatching(/^0x[0-9a-f]+$/),
+        privateKey,
+        0n,
+      );
+    });
+
+    it('StableCoin이 배포되지 않았으면 에러를 발생시켜야 함', async () => {
+      contractService.getDeployedContracts.mockReturnValue(null);
+
+      await expect(
+        service.transferStablecoin(
+          '0x' + '1'.repeat(64),
+          '0x' + '4'.repeat(40),
+          '0x56bc75e2d63100000',
+        ),
+      ).rejects.toThrow('StableCoin is not deployed');
+    });
+
+    it('소수점 금액도 전송할 수 있어야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const to = '0x' + '4'.repeat(40);
+      const amount = '0x16345785d8a0000'; // 0.1 USDST
+      const stablecoinAddress = '0x' + '5'.repeat(40);
+
+      contractService.getDeployedContracts.mockReturnValue({
+        stablecoin: {
+          address: stablecoinAddress,
+          name: 'StableCoin',
+          deployedAt: '2025-01-01',
+        },
+        vault: {
+          address: '0x' + '2'.repeat(40),
+          name: 'CollateralVault',
+          deployedAt: '2025-01-01',
+        },
+      });
+
+      contractService.encodeFunctionCall.mockReturnValue(
+        '0x' + 'a'.repeat(8) + '0'.repeat(56),
+      );
+      contractService.executeContractByUser.mockResolvedValue({
+        hash: '0x' + 'h'.repeat(64),
+        status: 'pending',
+      });
+
+      const result = await service.transferStablecoin(
+        privateKey,
+        to,
+        amount,
+      );
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(contractService.encodeFunctionCall).toHaveBeenCalledWith(
+        'transfer',
+        ['address', 'uint256'],
+        [to, amount],
+      );
+    });
+  });
 });

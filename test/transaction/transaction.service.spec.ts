@@ -790,4 +790,149 @@ describe('TransactionService', () => {
       expect(() => service.validateGasParameters(tx)).toThrow();
     });
   });
+
+  describe('네이티브 토큰 전송', () => {
+    it('네이티브 토큰을 전송해야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const from = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const to = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const amount = '0x8ac7230489e80000'; // 10 DSTN
+
+      const mockTx = new Transaction(
+        from,
+        to,
+        BigInt(amount),
+        0,
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
+        '0x' + 'h'.repeat(64),
+        '0x',
+        BigInt('1000000000'),
+        BigInt(21000),
+      );
+
+      const signSpy = jest
+        .spyOn(service, 'signTransaction')
+        .mockResolvedValue(mockTx);
+      const submitSpy = jest
+        .spyOn(service, 'submitTransaction')
+        .mockResolvedValue(mockTx);
+
+      const result = await service.sendNativeToken(privateKey, to, amount);
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(result.status).toBe('pending');
+      expect(signSpy).toHaveBeenCalledWith(
+        privateKey,
+        to,
+        BigInt(amount),
+        expect.objectContaining({
+          data: '0x',
+        }),
+      );
+      expect(submitSpy).toHaveBeenCalled();
+
+      signSpy.mockRestore();
+      submitSpy.mockRestore();
+    });
+
+    it('가스비를 선택적으로 입력할 수 있어야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const from = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const to = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const amount = '0x8ac7230489e80000'; // 10 DSTN
+      const gasPrice = '0x3b9aca00'; // 1 Gwei
+      const gasLimit = '0x5208'; // 21,000
+
+      const mockTx = new Transaction(
+        from,
+        to,
+        BigInt(amount),
+        0,
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
+        '0x' + 'h'.repeat(64),
+        '0x',
+        BigInt(gasPrice),
+        BigInt(gasLimit),
+      );
+
+      const signSpy = jest
+        .spyOn(service, 'signTransaction')
+        .mockResolvedValue(mockTx);
+      const submitSpy = jest
+        .spyOn(service, 'submitTransaction')
+        .mockResolvedValue(mockTx);
+
+      const result = await service.sendNativeToken(
+        privateKey,
+        to,
+        amount,
+        gasPrice,
+        gasLimit,
+      );
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(signSpy).toHaveBeenCalledWith(
+        privateKey,
+        to,
+        BigInt(amount),
+        expect.objectContaining({
+          gasPrice: BigInt(gasPrice),
+          gasLimit: BigInt(gasLimit),
+          data: '0x',
+        }),
+      );
+
+      signSpy.mockRestore();
+      submitSpy.mockRestore();
+    });
+
+    it('소수점 금액도 전송할 수 있어야 함', async () => {
+      const privateKey = '0x' + '1'.repeat(64);
+      const from = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const to = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const amount = '0x16345785d8a0000'; // 0.1 DSTN
+
+      const mockTx = new Transaction(
+        from,
+        to,
+        BigInt(amount),
+        0,
+        {
+          v: CHAIN_ID * 2 + 35,
+          r: '0x' + 'r'.repeat(64),
+          s: '0x' + 's'.repeat(64),
+        },
+        '0x' + 'h'.repeat(64),
+        '0x',
+        BigInt('1000000000'),
+        BigInt(21000),
+      );
+
+      const signSpy = jest
+        .spyOn(service, 'signTransaction')
+        .mockResolvedValue(mockTx);
+      const submitSpy = jest
+        .spyOn(service, 'submitTransaction')
+        .mockResolvedValue(mockTx);
+
+      const result = await service.sendNativeToken(privateKey, to, amount);
+
+      expect(result).toHaveProperty('hash');
+      expect(result).toHaveProperty('status');
+      expect(result.status).toBe('pending');
+
+      signSpy.mockRestore();
+      submitSpy.mockRestore();
+    });
+  });
 });
