@@ -472,6 +472,37 @@ export class StakingService implements OnApplicationBootstrap {
    * - 최소값: 4명
    * - 활성 Validator가 많을수록 Churn Limit 증가
    *
+   * Churn Limit 표 (활성 검증자 수 범위별):
+   * +--------------------------+----------------+------------------+
+   * | 활성 검증자 수 범위       | Churn Limit    | 예시             |
+   * +--------------------------+----------------+------------------+
+   * | 0 ~ 65,535               | 4              | 초기 네트워크    |
+   * | 65,536 ~ 131,071         | 5              | 중간 규모        |
+   * | 131,072 ~ 196,607        | 6              | 대규모 네트워크  |
+   * | 196,608 ~ 262,143        | 7              | 초대규모         |
+   * | 262,144 ~ 327,679        | 8              |                  |
+   * | 327,680 ~ 393,215        | 9              |                  |
+   * | 393,216 ~ 458,751        | 10             |                  |
+   * | ...                      | ...            |                  |
+   * | N * 65,536 ~ (N+1)*65,536-1 | N + 4      | 일반화 공식      |
+   * +--------------------------+----------------+------------------+
+   *
+   * 계산 예시:
+   * - 활성 검증자 90명 → floor(90 / 65536) = 0 → max(4, 0) = 4명
+   * - 활성 검증자 100,000명 → floor(100000 / 65536) = 1 → max(4, 1) = 4명
+   * - 활성 검증자 70,000명 → floor(70000 / 65536) = 1 → max(4, 1) = 4명
+   * - 활성 검증자 131,072명 → floor(131072 / 65536) = 2 → max(4, 2) = 4명
+   * - 활성 검증자 131,073명 → floor(131073 / 65536) = 2 → max(4, 2) = 4명
+   * - 활성 검증자 196,608명 → floor(196608 / 65536) = 3 → max(4, 3) = 4명
+   * - 활성 검증자 200,000명 → floor(200000 / 65536) = 3 → max(4, 3) = 4명
+   * - 활성 검증자 262,144명 → floor(262144 / 65536) = 4 → max(4, 4) = 4명
+   * - 활성 검증자 300,000명 → floor(300000 / 65536) = 4 → max(4, 4) = 4명
+   * - 활성 검증자 327,680명 → floor(327680 / 65536) = 5 → max(4, 5) = 5명
+   *
+   * 참고:
+   * - 이더리움 메인넷 기준으로 활성 검증자가 약 90만 명 이상일 때 Churn Limit이 10명 이상이 됨
+   * - Churn Limit은 네트워크 안정성을 위해 점진적으로 증가하도록 설계됨
+   *
    * @returns Churn Limit (Epoch당 활성화 가능한 Validator 수)
    */
   private async calculateChurnLimit(): Promise<number> {
@@ -504,7 +535,10 @@ export class StakingService implements OnApplicationBootstrap {
    *
    * @param blockNumber - 현재 블록 번호 (Epoch 계산용)
    */
-  async processActivationQueue(blockNumber: number): Promise<void> {
+  async processActivationQueue(
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<void> {
     // Epoch 시작 시에만 처리 (이더리움과 동일)
     const EPOCH_SIZE = 32; // blockchain.constants에서 가져와야 하지만 여기서는 하드코딩
     if (blockNumber % EPOCH_SIZE !== 0) {
@@ -530,6 +564,19 @@ export class StakingService implements OnApplicationBootstrap {
         `Found ${pendingValidators.length} pending validators. Churn Limit: ${churnLimit}`,
       );
 
+      // StakingContract 주소 확인
+      const deployed = this.contractService.getDeployedContracts();
+      if (!deployed || !deployed.staking) {
+        throw new Error('StakingContract is not deployed');
+      }
+      const stakingAddress = deployed.staking.address;
+
+      // Deployment Account (255번) 가져오기 (VM 직접 실행용, 시스템 자동화 작업)
+      const deploymentAccount = (this.contractService as any).deploymentAccount;
+      if (!deploymentAccount || !deploymentAccount.privateKey) {
+        throw new Error('Deployment account (255) is not loaded');
+      }
+
       // Churn Limit만큼만 활성화
       let activatedCount = 0;
       for (const validatorAddress of pendingValidators) {
@@ -541,7 +588,32 @@ export class StakingService implements OnApplicationBootstrap {
         }
 
         try {
-          await this.activateValidator(validatorAddress);
+          // activateValidator(address validatorAddress) 함수 호출 데이터 생성
+          const activateData = this.contractService.encodeFunctionCall(
+            'activateValidator',
+            ['address'],
+            [validatorAddress],
+          );
+
+          // VM을 통해 직접 activateValidator() 호출 (트랜잭션 없이)
+          const activateResult =
+            await this.contractService.executeContractDirect(
+              stakingAddress,
+              activateData,
+              deploymentAccount.address,
+              deploymentAccount.privateKey,
+              0n, // value는 0
+              blockNumber,
+              timestamp,
+            );
+
+          // status가 1이면 성공, 0이면 실패
+          if (!activateResult || activateResult.status === 0) {
+            throw new Error(
+              `Activation failed: status=${activateResult?.status}, result=${activateResult?.result}`,
+            );
+          }
+
           activatedCount++;
           this.logger.log(
             `✅ Activated validator ${validatorAddress} from queue (${activatedCount}/${churnLimit}).`,
