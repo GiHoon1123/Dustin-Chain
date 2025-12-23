@@ -1,14 +1,14 @@
 import {
+  Block as EthereumBlock,
+  BlockHeader as EthereumBlockHeader,
+} from '@ethereumjs/block';
+import {
   Common,
   createCustomCommon,
   Hardfork,
   Mainnet,
   StateManagerInterface,
 } from '@ethereumjs/common';
-import {
-  Block as EthereumBlock,
-  BlockHeader as EthereumBlockHeader,
-} from '@ethereumjs/block';
 import { createMPT } from '@ethereumjs/mpt';
 import { createLegacyTx, createTxFromRLP } from '@ethereumjs/tx';
 import { Address as EthAddress } from '@ethereumjs/util';
@@ -582,6 +582,7 @@ export class BlockService implements OnApplicationBootstrap {
     to: Address,
     data: string,
     from: Address,
+    privateKey: string,
     value: bigint,
     blockNumber: number,
     timestamp: number,
@@ -599,19 +600,50 @@ export class BlockService implements OnApplicationBootstrap {
     const dataBuffer = Buffer.from(dataHex, 'hex');
     const dataBytes = new Uint8Array(dataBuffer);
 
-    // 주소를 Buffer로 변환
+    // 주소를 Buffer로 변환 (EthAddress 생성용)
     const toBytes = this.cryptoService.hexToBytes(to);
-    const fromBytes = this.cryptoService.hexToBytes(from);
     const toBuffer = Buffer.from(toBytes);
-    const fromBuffer = Buffer.from(fromBytes);
     const toEthAddress = new EthAddress(new Uint8Array(toBuffer));
-    const fromEthAddress = new EthAddress(new Uint8Array(fromBuffer));
 
-    // 트랜잭션 객체 생성 (서명 없이, 직접 호출용)
+    // 트랜잭션 객체 생성 (실제 서명 필요 - runTx가 서명 검증함)
     // nonce는 계정의 현재 nonce 사용
     const accountNonce = await this.accountService.getNonce(from);
     const gasPrice = 1000000000n; // 1 Gwei
     const gasLimit = 10000000n; // 충분한 가스 한도
+
+    // 트랜잭션 해시 계산 (EIP-155 서명 대상)
+    // RLP([nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0])
+    const toBytesForSign = to
+      ? this.cryptoService.hexToBytes(to)
+      : new Uint8Array(0);
+    const toBufferForSign = Buffer.from(toBytesForSign);
+    const dataBufferForSign = Buffer.from(dataBytes);
+
+    const signArray = [
+      this.toRlpBuffer(BigInt(accountNonce)),
+      this.toRlpBuffer(gasPrice),
+      this.toRlpBuffer(gasLimit),
+      toBufferForSign,
+      this.toRlpBuffer(value),
+      dataBufferForSign,
+      this.toRlpBuffer(BigInt(CHAIN_ID)),
+      Buffer.alloc(0), // r = 0
+      Buffer.alloc(0), // s = 0
+    ];
+
+    const signRlp = this.cryptoService.rlpEncode(signArray);
+    const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
+
+    // EIP-155 서명 생성
+    const signature = this.cryptoService.signTransaction(
+      txHash,
+      privateKey,
+      CHAIN_ID,
+    );
+
+    // 서명된 트랜잭션 생성
+    const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
+    const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
 
     const txForVM = createLegacyTx(
       {
@@ -621,9 +653,9 @@ export class BlockService implements OnApplicationBootstrap {
         to: toEthAddress,
         value,
         data: dataBytes,
-        v: BigInt(CHAIN_ID * 2 + 35), // EIP-155 (서명 없이도 v 값 필요)
-        r: Buffer.alloc(32, 0), // 서명 없음
-        s: Buffer.alloc(32, 0), // 서명 없음
+        v: BigInt(signature.v),
+        r: rValue,
+        s: sValue,
       },
       { common: this.common },
     );
@@ -648,13 +680,9 @@ export class BlockService implements OnApplicationBootstrap {
       { common: this.common },
     );
 
-    const vmBlock = new EthereumBlock(
-      blockHeader,
-      [],
-      [],
-      undefined,
-      { common: this.common },
-    );
+    const vmBlock = new EthereumBlock(blockHeader, [], [], undefined, {
+      common: this.common,
+    });
 
     // VM을 통해 직접 실행
     const result = await runTx(this.vm, {

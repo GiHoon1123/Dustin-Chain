@@ -58,6 +58,7 @@ describe('BlockProducer', () => {
 
     const mockStakingService = {
       processWithdrawalsDirect: jest.fn().mockResolvedValue({ processed: 0 }),
+      hasPendingWithdrawals: jest.fn().mockResolvedValue(false),
       getActiveValidators: jest.fn().mockResolvedValue([]),
       rewardProposer: jest.fn().mockResolvedValue(undefined),
       accumulateCommitteeReward: jest.fn().mockResolvedValue(undefined),

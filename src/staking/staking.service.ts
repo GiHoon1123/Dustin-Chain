@@ -733,6 +733,55 @@ export class StakingService implements OnApplicationBootstrap {
   }
 
   /**
+   * 출금 대기열에 요청이 있는지 확인
+   *
+   * @returns 출금 요청이 있으면 true, 없으면 false
+   */
+  async hasPendingWithdrawals(): Promise<boolean> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      return false;
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    // getWithdrawalQueue()는 view 함수이므로 eth_call 사용
+    const data = this.contractService.encodeFunctionCall(
+      'getWithdrawalQueue',
+      [],
+      [],
+    );
+
+    try {
+      const result = await this.contractService.callContract(
+        stakingAddress,
+        data,
+      );
+
+      // 결과 파싱 (address[] 반환)
+      // 배열 길이는 첫 32바이트에 저장됨
+      const resultHex = result.result.startsWith('0x')
+        ? result.result.slice(2)
+        : result.result;
+
+      if (resultHex.length < 64) {
+        return false;
+      }
+
+      // 배열 길이 추출 (첫 32바이트)
+      const arrayLength = parseInt(resultHex.slice(0, 64), 16);
+
+      return arrayLength > 0;
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to check withdrawal queue: ${error.message}`,
+      );
+      // 에러 발생 시 안전하게 false 반환 (호출은 계속 진행)
+      return false;
+    }
+  }
+
+  /**
    * 출금 처리 (VM을 통해 직접 호출, 트랜잭션 없이)
    *
    * 이더리움:
@@ -772,8 +821,8 @@ export class StakingService implements OnApplicationBootstrap {
 
     // Genesis Account 0 (배포 계정)으로 실행
     const genesisAccount0 = this.contractService.getGenesisAccount0();
-    if (!genesisAccount0) {
-      throw new Error('Genesis account 0 is not loaded');
+    if (!genesisAccount0 || !genesisAccount0.privateKey) {
+      throw new Error('Genesis account 0 is not loaded or private key missing');
     }
 
     // BlockService의 VM을 통해 직접 호출 (트랜잭션 없이)
@@ -783,6 +832,7 @@ export class StakingService implements OnApplicationBootstrap {
           to: string,
           data: string,
           from: string,
+          privateKey: string,
           value: bigint,
           blockNumber: number,
           timestamp: number,
@@ -796,6 +846,7 @@ export class StakingService implements OnApplicationBootstrap {
       stakingAddress,
       data,
       genesisAccount0.address,
+      genesisAccount0.privateKey,
       0n, // value는 0
       blockNumber,
       timestamp,

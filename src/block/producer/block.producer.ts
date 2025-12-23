@@ -643,6 +643,15 @@ export class BlockProducer implements OnApplicationBootstrap {
     }
 
     try {
+      // 출금 요청이 있는지 먼저 확인 (불필요한 호출 방지)
+      const hasPendingWithdrawals =
+        await this.stakingService.hasPendingWithdrawals();
+      if (!hasPendingWithdrawals) {
+        // 출금 요청이 없으면 호출하지 않음
+        this.lastWithdrawalProcessBlock = blockNumber;
+        return;
+      }
+
       // 최대 10개씩 처리 (가스 제한 방지)
       // VM을 통해 직접 호출 (트랜잭션 없이)
       const result = await this.stakingService.processWithdrawalsDirect(
@@ -662,6 +671,8 @@ export class BlockProducer implements OnApplicationBootstrap {
     } catch (error) {
       // 에러가 발생해도 블록 생성은 계속 진행
       this.logger.error(`Failed to process withdrawals: ${error.message}`);
+      // 에러 발생 시에도 업데이트 (같은 에러 반복 방지)
+      this.lastWithdrawalProcessBlock = blockNumber;
     }
   }
 
