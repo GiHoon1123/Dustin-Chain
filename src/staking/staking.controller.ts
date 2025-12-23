@@ -154,5 +154,58 @@ export class StakingController {
   async getStats(): Promise<StakingStatsResponseDto> {
     return await this.stakingService.getStats();
   }
+
+  /**
+   * Validator 활성화 (테스트용)
+   *
+   * POST /staking/activate-validator
+   */
+  @Post('activate-validator')
+  @ApiOperation({
+    summary: 'Validator 활성화 (테스트용)',
+    description:
+      'pending 상태인 Validator를 활성화합니다.\n\n' +
+      '⚠️  테스트용 API입니다. 실제 운영에서는 Backend가 자동으로 처리합니다.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Validator 활성화 성공',
+    type: TransactionResponseDto,
+  })
+  async activateValidator(
+    @Body() body: { validatorAddress: string },
+  ): Promise<TransactionResponseDto> {
+    return await this.stakingService.activateValidator(body.validatorAddress);
+  }
+
+  /**
+   * 출금 처리 (테스트용)
+   *
+   * POST /staking/process-withdrawals
+   */
+  @Post('process-withdrawals')
+  @ApiOperation({
+    summary: '출금 처리 (테스트용)',
+    description:
+      '출금 대기 시간이 경과한 Validator의 출금을 처리합니다.\n\n' +
+      '⚠️  테스트용 API입니다. 실제 운영에서는 BlockProducer가 자동으로 처리합니다.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '출금 처리 성공',
+    schema: {
+      example: {
+        hash: '0x1234567890abcdef...',
+        status: 'pending',
+        processed: 1,
+      },
+    },
+  })
+  async processWithdrawals(
+    @Body() body: { maxProcess?: number },
+  ): Promise<{ hash: string; status: string; processed: number }> {
+    const maxProcess = body.maxProcess || 10;
+    return await this.stakingService.processWithdrawals(maxProcess);
+  }
 }
 

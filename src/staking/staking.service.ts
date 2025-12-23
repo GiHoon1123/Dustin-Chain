@@ -1,12 +1,12 @@
-import {
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-} from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as fs from 'fs';
+import * as keccak from 'keccak';
 import * as path from 'path';
 import { AccountService } from '../account/account.service';
-import { MIN_STAKE, WEI_PER_DSTN } from '../common/constants/blockchain.constants';
+import {
+  MIN_STAKE,
+  WEI_PER_DSTN,
+} from '../common/constants/blockchain.constants';
 import { Address } from '../common/types/common.types';
 import { ContractService } from '../contract/contract.service';
 
@@ -284,8 +284,10 @@ export class StakingService implements OnApplicationBootstrap {
     // getValidator()는 (Validator memory) 반환
     // Validator 구조체 순서: (address validatorAddress, uint256 stakedAmount, ValidatorStatus status, uint256 activatedAt, uint256 exitRequestedAt, uint256 totalRewards, uint256 slashedAmount, address withdrawalAddress)
     // ABI 인코딩된 결과를 파싱 (각 값은 32바이트 = 64 hex characters)
-    const resultHex = result.result.startsWith('0x') ? result.result.slice(2) : result.result;
-    
+    const resultHex = result.result.startsWith('0x')
+      ? result.result.slice(2)
+      : result.result;
+
     // 각 값 추출 (32바이트씩, offset은 0부터 시작)
     const validatorAddr = '0x' + resultHex.slice(24, 64); // offset 0-63: address (마지막 20바이트만 사용)
     const stakedAmount = '0x' + resultHex.slice(64, 128); // offset 64-127: uint256
@@ -372,21 +374,24 @@ export class StakingService implements OnApplicationBootstrap {
 
     // 결과 파싱 (address[] 반환)
     // ABI 인코딩: offset(32바이트) + length(32바이트) + 각 주소(32바이트씩)
-    const resultHex = result.result.startsWith('0x') ? result.result.slice(2) : result.result;
-    
+    const resultHex = result.result.startsWith('0x')
+      ? result.result.slice(2)
+      : result.result;
+
     // offset 읽기 (첫 32바이트)
     const offsetHex = resultHex.slice(0, 64);
     const offset = parseInt(offsetHex, 16);
-    
+
     // offset 위치에서 배열 길이 읽기
     const lengthHex = resultHex.slice(offset * 2, offset * 2 + 64);
     const arrayLength = parseInt(lengthHex, 16);
-    
+
     const validatorAddresses: string[] = [];
     for (let i = 0; i < arrayLength; i++) {
       // offset + 64 (length) + i * 64 (각 주소)
       const addressOffset = offset * 2 + 64 + i * 64;
-      const address = '0x' + resultHex.slice(addressOffset + 24, addressOffset + 64); // 마지막 20바이트
+      const address =
+        '0x' + resultHex.slice(addressOffset + 24, addressOffset + 64); // 마지막 20바이트
       validatorAddresses.push(address);
     }
 
@@ -439,14 +444,22 @@ export class StakingService implements OnApplicationBootstrap {
     const stakingAddress = deployed.staking.address;
 
     // getStats()는 view 함수이므로 eth_call 사용
-    const statsData = this.contractService.encodeFunctionCall('getStats', [], []);
+    const statsData = this.contractService.encodeFunctionCall(
+      'getStats',
+      [],
+      [],
+    );
     const statsResult = await this.contractService.callContract(
       stakingAddress,
       statsData,
     );
 
     // 상수 값들 조회
-    const minStakeData = this.contractService.encodeFunctionCall('MIN_STAKE', [], []);
+    const minStakeData = this.contractService.encodeFunctionCall(
+      'MIN_STAKE',
+      [],
+      [],
+    );
     const minStakeResult = await this.contractService.callContract(
       stakingAddress,
       minStakeData,
@@ -476,8 +489,10 @@ export class StakingService implements OnApplicationBootstrap {
     // getStats()는 (uint256, uint256, uint256, uint256, uint256) 반환
     // (totalStaked, totalValidators, activeValidators, totalRewards, totalSlashed)
     // 각 값은 32바이트 = 64 hex characters
-    const statsHex = statsResult.result.startsWith('0x') ? statsResult.result.slice(2) : statsResult.result;
-    
+    const statsHex = statsResult.result.startsWith('0x')
+      ? statsResult.result.slice(2)
+      : statsResult.result;
+
     const totalStaked = '0x' + statsHex.slice(0, 64);
     const totalValidators = parseInt(statsHex.slice(64, 128), 16);
     const activeValidators = parseInt(statsHex.slice(128, 192), 16);
@@ -523,16 +538,36 @@ export class StakingService implements OnApplicationBootstrap {
 
     // Genesis Account 0 (배포 계정)으로 실행
     const genesisAccount0 = this.contractService.getGenesisAccount0();
-    if (!genesisAccount0) {
+    if (!genesisAccount0 || !genesisAccount0.privateKey) {
       throw new Error('Genesis account 0 is not loaded');
     }
 
-    return await this.contractService.executeContractByUser(
+    const result = await this.contractService.executeContractByUser(
       stakingAddress,
       data,
       genesisAccount0.privateKey,
       0n,
     );
+
+    // 트랜잭션 상태 확인 (실패 시 에러 발생)
+    this.logger.log(
+      `Activating validator ${validatorAddress}, waiting for transaction confirmation...`,
+    );
+    const success = await this.contractService.waitForTransaction(
+      result.hash,
+      30, // 최대 30번 재시도
+      2000, // 2초마다 체크
+    );
+
+    if (!success) {
+      throw new Error(
+        `Failed to activate validator ${validatorAddress}: transaction reverted or not included`,
+      );
+    }
+
+    this.logger.log(`Validator ${validatorAddress} activated successfully`);
+
+    return result;
   }
 
   /**
@@ -618,7 +653,11 @@ export class StakingService implements OnApplicationBootstrap {
     const data = this.contractService.encodeFunctionCall(
       'accumulateCommitteeReward',
       ['uint256', 'address', 'uint256'],
-      [`0x${BigInt(epoch).toString(16)}`, validatorAddress, `0x${amount.toString(16)}`],
+      [
+        `0x${BigInt(epoch).toString(16)}`,
+        validatorAddress,
+        `0x${amount.toString(16)}`,
+      ],
     );
 
     // Genesis Account 0 (배포 계정)으로 실행
@@ -636,20 +675,304 @@ export class StakingService implements OnApplicationBootstrap {
   }
 
   /**
+   * Epoch 보상 일괄 지급 (Backend에서 호출)
+   *
+   * StakingContract의 distributeEpochRewards() 함수를 호출하여
+   * 특정 Epoch의 누적된 Committee 보상을 일괄 지급합니다.
+   *
+   * 이더리움:
+   * - Epoch 완료 시 모든 Committee 보상을 일괄 지급
+   * - Beacon Chain이 자동으로 호출
+   *
+   * 우리:
+   * - 동일하게 구현
+   * - BlockProducer에서 Epoch 완료 시 자동 호출
+   *
+   * @param epoch - Epoch 번호
+   * @param validatorAddresses - 보상을 지급할 Validator 주소 배열
+   * @returns 총 지급된 보상 금액 (Wei, BigInt)
+   */
+  async distributeEpochRewards(
+    epoch: number,
+    validatorAddresses: Address[],
+  ): Promise<{ hash: string; status: string; totalDistributed: bigint }> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    // distributeEpochRewards(uint256 epoch, address[] calldata validatorAddresses)
+    // address[] 배열 인코딩: offset + length + addresses
+    const data = this.contractService.encodeFunctionCall(
+      'distributeEpochRewards',
+      ['uint256', 'address[]'],
+      [`0x${BigInt(epoch).toString(16)}`, validatorAddresses],
+    );
+
+    // Genesis Account 0 (배포 계정)으로 실행
+    const genesisAccount0 = this.contractService.getGenesisAccount0();
+    if (!genesisAccount0 || !genesisAccount0.privateKey) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    const result = await this.contractService.executeContractByUser(
+      stakingAddress,
+      data,
+      genesisAccount0.privateKey,
+      0n,
+    );
+
+    // 트랜잭션 결과에서 totalDistributed 추출 (실제로는 Receipt의 logs에서 추출해야 함)
+    // 일단 트랜잭션 해시만 반환하고, 나중에 Receipt에서 확인
+    return {
+      ...result,
+      totalDistributed: 0n, // TODO: Receipt에서 실제 값 추출
+    };
+  }
+
+  /**
+   * 출금 처리 (VM을 통해 직접 호출, 트랜잭션 없이)
+   *
+   * 이더리움:
+   * - Beacon Chain이 Execution Layer로 출금 정보 전달
+   * - Execution Layer가 블록 생성 시 자동 처리 (트랜잭션 없이)
+   *
+   * 우리:
+   * - BlockService의 VM을 통해 processWithdrawals() 직접 호출
+   * - 트랜잭션 풀을 거치지 않음
+   * - 블록 생성 시 자동 처리
+   *
+   * @param maxProcess - 최대 처리할 출금 요청 수 (가스 제한 방지)
+   * @param blockService - BlockService 인스턴스 (VM 접근용)
+   * @param blockNumber - 현재 블록 번호
+   * @param timestamp - 현재 블록 타임스탬프 (밀리초)
+   * @returns 처리된 출금 요청 수
+   */
+  async processWithdrawalsDirect(
+    maxProcess: number = 10,
+    blockService: any, // BlockService 타입 (순환 의존성 방지)
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<{ processed: number }> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    // processWithdrawals(uint256 maxProcess) 함수 호출 데이터 생성
+    const data = this.contractService.encodeFunctionCall(
+      'processWithdrawals',
+      ['uint256'],
+      [`0x${BigInt(maxProcess).toString(16)}`],
+    );
+
+    // Genesis Account 0 (배포 계정)으로 실행
+    const genesisAccount0 = this.contractService.getGenesisAccount0();
+    if (!genesisAccount0) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    // BlockService의 VM을 통해 직접 호출 (트랜잭션 없이)
+    const result = (await (
+      blockService as {
+        executeContractDirect: (
+          to: string,
+          data: string,
+          from: string,
+          value: bigint,
+          blockNumber: number,
+          timestamp: number,
+        ) => Promise<{
+          result: string;
+          logs: { address: string; topics: string[]; data: string }[];
+          gasUsed: bigint;
+        }>;
+      }
+    ).executeContractDirect(
+      stakingAddress,
+      data,
+      genesisAccount0.address,
+      0n, // value는 0
+      blockNumber,
+      timestamp,
+    )) as {
+      result: string;
+      logs: { address: string; topics: string[]; data: string }[];
+      gasUsed: bigint;
+    };
+
+    // 반환값 파싱 (uint256 processed)
+    let processed = 0;
+    if (result && result.result) {
+      const resultHex = result.result.startsWith('0x')
+        ? result.result.slice(2)
+        : result.result;
+      processed = parseInt(resultHex, 16);
+    }
+
+    // Withdrawn 이벤트 로그에서도 확인 (더 정확)
+    if (result && result.logs) {
+      const eventSignature = 'Withdrawn(address,address,uint256)';
+      const eventSignatureHash = keccak('keccak256')
+        .update(eventSignature)
+        .digest('hex');
+      const withdrawnEventSignature = `0x${eventSignatureHash}`;
+
+      const withdrawnCount = result.logs.filter(
+        (log: any) => log.topics && log.topics[0] === withdrawnEventSignature,
+      ).length;
+
+      // 이벤트 로그가 더 정확하므로 우선 사용
+      if (withdrawnCount > 0) {
+        processed = withdrawnCount;
+      }
+    }
+
+    if (processed > 0) {
+      this.logger.log(
+        `✅ Processed ${processed} withdrawal(s) directly via VM`,
+      );
+    }
+
+    return { processed };
+  }
+
+  /**
+   * 출금 처리 (트랜잭션 방식, API 호출용)
+   *
+   * @deprecated 블록 생성 시에는 processWithdrawalsDirect 사용
+   * API에서 수동 호출할 때만 사용
+   *
+   * @param maxProcess - 최대 처리할 출금 요청 수 (가스 제한 방지)
+   * @returns 처리된 출금 요청 수
+   */
+  async processWithdrawals(
+    maxProcess: number = 10,
+  ): Promise<{ hash: string; status: string; processed: number }> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    // processWithdrawals(uint256 maxProcess)
+    const data = this.contractService.encodeFunctionCall(
+      'processWithdrawals',
+      ['uint256'],
+      [`0x${BigInt(maxProcess).toString(16)}`],
+    );
+
+    // Genesis Account 0 (배포 계정)으로 실행
+    const genesisAccount0 = this.contractService.getGenesisAccount0();
+    if (!genesisAccount0 || !genesisAccount0.privateKey) {
+      throw new Error('Genesis account 0 is not loaded');
+    }
+
+    const result = await this.contractService.executeContractByUser(
+      stakingAddress,
+      data,
+      genesisAccount0.privateKey,
+      0n,
+    );
+
+    // 트랜잭션 상태 확인
+    this.logger.log(
+      `Processing withdrawals, waiting for transaction confirmation...`,
+    );
+    const success = await this.contractService.waitForTransaction(
+      result.hash,
+      30, // 최대 30번 재시도
+      2000, // 2초마다 체크
+    );
+
+    if (!success) {
+      this.logger.warn(
+        `Withdrawal processing transaction failed or not included: ${result.hash}`,
+      );
+      return {
+        ...result,
+        processed: 0,
+      };
+    }
+
+    this.logger.log(
+      `Withdrawal processing transaction succeeded: ${result.hash}`,
+    );
+
+    // Receipt에서 Withdrawn 이벤트를 파싱하여 processed 수 확인
+    // waitForTransaction이 true를 반환했다는 것은 이미 Receipt가 LevelDB에 저장되어 있다는 의미
+    let processed = 0;
+    try {
+      const receipt = await this.contractService.getTransactionReceipt(
+        result.hash,
+      );
+      if (receipt && receipt.logs) {
+        // Withdrawn 이벤트 시그니처: keccak256("Withdrawn(address,address,uint256)")
+        // topics[0] = 이벤트 시그니처 해시
+        // keccak256("Withdrawn(address,address,uint256)") 계산
+        const eventSignature = 'Withdrawn(address,address,uint256)';
+        const eventSignatureHash = keccak('keccak256')
+          .update(eventSignature)
+          .digest('hex');
+        const withdrawnEventSignature = `0x${eventSignatureHash}`;
+
+        // logs에서 Withdrawn 이벤트 개수 세기
+        processed = receipt.logs.filter(
+          (log) => log.topics && log.topics[0] === withdrawnEventSignature,
+        ).length;
+      } else if (receipt && !receipt.logs) {
+        // Receipt는 있지만 logs가 없는 경우 (출금 처리된 항목이 없음)
+        this.logger.debug(
+          `Receipt found but no logs (no withdrawals processed): ${result.hash}`,
+        );
+      } else {
+        // waitForTransaction이 성공했는데 Receipt가 없다는 것은 이상함
+        // 이 경우는 거의 발생하지 않지만, 혹시 모를 경우를 대비
+        this.logger.warn(
+          `Receipt not found for transaction: ${result.hash}. This should not happen after waitForTransaction succeeded.`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to parse withdrawal events from receipt: ${error.message}`,
+      );
+    }
+
+    if (processed > 0) {
+      this.logger.log(`✅ Processed ${processed} withdrawal(s)`);
+    }
+
+    return {
+      ...result,
+      processed,
+    };
+  }
+
+  /**
    * 서버 시작 시 자동 실행
    *
    * Genesis 계정 중 처음 90명을 StakingContract에 자동 등록합니다.
-   * 
+   *
    * KV DB 삭제 시나리오 고려:
    * - LevelDB를 지우고 재실행하면 모든 상태가 초기화됨
    * - StakingContract의 상태도 모두 초기화됨
    * - 따라서 모든 Validator를 다시 등록해야 함
    * - 이미 등록된 Validator는 스킵 (정상 운영 시)
-   * 
+   *
    * 동작:
    * 1. StakingContract 배포 확인
    * 2. Genesis Block 생성 완료 대기
-   * 3. Genesis Validator 자동 등록
+   * 3. Genesis Validator 자동 등록 (registerGenesisValidators만 비동기로 실행)
+   *
+   * 주의:
+   * - onApplicationBootstrap은 동기로 완료되지만, registerGenesisValidators는 백그라운드에서 실행
+   * - 다른 모듈의 onApplicationBootstrap은 정상적으로 동기 실행됨
+   * - Validator 등록은 서버 시작을 지연시키지 않음
    */
   async onApplicationBootstrap(): Promise<void> {
     // StakingContract가 배포되어 있는지 확인
@@ -661,16 +984,30 @@ export class StakingService implements OnApplicationBootstrap {
       return;
     }
 
-    // Genesis Block 생성 완료 대기 (최대 10초)
-    await this.waitForGenesisBlock(10000);
-
     try {
-      await this.registerGenesisValidators();
+      // Genesis Block 생성 완료 대기 (최대 10초)
+      await this.waitForGenesisBlock(10000);
+
+      // registerGenesisValidators만 비동기로 실행 (서버 시작을 막지 않음)
+      // setImmediate를 사용하여 현재 실행 컨텍스트가 완료된 후 실행
+      setImmediate(() => {
+        void (async () => {
+          try {
+            await this.registerGenesisValidators();
+          } catch (error) {
+            this.logger.error(
+              `Failed to register Genesis Validators: ${String(error)}`,
+            );
+            // 에러가 발생해도 서버는 계속 실행 (Validator 등록은 수동으로도 가능)
+          }
+        })();
+      });
+
+      // onApplicationBootstrap은 즉시 완료 (Promise 반환)
+      // registerGenesisValidators는 백그라운드에서 계속 실행됨
     } catch (error) {
-      this.logger.error(
-        `Failed to register Genesis Validators: ${error.message}`,
-      );
-      // 에러가 발생해도 서버는 계속 실행 (Validator 등록은 수동으로도 가능)
+      this.logger.error(`Failed to wait for Genesis Block: ${error.message}`);
+      // 에러가 발생해도 서버는 계속 실행
     }
   }
 
@@ -693,16 +1030,22 @@ export class StakingService implements OnApplicationBootstrap {
         const deployed = this.contractService.getDeployedContracts();
         if (deployed?.staking) {
           const stakingAddress = deployed.staking.address;
-          
+
           // MIN_STAKE 조회로 컨트랙트 접근 가능 여부 확인
-          const data = this.contractService.encodeFunctionCall('MIN_STAKE', [], []);
+          const data = this.contractService.encodeFunctionCall(
+            'MIN_STAKE',
+            [],
+            [],
+          );
           await this.contractService.callContract(stakingAddress, data);
-          
+
           // 성공하면 Genesis Block이 생성된 것
-          this.logger.debug('Genesis Block confirmed. Proceeding with Validator registration.');
+          this.logger.debug(
+            'Genesis Block confirmed. Proceeding with Validator registration.',
+          );
           return;
         }
-      } catch (error) {
+      } catch {
         // 아직 Genesis Block이 생성되지 않았거나, 컨트랙트 접근 불가
         await new Promise((resolve) => setTimeout(resolve, checkInterval));
         continue;
@@ -754,12 +1097,13 @@ export class StakingService implements OnApplicationBootstrap {
     for (const account of accountsToRegister) {
       try {
         // 이미 등록되어 있는지 확인
-        const validatorInfo = await this.getValidator(
-          account.address as Address,
-        );
+        const validatorInfo = await this.getValidator(account.address);
 
         // validatorAddress가 0x0000...이 아니면 이미 등록됨
-        if (validatorInfo.validatorAddress !== '0x0000000000000000000000000000000000000000') {
+        if (
+          validatorInfo.validatorAddress !==
+          '0x0000000000000000000000000000000000000000'
+        ) {
           this.logger.debug(
             `Validator ${account.address} is already registered. Skipping.`,
           );
@@ -768,9 +1112,7 @@ export class StakingService implements OnApplicationBootstrap {
         }
 
         // 계정 잔액 확인
-        const balance = await this.accountService.getBalance(
-          account.address as Address,
-        );
+        const balance = await this.accountService.getBalance(account.address);
         const minStakeWei = BigInt(MIN_STAKE) * WEI_PER_DSTN;
 
         if (balance < minStakeWei) {
@@ -795,12 +1137,8 @@ export class StakingService implements OnApplicationBootstrap {
         await this.waitForTransactionConfirmation(depositResult.hash, 30000);
 
         // activateValidator() 호출
-        this.logger.debug(
-          `Activating validator ${account.address}...`,
-        );
-        const activateResult = await this.activateValidator(
-          account.address as Address,
-        );
+        this.logger.debug(`Activating validator ${account.address}...`);
+        const activateResult = await this.activateValidator(account.address);
 
         // 활성화 트랜잭션 완료 대기
         await this.waitForTransactionConfirmation(activateResult.hash, 30000);
@@ -849,7 +1187,7 @@ export class StakingService implements OnApplicationBootstrap {
         // TransactionService를 통해 트랜잭션 확인
         // 간단히 블록 생성 대기 (실제로는 트랜잭션 Receipt 확인 필요)
         await new Promise((resolve) => setTimeout(resolve, checkInterval));
-        
+
         // TODO: 실제 트랜잭션 Receipt 확인 로직 추가
         // 현재는 블록 생성 시간(12초)을 고려하여 대기
         return;
@@ -885,4 +1223,3 @@ export class StakingService implements OnApplicationBootstrap {
     return null;
   }
 }
-

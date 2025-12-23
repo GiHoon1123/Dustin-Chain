@@ -11,6 +11,7 @@ import {
 } from '@ethereumjs/block';
 import { createMPT } from '@ethereumjs/mpt';
 import { createLegacyTx, createTxFromRLP } from '@ethereumjs/tx';
+import { Address as EthAddress } from '@ethereumjs/util';
 import { createVM, runTx, VM } from '@ethereumjs/vm';
 // NOTE: @ethereumjs/tx v10에는 TransactionFactory가 없어 임시로 미사용 처리
 import {
@@ -255,6 +256,8 @@ export class BlockService implements OnApplicationBootstrap {
     //   `Initialized ${addresses.length} genesis accounts from genesis.json`,
     // );
 
+    // ⚠️ 중요: Solidity의 block.timestamp는 초 단위이므로 밀리초를 초로 변환
+    // 하지만 Block Entity는 밀리초를 저장하므로 Date.now() 사용
     const timestamp = Date.now();
     const parentHash = '0x' + '0'.repeat(64);
 
@@ -351,6 +354,8 @@ export class BlockService implements OnApplicationBootstrap {
 
     const blockNumber = latestBlock.number + 1;
     const parentHash = latestBlock.hash;
+    // ⚠️ 중요: Solidity의 block.timestamp는 초 단위이므로 밀리초를 초로 변환
+    // 하지만 Block Entity는 밀리초를 저장하므로 Date.now() 사용
     const timestamp = Date.now();
 
     // 2. StateManager가 최신 블록의 stateRoot를 사용하도록 설정
@@ -551,6 +556,160 @@ export class BlockService implements OnApplicationBootstrap {
     }
 
     this.logger.log(`Block #${block.number} saved: ${block.hash}`);
+  }
+
+  /**
+   * 컨트랙트 함수를 VM을 통해 직접 호출 (트랜잭션 없이)
+   *
+   * 이더리움:
+   * - Beacon Chain이 Execution Layer로 출금 정보 전달
+   * - Execution Layer가 블록 생성 시 자동 처리 (트랜잭션 없이)
+   *
+   * 우리:
+   * - VM을 통해 processWithdrawals() 직접 호출
+   * - 트랜잭션 풀을 거치지 않음
+   * - 블록 생성 시 자동 처리
+   *
+   * @param to - 컨트랙트 주소
+   * @param data - 함수 선택자 + 파라미터 (ABI 인코딩)
+   * @param from - 호출자 주소
+   * @param value - 전송할 금액 (Wei)
+   * @param blockNumber - 현재 블록 번호
+   * @param timestamp - 현재 블록 타임스탬프 (밀리초)
+   * @returns 실행 결과 (반환값, 로그, 가스 사용량)
+   */
+  async executeContractDirect(
+    to: Address,
+    data: string,
+    from: Address,
+    value: bigint,
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<{
+    result: string;
+    logs: { address: Address; topics: Hash[]; data: string }[];
+    gasUsed: bigint;
+  }> {
+    if (!this.vm) {
+      throw new Error('VM is not initialized');
+    }
+
+    // data를 Buffer로 변환
+    const dataHex = data.startsWith('0x') ? data.slice(2) : data;
+    const dataBuffer = Buffer.from(dataHex, 'hex');
+    const dataBytes = new Uint8Array(dataBuffer);
+
+    // 주소를 Buffer로 변환
+    const toBytes = this.cryptoService.hexToBytes(to);
+    const fromBytes = this.cryptoService.hexToBytes(from);
+    const toBuffer = Buffer.from(toBytes);
+    const fromBuffer = Buffer.from(fromBytes);
+    const toEthAddress = new EthAddress(new Uint8Array(toBuffer));
+    const fromEthAddress = new EthAddress(new Uint8Array(fromBuffer));
+
+    // 트랜잭션 객체 생성 (서명 없이, 직접 호출용)
+    // nonce는 계정의 현재 nonce 사용
+    const accountNonce = await this.accountService.getNonce(from);
+    const gasPrice = 1000000000n; // 1 Gwei
+    const gasLimit = 10000000n; // 충분한 가스 한도
+
+    const txForVM = createLegacyTx(
+      {
+        nonce: BigInt(accountNonce),
+        gasPrice,
+        gasLimit,
+        to: toEthAddress,
+        value,
+        data: dataBytes,
+        v: BigInt(CHAIN_ID * 2 + 35), // EIP-155 (서명 없이도 v 값 필요)
+        r: Buffer.alloc(32, 0), // 서명 없음
+        s: Buffer.alloc(32, 0), // 서명 없음
+      },
+      { common: this.common },
+    );
+
+    // Block Header 생성
+    const blockHeader = new EthereumBlockHeader(
+      {
+        number: BigInt(blockNumber),
+        gasLimit: 30000000n,
+        timestamp: BigInt(Math.floor(timestamp / 1000)), // 초 단위
+        parentHash: Buffer.alloc(32, 0),
+        stateRoot: Buffer.alloc(32, 0),
+        transactionsTrie: Buffer.alloc(32, 0),
+        receiptTrie: Buffer.alloc(32, 0),
+        logsBloom: Buffer.alloc(256, 0),
+        difficulty: 0n,
+        extraData: Buffer.alloc(0),
+        gasUsed: 0n,
+        mixHash: Buffer.alloc(32, 0),
+        nonce: Buffer.alloc(8, 0),
+      },
+      { common: this.common },
+    );
+
+    const vmBlock = new EthereumBlock(
+      blockHeader,
+      [],
+      [],
+      undefined,
+      { common: this.common },
+    );
+
+    // VM을 통해 직접 실행
+    const result = await runTx(this.vm, {
+      tx: txForVM,
+      block: vmBlock,
+    });
+
+    // 실행 결과 파싱
+    const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+    if (status === 0) {
+      const error = result.execResult.exceptionError;
+      throw new Error(
+        `Contract execution failed: ${error?.error?.toString() || 'Unknown error'}`,
+      );
+    }
+
+    // 반환값 추출
+    const returnValue = result.execResult.returnValue || new Uint8Array();
+    const resultHex = this.cryptoService.bytesToHex(returnValue);
+
+    // 로그 추출
+    const logs: { address: Address; topics: Hash[]; data: string }[] = [];
+    if (result.execResult.logs) {
+      for (const log of result.execResult.logs) {
+        const logAddress = this.cryptoService.bytesToHex(
+          Buffer.from(log[0] as Uint8Array),
+        );
+        const logTopics = (log[1] as Uint8Array[]).map((topic) =>
+          this.cryptoService.bytesToHex(Buffer.from(topic)),
+        );
+        const logData = this.cryptoService.bytesToHex(
+          Buffer.from(log[2] as Uint8Array),
+        );
+        logs.push({
+          address: logAddress,
+          topics: logTopics,
+          data: logData,
+        });
+      }
+    }
+
+    // 가스 사용량 추출
+    const gasUsed =
+      result.execResult.executionGasUsed !== undefined
+        ? result.execResult.executionGasUsed
+        : 0n;
+
+    // nonce 증가 (실제 트랜잭션이 아니지만 상태 변경이 일어났으므로)
+    await this.accountService.incrementNonce(from);
+
+    return {
+      result: resultHex,
+      logs,
+      gasUsed,
+    };
   }
 
   /**
@@ -854,7 +1013,8 @@ export class BlockService implements OnApplicationBootstrap {
           {
             number: BigInt(blockNumber),
             gasLimit: 30000000n,
-            timestamp: BigInt(timestamp),
+            // ⚠️ 중요: Solidity의 block.timestamp는 초 단위이므로 밀리초를 초로 변환
+            timestamp: BigInt(Math.floor(timestamp / 1000)),
             // 기본값들 추가 (runTx가 요구하는 필수 필드)
             parentHash: Buffer.alloc(32, 0), // 임시값 (실제 값은 나중에 계산됨)
             stateRoot: Buffer.alloc(32, 0), // 임시값

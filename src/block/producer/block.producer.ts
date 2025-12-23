@@ -61,6 +61,18 @@ export class BlockProducer implements OnApplicationBootstrap {
    */
   private lastStakingValidatorUpdate: number = -1;
 
+  /**
+   * 마지막으로 Epoch 보상을 지급한 Epoch 번호
+   * 중복 지급 방지용
+   */
+  private lastDistributedEpoch: number = -1;
+
+  /**
+   * 마지막으로 출금 처리를 수행한 블록 번호
+   * 너무 자주 호출하지 않도록 제한
+   */
+  private lastWithdrawalProcessBlock: number = -1;
+
   constructor(
     private readonly blockService: BlockService,
     private readonly validatorService: ValidatorService,
@@ -247,6 +259,12 @@ export class BlockProducer implements OnApplicationBootstrap {
 
         // 보상 분배
         await this.distributeRewards(proposer, attestations, block.number);
+
+        // 자동화: Epoch 보상 일괄 지급 (Epoch 완료 시)
+        await this.processEpochRewards(block.number);
+
+        // 자동화: 출금 처리 (주기적으로)
+        await this.processWithdrawals(block.number);
 
         // this.logger.log(
         //   `Block #${block.number} Justified & Saved: ${block.hash.slice(0, 10)}... (${block.getTransactionCount()} txs, ${attestations.length}/${committee.length} attestations)`,
@@ -550,6 +568,101 @@ export class BlockProducer implements OnApplicationBootstrap {
     // 총 보상
     // const totalReward = PROPOSER_REWARD + COMMITTEE_REWARD_POOL;
     // this.logger.debug(`Total block reward: ${totalReward} DSTN distributed`);
+  }
+
+  /**
+   * Epoch 보상 일괄 지급 처리 (자동화)
+   *
+   * 이더리움:
+   * - Epoch 완료 시 모든 Committee 보상을 일괄 지급
+   * - Beacon Chain이 자동으로 호출
+   *
+   * 우리:
+   * - 동일하게 구현
+   * - Epoch가 끝날 때마다 이전 Epoch의 보상을 일괄 지급
+   *
+   * @param blockNumber - 현재 블록 번호
+   */
+  private async processEpochRewards(blockNumber: number): Promise<void> {
+    const currentEpoch = this.getCurrentEpoch(blockNumber);
+    const previousEpoch = currentEpoch - 1;
+
+    // 이전 Epoch가 있고, 아직 지급하지 않았으면 지급
+    if (previousEpoch >= 0 && previousEpoch > this.lastDistributedEpoch) {
+      try {
+        // 활성 Validator 목록 조회
+        const activeValidators =
+          await this.stakingService.getActiveValidators();
+        const validatorAddresses = activeValidators.map(
+          (v) => v.validatorAddress,
+        );
+
+        if (validatorAddresses.length > 0) {
+          this.logger.debug(
+            `Distributing Epoch ${previousEpoch} rewards to ${validatorAddresses.length} validators...`,
+          );
+
+          await this.stakingService.distributeEpochRewards(
+            previousEpoch,
+            validatorAddresses,
+          );
+
+          this.lastDistributedEpoch = previousEpoch;
+          this.logger.log(
+            `✅ Epoch ${previousEpoch} rewards distributed to ${validatorAddresses.length} validators`,
+          );
+        }
+      } catch (error) {
+        this.logger.error(
+          `Failed to distribute Epoch ${previousEpoch} rewards: ${error.message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * 출금 처리 (자동화)
+   *
+   * 이더리움:
+   * - Beacon Chain이 주기적으로 Withdrawal Queue를 처리
+   * - 대기 시간 경과한 Validator의 자산을 자동 전송
+   *
+   * 우리:
+   * - 동일하게 구현
+   * - 블록 생성 시마다 체크하되, 너무 자주 호출하지 않도록 제한
+   *
+   * @param blockNumber - 현재 블록 번호
+   */
+  private async processWithdrawals(blockNumber: number): Promise<void> {
+    // 10블록마다 한 번씩만 처리 (가스 절약 및 성능 최적화)
+    if (
+      this.lastWithdrawalProcessBlock !== -1 &&
+      blockNumber - this.lastWithdrawalProcessBlock < 10
+    ) {
+      return;
+    }
+
+    try {
+      // 최대 10개씩 처리 (가스 제한 방지)
+      // VM을 통해 직접 호출 (트랜잭션 없이)
+      const result = await this.stakingService.processWithdrawalsDirect(
+        10,
+        this.blockService,
+        blockNumber,
+        Date.now(), // 타임스탬프 (밀리초)
+      );
+
+      if (result.processed > 0) {
+        this.logger.log(
+          `✅ Processed ${result.processed} withdrawal(s) directly via VM`,
+        );
+      }
+
+      this.lastWithdrawalProcessBlock = blockNumber;
+    } catch (error) {
+      // 에러가 발생해도 블록 생성은 계속 진행
+      this.logger.error(`Failed to process withdrawals: ${error.message}`);
+    }
   }
 
   /**

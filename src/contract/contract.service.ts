@@ -734,15 +734,61 @@ export class ContractService implements OnApplicationBootstrap {
     const selector = this.getFunctionSelector(functionName, paramTypes);
     const selectorHex = selector.slice(2); // "0x" 제거
 
-    // 파라미터 인코딩
-    const encodedParams = paramTypes.map((type, index) =>
-      this.encodeParameter(type, paramValues[index]),
-    );
+    // 파라미터 인코딩 (동적 타입 처리)
+    const encodedParams: string[] = [];
+    const dynamicData: string[] = [];
+    let dynamicOffset = paramTypes.length * 32; // 기본 파라미터들이 차지하는 바이트 수
 
-    // 함수 선택자 + 인코딩된 파라미터들 결합
-    const data = '0x' + selectorHex + encodedParams.join('');
+    for (let i = 0; i < paramTypes.length; i++) {
+      const type = paramTypes[i];
+      const value = paramValues[i];
+
+      if (type.endsWith('[]')) {
+        // 동적 타입 (배열): offset 저장
+        const offsetHex = dynamicOffset.toString(16).padStart(64, '0');
+        encodedParams.push(offsetHex);
+
+        // 배열 데이터는 dynamicData에 추가
+        const baseType = type.slice(0, -2); // "address[]" -> "address"
+        const arrayData = this.encodeArray(baseType, value);
+        dynamicData.push(arrayData);
+        dynamicOffset += arrayData.length / 2; // hex string이므로 /2
+      } else {
+        // 정적 타입: 직접 인코딩
+        encodedParams.push(this.encodeParameter(type, value));
+      }
+    }
+
+    // 함수 선택자 + 정적 파라미터들 + 동적 데이터 결합
+    const data =
+      '0x' + selectorHex + encodedParams.join('') + dynamicData.join('');
 
     return data;
+  }
+
+  /**
+   * 배열 타입 인코딩
+   *
+   * ABI 인코딩 규칙:
+   * - length (32바이트): 배열 길이
+   * - 각 요소들 (각 32바이트)
+   *
+   * @param baseType - 기본 타입 (예: "address", "uint256")
+   * @param values - 배열 값
+   * @returns 인코딩된 배열 데이터 (hex string, "0x" 접두사 없음)
+   */
+  private encodeArray(baseType: string, values: any[]): string {
+    if (!Array.isArray(values)) {
+      throw new Error(`Expected array but got ${typeof values}`);
+    }
+
+    // 배열 길이 (32바이트)
+    const lengthHex = values.length.toString(16).padStart(64, '0');
+
+    // 각 요소 인코딩
+    const elements = values.map((value) => this.encodeParameter(baseType, value));
+
+    return lengthHex + elements.join('');
   }
 
   /**
@@ -753,7 +799,7 @@ export class ContractService implements OnApplicationBootstrap {
    * @param delayMs - 재시도 간격 (기본값: 3000ms)
    * @returns 트랜잭션이 블록에 포함되었는지 여부
    */
-  private async waitForTransaction(
+  async waitForTransaction(
     txHash: string,
     maxRetries: number = 20,
     delayMs: number = 3000,
@@ -822,6 +868,20 @@ export class ContractService implements OnApplicationBootstrap {
       `Failed to get contract address for deployment tx: ${txHash}`,
     );
     return null;
+  }
+
+  /**
+   * 트랜잭션 Receipt 조회 (public 메서드)
+   *
+   * StakingService 등에서 이벤트 로그를 파싱하기 위해 사용
+   *
+   * @param txHash - 트랜잭션 해시
+   * @returns TransactionReceipt 또는 null
+   */
+  async getTransactionReceipt(
+    txHash: string,
+  ): Promise<any | null> {
+    return await this.transactionService.getReceipt(txHash);
   }
 
   /**
