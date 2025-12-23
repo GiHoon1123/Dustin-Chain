@@ -5,6 +5,8 @@ import { BlockProducer } from '../../../src/block/producer/block.producer';
 import { ConsensusService } from '../../../src/consensus/consensus.service';
 import { StateManager } from '../../../src/state/state-manager';
 import { ValidatorService } from '../../../src/validator/validator.service';
+import { StakingService } from '../../../src/staking/staking.service';
+import { CryptoService } from '../../../src/common/crypto/crypto.service';
 import { Block } from '../../../src/block/entities/block.entity';
 import { EMPTY_ROOT } from '../../../src/common/constants/blockchain.constants';
 import { Attestation } from '../../../src/consensus/entities/attestation.entity';
@@ -24,6 +26,7 @@ describe('BlockProducer', () => {
   let consensusService: jest.Mocked<ConsensusService>;
   let accountService: jest.Mocked<AccountService>;
   let stateManager: jest.Mocked<StateManager>;
+  let stakingService: jest.Mocked<StakingService>;
 
   beforeEach(async () => {
     const mockBlockService = {
@@ -53,6 +56,19 @@ describe('BlockProducer', () => {
       rollbackBlock: jest.fn().mockResolvedValue(undefined),
     } as any;
 
+    const mockStakingService = {
+      processWithdrawalsDirect: jest.fn().mockResolvedValue({ processed: 0 }),
+      getActiveValidators: jest.fn().mockResolvedValue([]),
+      rewardProposer: jest.fn().mockResolvedValue(undefined),
+      accumulateCommitteeReward: jest.fn().mockResolvedValue(undefined),
+      distributeEpochRewards: jest.fn().mockResolvedValue(undefined),
+    } as any;
+
+    const mockCryptoService = {
+      hashUtf8: jest.fn(),
+      bytesToHex: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         {
@@ -75,6 +91,14 @@ describe('BlockProducer', () => {
           provide: StateManager,
           useValue: mockStateManager,
         },
+        {
+          provide: StakingService,
+          useValue: mockStakingService,
+        },
+        {
+          provide: CryptoService,
+          useValue: mockCryptoService,
+        },
         BlockProducer,
       ],
     }).compile();
@@ -85,12 +109,19 @@ describe('BlockProducer', () => {
     consensusService = module.get(ConsensusService);
     accountService = module.get(AccountService);
     stateManager = module.get(StateManager);
+    stakingService = module.get(StakingService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
     jest.clearAllTimers();
-    producer.stop();
+    if (producer) {
+      try {
+        producer.stop();
+      } catch (e) {
+        // 이미 중지되었거나 초기화되지 않은 경우 무시
+      }
+    }
   });
 
   describe('시작/중지', () => {
@@ -198,6 +229,19 @@ describe('BlockProducer', () => {
       });
 
       (producer as any).genesisTime = genesisTime;
+      // StakingService의 getActiveValidators 모킹 (selectProposer에서 사용)
+      stakingService.getActiveValidators.mockResolvedValue([
+        {
+          validatorAddress: proposer,
+          status: 'active_ongoing',
+          stakedAmount: '0x1bc16d674ec8000000',
+          withdrawalAddress: '0x' + '0'.repeat(40),
+          activatedAt: '0',
+          exitRequestedAt: '0',
+          totalRewards: '0x0',
+          slashedAmount: '0x0',
+        },
+      ]);
       validatorService.selectProposer.mockResolvedValue(proposer);
       validatorService.selectCommittee.mockResolvedValue(committee);
       blockService.createBlock.mockResolvedValue(block);
@@ -205,6 +249,14 @@ describe('BlockProducer', () => {
       consensusService.hasSupermajority.mockReturnValue(true);
       blockService.saveBlock.mockResolvedValue(undefined);
       accountService.addBalance.mockResolvedValue(undefined);
+      stakingService.rewardProposer.mockResolvedValue(undefined);
+      stakingService.accumulateCommitteeReward.mockResolvedValue(undefined);
+      stakingService.distributeEpochRewards.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+        totalDistributed: 0n,
+      });
+      stakingService.processWithdrawalsDirect.mockResolvedValue({ processed: 0 });
 
       await (producer as any).produceBlock();
 
@@ -241,11 +293,32 @@ describe('BlockProducer', () => {
       });
 
       (producer as any).genesisTime = genesisTime;
+      // StakingService의 getActiveValidators 모킹 (selectProposer에서 사용)
+      stakingService.getActiveValidators.mockResolvedValue([
+        {
+          validatorAddress: proposer,
+          status: 'active_ongoing',
+          stakedAmount: '0x1bc16d674ec8000000',
+          withdrawalAddress: '0x' + '0'.repeat(40),
+          activatedAt: '0',
+          exitRequestedAt: '0',
+          totalRewards: '0x0',
+          slashedAmount: '0x0',
+        },
+      ]);
       validatorService.selectProposer.mockResolvedValue(proposer);
       validatorService.selectCommittee.mockResolvedValue(committee);
       blockService.createBlock.mockResolvedValue(block);
       consensusService.collectAttestations.mockResolvedValue(attestations);
       consensusService.hasSupermajority.mockReturnValue(false);
+      stakingService.rewardProposer.mockResolvedValue(undefined);
+      stakingService.accumulateCommitteeReward.mockResolvedValue(undefined);
+      stakingService.distributeEpochRewards.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+        totalDistributed: 0n,
+      });
+      stakingService.processWithdrawalsDirect.mockResolvedValue({ processed: 0 });
 
       await (producer as any).produceBlock();
 
@@ -264,7 +337,21 @@ describe('BlockProducer', () => {
     it('블록 생성 중 에러 발생 시 롤백해야 함', async () => {
       const genesisTime = Date.now();
       (producer as any).genesisTime = genesisTime;
-
+      const proposer = '0x' + '1'.repeat(40);
+      
+      // StakingService의 getActiveValidators 모킹
+      stakingService.getActiveValidators.mockResolvedValue([
+        {
+          validatorAddress: proposer,
+          status: 'active_ongoing',
+          stakedAmount: '0x1bc16d674ec8000000',
+          withdrawalAddress: '0x' + '0'.repeat(40),
+          activatedAt: '0',
+          exitRequestedAt: '0',
+          totalRewards: '0x0',
+          slashedAmount: '0x0',
+        },
+      ]);
       validatorService.selectProposer.mockRejectedValue(
         new Error('Test error'),
       );
@@ -277,7 +364,21 @@ describe('BlockProducer', () => {
     it('롤백 실패 시에도 에러를 로깅해야 함', async () => {
       const genesisTime = Date.now();
       (producer as any).genesisTime = genesisTime;
-
+      const proposer = '0x' + '1'.repeat(40);
+      
+      // StakingService의 getActiveValidators 모킹
+      stakingService.getActiveValidators.mockResolvedValue([
+        {
+          validatorAddress: proposer,
+          status: 'active_ongoing',
+          stakedAmount: '0x1bc16d674ec8000000',
+          withdrawalAddress: '0x' + '0'.repeat(40),
+          activatedAt: '0',
+          exitRequestedAt: '0',
+          totalRewards: '0x0',
+          slashedAmount: '0x0',
+        },
+      ]);
       validatorService.selectProposer.mockRejectedValue(
         new Error('Test error'),
       );
@@ -285,7 +386,8 @@ describe('BlockProducer', () => {
         new Error('Rollback failed'),
       );
 
-      await (producer as any).produceBlock();
+      // 에러가 발생해도 테스트는 통과해야 함 (에러 처리 확인)
+      await expect((producer as any).produceBlock()).resolves.not.toThrow();
 
       // 롤백이 시도되었는지 확인
       expect(stateManager.rollbackBlock).toHaveBeenCalled();
