@@ -251,6 +251,7 @@ describe('Block Entity', () => {
         stateRoot: EMPTY_ROOT,
         transactionsRoot: EMPTY_ROOT,
         receiptsRoot: EMPTY_ROOT,
+        logsBloom: '0x' + '0'.repeat(512),
       };
 
       const body = {

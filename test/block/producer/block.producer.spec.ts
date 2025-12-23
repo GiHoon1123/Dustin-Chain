@@ -399,7 +399,8 @@ describe('BlockProducer', () => {
       );
 
       // 에러가 발생해도 테스트는 통과해야 함 (에러 처리 확인)
-      await expect((producer as any).produceBlock()).resolves.not.toThrow();
+      // produceBlock은 내부적으로 에러를 catch하므로 reject되지 않음
+      await (producer as any).produceBlock();
 
       // 롤백이 시도되었는지 확인
       expect(stateManager.rollbackBlock).toHaveBeenCalled();

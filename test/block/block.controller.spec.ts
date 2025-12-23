@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BlockController } from '../../src/block/block.controller';
 import { BlockService } from '../../src/block/block.service';
 import { BlockProducer } from '../../src/block/producer/block.producer';
+import { TransactionService } from '../../src/transaction/transaction.service';
 import { Block } from '../../src/block/entities/block.entity';
 import { EMPTY_ROOT } from '../../src/common/constants/blockchain.constants';
 
@@ -28,6 +29,10 @@ describe('BlockController', () => {
       stop: jest.fn(),
     } as any;
 
+    const mockTransactionService = {
+      getLogs: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BlockController],
       providers: [
@@ -38,6 +43,10 @@ describe('BlockController', () => {
         {
           provide: BlockProducer,
           useValue: mockBlockProducer,
+        },
+        {
+          provide: TransactionService,
+          useValue: mockTransactionService,
         },
       ],
     }).compile();
