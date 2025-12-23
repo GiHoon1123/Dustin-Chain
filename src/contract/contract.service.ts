@@ -7,7 +7,12 @@ import {
 } from '@ethereumjs/common';
 import { Address as EthAddress } from '@ethereumjs/util';
 import { createVM, VM } from '@ethereumjs/vm';
-import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import * as fs from 'fs';
 import * as keccak from 'keccak';
 import * as path from 'path';
@@ -15,8 +20,8 @@ import { AccountService } from '../account/account.service';
 import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address } from '../common/types/common.types';
-import { IBlockRepository } from '../storage/repositories/block.repository.interface';
 import { CustomStateManager } from '../state/custom-state-manager';
+import { IBlockRepository } from '../storage/repositories/block.repository.interface';
 import { TransactionService } from '../transaction/transaction.service';
 
 interface GenesisAccount {
@@ -42,6 +47,7 @@ export class ContractService implements OnApplicationBootstrap {
   private readonly common: Common;
 
   private genesisAccount0: GenesisAccount | null = null;
+  private deploymentAccount: GenesisAccount | null = null; // 255번 계정 (컨트랙트 배포 전용)
   private deploymentAccounts: GenesisAccount[] = []; // 0-100번 계정 (컨트랙트 배포용)
 
   constructor(
@@ -89,6 +95,8 @@ export class ContractService implements OnApplicationBootstrap {
 
     // 제네시스 계정 0번 로드 (쓰기 작업용)
     this.loadGenesisAccount0();
+    // 제네시스 계정 255번 로드 (컨트랙트 배포 전용)
+    this.loadDeploymentAccount();
     // 0-100번 계정 로드 (컨트랙트 배포용)
     this.loadDeploymentAccounts();
   }
@@ -141,6 +149,38 @@ export class ContractService implements OnApplicationBootstrap {
    */
   getGenesisAccount0(): GenesisAccount | null {
     return this.genesisAccount0;
+  }
+
+  /**
+   * 배포 전용 계정 로드 (Genesis Account 255)
+   */
+  private loadDeploymentAccount(): void {
+    try {
+      const accountsPath = this.findAccountsFile();
+      if (!accountsPath) {
+        this.logger.warn('genesis-accounts.json not found');
+        return;
+      }
+
+      const fileContent = fs.readFileSync(accountsPath, 'utf8');
+      const allAccounts: GenesisAccount[] = JSON.parse(fileContent);
+
+      const account255 = allAccounts.find((acc) => acc.index === 255);
+
+      if (!account255) {
+        this.logger.warn('Genesis account 255 not found');
+        return;
+      }
+
+      this.deploymentAccount = account255;
+      this.logger.log(
+        `Deployment account (255) loaded: ${account255.address.slice(0, 10)}...`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to load deployment account (255): ${error.message}`,
+      );
+    }
   }
 
   /**
@@ -556,13 +596,13 @@ export class ContractService implements OnApplicationBootstrap {
     abi?: any[],
     constructorParams?: { types: string[]; values: any[] },
   ): Promise<{ hash: string; status: string; address?: string }> {
-    if (!this.genesisAccount0) {
-      throw new Error('Genesis account 0 is not loaded');
+    if (!this.deploymentAccount) {
+      throw new Error('Deployment account (255) is not loaded');
     }
 
     try {
-      // 계정 0번으로 고정 (컨트랙트 쓰기 호출 시 동일 계정 사용)
-      const deployerAccount = this.genesisAccount0;
+      // 계정 255번 사용 (컨트랙트 배포 전용)
+      const deployerAccount = this.deploymentAccount;
 
       // 생성자 파라미터 인코딩 (있는 경우)
       let deploymentData = bytecode;
@@ -601,7 +641,7 @@ export class ContractService implements OnApplicationBootstrap {
       );
 
       this.logger.log(
-        `Contract deployment transaction submitted: ${submittedTx.hash} (from: account #${deployerAccount.index}, ${deployerAccount.address.slice(0, 10)}...)`,
+        `Contract deployment transaction submitted: ${submittedTx.hash} (from: deployment account #${deployerAccount.index}, ${deployerAccount.address.slice(0, 10)}...)`,
       );
 
       // ABI가 제공되었고 컨트랙트 이름이 있으면, 주소를 계산하여 저장
@@ -786,7 +826,9 @@ export class ContractService implements OnApplicationBootstrap {
     const lengthHex = values.length.toString(16).padStart(64, '0');
 
     // 각 요소 인코딩
-    const elements = values.map((value) => this.encodeParameter(baseType, value));
+    const elements = values.map((value) =>
+      this.encodeParameter(baseType, value),
+    );
 
     return lengthHex + elements.join('');
   }
@@ -878,9 +920,7 @@ export class ContractService implements OnApplicationBootstrap {
    * @param txHash - 트랜잭션 해시
    * @returns TransactionReceipt 또는 null
    */
-  async getTransactionReceipt(
-    txHash: string,
-  ): Promise<any | null> {
+  async getTransactionReceipt(txHash: string): Promise<any | null> {
     return await this.transactionService.getReceipt(txHash);
   }
 
