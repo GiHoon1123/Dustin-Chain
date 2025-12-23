@@ -65,7 +65,7 @@ describe('BlockProducer', () => {
     } as any;
 
     const mockCryptoService = {
-      hashUtf8: jest.fn(),
+      hashUtf8: jest.fn().mockReturnValue('0x' + 'a'.repeat(64)), // 최소 18자리 hex 문자열 반환
       bytesToHex: jest.fn(),
     } as any;
 
@@ -394,9 +394,11 @@ describe('BlockProducer', () => {
       validatorService.selectProposer.mockRejectedValue(
         new Error('Test error'),
       );
-      (stateManager.rollbackBlock as any).mockRejectedValue(
-        new Error('Rollback failed'),
-      );
+      
+      // rollbackBlock이 실패하더라도 produceBlock은 에러를 catch하고 로깅함
+      (stateManager.rollbackBlock as any).mockImplementation(() => {
+        throw new Error('Rollback failed');
+      });
 
       // 에러가 발생해도 테스트는 통과해야 함 (에러 처리 확인)
       // produceBlock은 내부적으로 에러를 catch하므로 reject되지 않음
@@ -410,6 +412,7 @@ describe('BlockProducer', () => {
   describe('보상 분배 (Private 메서드)', () => {
     it('보상을 분배해야 함', async () => {
       const proposer = '0x' + '1'.repeat(40);
+      const blockNumber = 1;
       const attestations = Array.from({ length: 90 }, (_, i) => {
         return new Attestation(
           0,
@@ -419,11 +422,21 @@ describe('BlockProducer', () => {
         );
       });
 
-      accountService.addBalance.mockResolvedValue(undefined);
+      stakingService.rewardProposer.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+      });
+      stakingService.accumulateCommitteeReward.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+      });
 
-      await (producer as any).distributeRewards(proposer, attestations);
+      await (producer as any).distributeRewards(proposer, attestations, blockNumber);
 
-      expect(accountService.addBalance).toHaveBeenCalled();
+      // Proposer 보상 지급 확인
+      expect(stakingService.rewardProposer).toHaveBeenCalled();
+      // Committee 보상 누적 확인
+      expect(stakingService.accumulateCommitteeReward).toHaveBeenCalled();
     });
   });
 });
