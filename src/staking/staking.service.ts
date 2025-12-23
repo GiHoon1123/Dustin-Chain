@@ -1,10 +1,4 @@
-import {
-  forwardRef,
-  Inject,
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-} from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as fs from 'fs';
 import * as keccak from 'keccak';
 import * as path from 'path';
@@ -62,7 +56,6 @@ export class StakingService implements OnApplicationBootstrap {
   private readonly logger = new Logger(StakingService.name);
 
   constructor(
-    @Inject(forwardRef(() => ContractService))
     private readonly contractService: ContractService,
     private readonly accountService: AccountService,
   ) {}
@@ -1060,12 +1053,17 @@ export class StakingService implements OnApplicationBootstrap {
         timestamp,
       )) as {
         result: string;
+        status: 1 | 0;
         logs: { address: string; topics: string[]; data: string }[];
         gasUsed: bigint;
       };
 
-      if (!depositResult || depositResult.result === '0x') {
-        throw new Error('Deposit failed: Invalid result');
+      // deposit()은 payable 함수이므로 반환값이 없을 수 있음 (result가 '0x'여도 정상)
+      // status가 1이면 성공, 0이면 실패
+      if (!depositResult || depositResult.status === 0) {
+        throw new Error(
+          `Deposit failed: status=${depositResult?.status}, result=${depositResult?.result}`,
+        );
       }
 
       // activateValidator() 호출
@@ -1140,12 +1138,17 @@ export class StakingService implements OnApplicationBootstrap {
       timestamp,
     )) as {
       result: string;
+      status: 1 | 0;
       logs: { address: string; topics: string[]; data: string }[];
       gasUsed: bigint;
     };
 
-    if (!activateResult || activateResult.result === '0x') {
-      throw new Error('Activation failed: Invalid result');
+    // activateValidator()도 반환값이 없을 수 있음 (result가 '0x'여도 정상)
+    // status가 1이면 성공, 0이면 실패
+    if (!activateResult || activateResult.status === 0) {
+      throw new Error(
+        `Activation failed: status=${activateResult?.status}, result=${activateResult?.result}`,
+      );
     }
 
     return true;

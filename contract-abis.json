@@ -13,7 +13,7 @@
       ]
     },
     {
-      "address": "0xd7b42be5d24dcb0390f85baf7797a37a7a53f0c9",
+      "address": "0x7d409f8a92b611261dbb642ba29c730dc4e15d3b",
       "name": "StakingContract",
       "abi": [
         {
@@ -653,7 +653,7 @@
       ]
     },
     {
-      "address": "0x5f5319c5b143569d510c07b52d0c1884cadf585d",
+      "address": "0x7f781d80726d19ff84e20045fcad11675901bfc0",
       "name": "StableCoin",
       "abi": [
         {
@@ -1005,7 +1005,7 @@
       ]
     },
     {
-      "address": "0x87146f7d3a0a026cfe9638ff8e945f8ab9fa8e41",
+      "address": "0x36adecd789a95d87a23baae652d6e0d614f57c4f",
       "name": "CollateralVault",
       "abi": [
         {

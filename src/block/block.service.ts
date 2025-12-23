@@ -132,7 +132,7 @@ export class BlockService implements OnApplicationBootstrap {
    */
   async onApplicationBootstrap(): Promise<void> {
     // this.logger.log('Checking Genesis Block...');
-    await this.createGenesisBlock();
+    const genesisBlock = await this.createGenesisBlock();
 
     // State 복원
     await this.restoreState();
@@ -186,6 +186,78 @@ export class BlockService implements OnApplicationBootstrap {
     } catch (e: unknown) {
       this.logger.error(`Failed to initialize VM: ${String(e)}`);
       // VM 없이도 기존 경로로 동작하도록 계속 진행
+    }
+
+    // StakingContract 배포 상태 확인 및 Validator 등록
+    await this.ensureContractsDeployedAndRegisterValidators(
+      genesisBlock.timestamp,
+    );
+  }
+
+  /**
+   * 컨트랙트 배포 상태 확인 및 Genesis Validator 등록
+   *
+   * 동작:
+   * 1. deployed-contracts.json에서 StakingContract 배포 상태 확인
+   * 2. StakingContract가 배포되어 있으면 → Genesis Validator 등록만 수행
+   * 3. StakingContract가 없으면 → StakingContract와 StableCoin 배포 후 Validator 등록
+   *
+   * @param timestamp - Genesis Block 타임스탬프 (밀리초)
+   */
+  private async ensureContractsDeployedAndRegisterValidators(
+    timestamp: number,
+  ): Promise<void> {
+    // StakingService를 통해 ContractService 접근
+    const stakingServiceAny = this.stakingService as any;
+    if (!stakingServiceAny?.contractService) {
+      this.logger.warn(
+        'ContractService not available. Skipping contract deployment check.',
+      );
+      return;
+    }
+
+    const contractService = stakingServiceAny.contractService;
+    const deployed = contractService.getDeployedContracts();
+
+    // StakingContract가 배포되어 있는지 확인
+    if (deployed && deployed.staking && deployed.staking.address) {
+      this.logger.log(
+        `StakingContract already deployed at: ${deployed.staking.address}`,
+      );
+      this.logger.log('Registering Genesis Validators...');
+      await this.registerGenesisValidators(timestamp);
+      return;
+    }
+
+    // StakingContract가 없으면 배포 필요
+    this.logger.log('StakingContract not found. Deploying contracts...');
+
+    try {
+      // 1. StakingContract 배포
+      this.logger.log('Deploying StakingContract...');
+      const stakingResult = await contractService.deployStakingContract();
+      this.logger.log(
+        `StakingContract deployed at: ${stakingResult.stakingAddress}`,
+      );
+
+      // 2. StableCoin 시스템 배포
+      this.logger.log('Deploying StableCoin system...');
+      const stablecoinResult = await contractService.deployStablecoin();
+      this.logger.log(
+        `StableCoin deployed at: ${stablecoinResult.stablecoinAddress}`,
+      );
+      this.logger.log(
+        `CollateralVault deployed at: ${stablecoinResult.vaultAddress}`,
+      );
+
+      // 3. Genesis Validator 등록
+      this.logger.log('Registering Genesis Validators...');
+      await this.registerGenesisValidators(timestamp);
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to deploy contracts and register validators: ${error.message}`,
+      );
+      // 에러가 발생해도 서버는 계속 실행
     }
   }
 
@@ -303,21 +375,8 @@ export class BlockService implements OnApplicationBootstrap {
 
     this.logger.log(`Genesis Block created: ${hash}`);
 
-    // Genesis Validator 등록 (트랜잭션 없이 VM을 통해 직접 호출)
-    // 현재 상황:
-    // - Execution Layer와 Consensus Layer가 통합되어 있음
-    // - Validator 등록을 트랜잭션으로 처리하면 순환 의존성 발생:
-    //   1. 블록 생성 → Validator 필요
-    //   2. Validator 등록 → 트랜잭션 필요
-    //   3. 트랜잭션 실행 → 블록 필요
-    // 해결 방법:
-    // - Genesis Block 생성 시점에 VM을 통해 직접 StakingContract 함수 호출
-    // - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
-    // 추후 레이어 분리 시:
-    // - Execution Layer: Deposit Contract에 트랜잭션으로 ETH 예치
-    // - Consensus Layer: Beacon Chain이 Deposit 이벤트를 감지하여 Validator 등록
-    // - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능 (순환 의존성 없음)
-    await this.registerGenesisValidators(genesisBlock.timestamp);
+    // Genesis Validator 등록은 onApplicationBootstrap에서
+    // 컨트랙트 배포 상태 확인 후 수행됨 (ensureContractsDeployedAndRegisterValidators)
 
     return genesisBlock;
   }
