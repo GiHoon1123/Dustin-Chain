@@ -1155,10 +1155,41 @@ export class StakingService implements OnApplicationBootstrap {
           validatorInfo.validatorAddress !==
           '0x0000000000000000000000000000000000000000'
         ) {
-          this.logger.debug(
-            `Validator ${account.address} is already registered. Skipping.`,
-          );
-          skipped++;
+          // 이미 등록되어 있지만, 활성화 안 된 경우 활성화 시도
+          if (
+            validatorInfo.status === 'pending_queued' ||
+            validatorInfo.status === 'pending_initialized'
+          ) {
+            this.logger.debug(
+              `Validator ${account.address} is registered but not activated. Attempting activation...`,
+            );
+            try {
+              // activateValidator() 호출
+              const activateResult = await this.activateValidator(
+                account.address,
+              );
+              // 활성화 트랜잭션 완료 대기
+              await this.waitForTransactionConfirmation(
+                activateResult.hash,
+                30000,
+              );
+              registered++;
+              this.logger.debug(
+                `Successfully activated validator ${account.address} (${registered}/${accountsToRegister.length})`,
+              );
+            } catch (activateError) {
+              this.logger.error(
+                `Failed to activate validator ${account.address}: ${activateError.message}`,
+              );
+              failed++;
+            }
+          } else {
+            // 이미 활성화되었거나 다른 상태
+            this.logger.debug(
+              `Validator ${account.address} is already registered with status: ${validatorInfo.status}. Skipping.`,
+            );
+            skipped++;
+          }
           continue;
         }
 
