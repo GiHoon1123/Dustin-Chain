@@ -40,10 +40,14 @@ describe('BotController', () => {
       const status = {
         isRunning: true,
         accountCount: 156,
+        tokenAccountCount: 0,
+        tokenBytecodesLoaded: 0,
+        deployedTokens: [],
         minBalance: '1000000000000000000',
         targetRate: '0.4-0.5 tx/sec',
         totalTransactions: 1000,
         contractDeployments: 10,
+        tokenTransactions: 0,
       };
 
       botService.getStatus.mockReturnValue(status);

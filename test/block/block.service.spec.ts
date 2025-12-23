@@ -716,6 +716,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       blockRepository.findLatest.mockResolvedValue(block);
@@ -811,6 +812,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '0'.repeat(64),
         '0x' + '0'.repeat(64),
       );
 

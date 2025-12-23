@@ -100,6 +100,7 @@ describe('ConsensusService', () => {
         '0x' + '0'.repeat(64),
         '0x' + '0'.repeat(64),
         '0x' + '0'.repeat(64),
+        '0x' + '0'.repeat(64),
       );
       block.hash = '0x' + 'b'.repeat(64);
       block.number = 1;

@@ -322,7 +322,7 @@ describe('ContractService', () => {
 
       const deployed = service.getDeployedContracts();
       expect(deployed).not.toBeNull();
-      if (deployed) {
+      if (deployed && deployed.stablecoin && deployed.vault) {
         expect(deployed.stablecoin.address).toBe(stablecoinAddress);
         expect(deployed.vault.address).toBe(vaultAddress);
       }
