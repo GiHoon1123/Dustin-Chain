@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import * as fs from 'fs';
 import * as keccak from 'keccak';
 import * as path from 'path';
@@ -56,6 +62,7 @@ export class StakingService implements OnApplicationBootstrap {
   private readonly logger = new Logger(StakingService.name);
 
   constructor(
+    @Inject(forwardRef(() => ContractService))
     private readonly contractService: ContractService,
     private readonly accountService: AccountService,
   ) {}
@@ -401,6 +408,168 @@ export class StakingService implements OnApplicationBootstrap {
     );
 
     return validators;
+  }
+
+  /**
+   * Pending Validator 목록 조회
+   *
+   * pending_queued 또는 pending_initialized 상태의 Validator 목록을 반환합니다.
+   *
+   * 이더리움:
+   * - Activation Queue에 대기 중인 Validator 목록
+   * - Churn Limit에 따라 Epoch마다 활성화됨
+   *
+   * @returns Pending Validator 주소 배열
+   */
+  async getPendingValidators(): Promise<Address[]> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    // getPendingValidators()는 view 함수이므로 eth_call 사용
+    const data = this.contractService.encodeFunctionCall(
+      'getPendingValidators',
+      [],
+      [],
+    );
+
+    const result = await this.contractService.callContract(
+      stakingAddress,
+      data,
+    );
+
+    // 결과 파싱 (address[] 반환)
+    const resultHex = result.result.startsWith('0x')
+      ? result.result.slice(2)
+      : result.result;
+
+    // offset 읽기 (첫 32바이트)
+    const offsetHex = resultHex.slice(0, 64);
+    const offset = parseInt(offsetHex, 16);
+
+    // offset 위치에서 배열 길이 읽기
+    const lengthHex = resultHex.slice(offset * 2, offset * 2 + 64);
+    const arrayLength = parseInt(lengthHex, 16);
+
+    const validatorAddresses: Address[] = [];
+    for (let i = 0; i < arrayLength; i++) {
+      // 각 주소는 32바이트 (64 hex chars)
+      const addressHex = resultHex.slice(
+        offset * 2 + 64 + i * 64,
+        offset * 2 + 64 + i * 64 + 64,
+      );
+      // 주소는 마지막 20바이트만 사용 (40 hex chars)
+      validatorAddresses.push('0x' + addressHex.slice(24));
+    }
+
+    return validatorAddresses;
+  }
+
+  /**
+   * Churn Limit 계산 (이더리움 표준)
+   *
+   * 이더리움 공식:
+   * Churn Limit = max(4, floor(Total Active Validators / 65,536))
+   *
+   * 의미:
+   * - Epoch당 최대 활성화/탈퇴 가능한 Validator 수
+   * - 최소값: 4명
+   * - 활성 Validator가 많을수록 Churn Limit 증가
+   *
+   * @returns Churn Limit (Epoch당 활성화 가능한 Validator 수)
+   */
+  private async calculateChurnLimit(): Promise<number> {
+    const activeValidators = await this.getActiveValidators();
+    const totalActive = activeValidators.length;
+
+    // 이더리움 Churn Limit 공식: max(4, floor(활성 검증자 수 / 65536))
+    const churnLimit = Math.max(4, Math.floor(totalActive / 65536));
+
+    this.logger.debug(
+      `Calculated Churn Limit: ${churnLimit} (Total Active: ${totalActive})`,
+    );
+
+    return churnLimit;
+  }
+
+  /**
+   * Activation Queue 처리 (이더리움 Beacon Chain 동작)
+   *
+   * Epoch마다 Churn Limit만큼 Pending Validator를 활성화합니다.
+   *
+   * 이더리움:
+   * - Beacon Chain이 Epoch 시작 시 Activation Queue 처리
+   * - Churn Limit만큼만 활성화 (네트워크 안정성)
+   * - pending_queued 상태의 Validator를 active_ongoing으로 변경
+   *
+   * 우리:
+   * - BlockProducer가 Epoch 시작 시 호출
+   * - Churn Limit 계산 후 해당 수만큼 활성화
+   *
+   * @param blockNumber - 현재 블록 번호 (Epoch 계산용)
+   */
+  async processActivationQueue(blockNumber: number): Promise<void> {
+    // Epoch 시작 시에만 처리 (이더리움과 동일)
+    const EPOCH_SIZE = 32; // blockchain.constants에서 가져와야 하지만 여기서는 하드코딩
+    if (blockNumber % EPOCH_SIZE !== 0) {
+      return;
+    }
+
+    const currentEpoch = Math.floor(blockNumber / EPOCH_SIZE);
+    this.logger.log(`Processing Activation Queue for Epoch ${currentEpoch}...`);
+
+    try {
+      // Churn Limit 계산
+      const churnLimit = await this.calculateChurnLimit();
+
+      // Pending Validator 목록 조회
+      const pendingValidators = await this.getPendingValidators();
+
+      if (pendingValidators.length === 0) {
+        this.logger.debug('No pending validators in queue.');
+        return;
+      }
+
+      this.logger.log(
+        `Found ${pendingValidators.length} pending validators. Churn Limit: ${churnLimit}`,
+      );
+
+      // Churn Limit만큼만 활성화
+      let activatedCount = 0;
+      for (const validatorAddress of pendingValidators) {
+        if (activatedCount >= churnLimit) {
+          this.logger.debug(
+            `Churn limit (${churnLimit}) reached for this epoch. Remaining validators will be activated in next epochs.`,
+          );
+          break;
+        }
+
+        try {
+          await this.activateValidator(validatorAddress);
+          activatedCount++;
+          this.logger.log(
+            `✅ Activated validator ${validatorAddress} from queue (${activatedCount}/${churnLimit}).`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to activate validator ${validatorAddress} from queue: ${error.message}`,
+          );
+        }
+      }
+
+      if (activatedCount === 0) {
+        this.logger.log('No validators activated from queue in this epoch.');
+      } else {
+        this.logger.log(
+          `Processed Activation Queue: ${activatedCount} validator(s) activated.`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Failed to process Activation Queue: ${error.message}`);
+    }
   }
 
   /**
@@ -773,12 +942,213 @@ export class StakingService implements OnApplicationBootstrap {
 
       return arrayLength > 0;
     } catch (error: any) {
-      this.logger.warn(
-        `Failed to check withdrawal queue: ${error.message}`,
-      );
+      this.logger.warn(`Failed to check withdrawal queue: ${error.message}`);
       // 에러 발생 시 안전하게 false 반환 (호출은 계속 진행)
       return false;
     }
+  }
+
+  /**
+   * Genesis Validator 등록 (VM을 통해 직접 호출, 트랜잭션 없이)
+   *
+   * 현재 상황:
+   * - Execution Layer와 Consensus Layer가 통합되어 있음
+   * - Validator 등록을 트랜잭션으로 처리하면 순환 의존성 발생:
+   *   1. 블록 생성 → Validator 필요
+   *   2. Validator 등록 → 트랜잭션 필요
+   *   3. 트랜잭션 실행 → 블록 필요
+   *
+   * 해결 방법:
+   * - Genesis Block 생성 시점에 VM을 통해 직접 StakingContract 함수 호출
+   * - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
+   * - 이더리움 PoS와 달리 Execution Layer와 Consensus Layer가 분리되지 않았기 때문
+   *
+   * 추후 레이어 분리 시:
+   * - Execution Layer: Deposit Contract에 트랜잭션으로 ETH 예치
+   * - Consensus Layer: Beacon Chain이 Deposit 이벤트를 감지하여 Validator 등록
+   * - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능 (순환 의존성 없음)
+   *
+   * @param account - Genesis 계정 정보
+   * @param blockService - BlockService 인스턴스 (VM 접근용)
+   * @param blockNumber - 블록 번호 (Genesis Block은 0)
+   * @param timestamp - 타임스탬프 (밀리초)
+   * @returns 등록 성공 여부
+   */
+  async registerGenesisValidatorDirect(
+    account: GenesisAccount,
+    contractService: any,
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<boolean> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    try {
+      // 이미 등록되어 있는지 확인
+      const validatorInfo = await this.getValidator(account.address);
+      if (
+        validatorInfo.validatorAddress !==
+        '0x0000000000000000000000000000000000000000'
+      ) {
+        // 이미 등록되어 있음
+        if (validatorInfo.status === 'active_ongoing') {
+          this.logger.debug(
+            `Validator ${account.address} is already active. Skipping.`,
+          );
+          return true;
+        }
+        // pending 상태인 경우 활성화만 시도
+        if (
+          validatorInfo.status === 'pending_queued' ||
+          validatorInfo.status === 'pending_initialized'
+        ) {
+          return await this.activateGenesisValidatorDirect(
+            account,
+            contractService,
+            blockNumber,
+            timestamp,
+          );
+        }
+      }
+
+      // 계정 잔액 확인
+      const balance = await this.accountService.getBalance(account.address);
+      const minStakeWei = BigInt(MIN_STAKE) * WEI_PER_DSTN;
+
+      if (balance < minStakeWei) {
+        throw new Error(
+          `Account ${account.address} has insufficient balance (${balance} < ${minStakeWei})`,
+        );
+      }
+
+      // deposit() 함수 호출 데이터 생성 (payable 함수이므로 value로 금액 전송)
+      const depositData = this.contractService.encodeFunctionCall(
+        'deposit',
+        [],
+        [],
+      );
+
+      // VM을 통해 직접 deposit() 호출 (트랜잭션 없이)
+      const depositResult = (await (
+        contractService as {
+          executeContractDirect: (
+            to: string,
+            data: string,
+            from: string,
+            privateKey: string,
+            value: bigint,
+            blockNumber: number,
+            timestamp: number,
+          ) => Promise<{
+            result: string;
+            status: 1 | 0;
+            gasUsed: bigint;
+            logs: { address: string; topics: string[]; data: string }[];
+          }>;
+        }
+      ).executeContractDirect(
+        stakingAddress,
+        depositData,
+        account.address,
+        account.privateKey,
+        minStakeWei, // value로 32 DSTN 전송
+        blockNumber,
+        timestamp,
+      )) as {
+        result: string;
+        logs: { address: string; topics: string[]; data: string }[];
+        gasUsed: bigint;
+      };
+
+      if (!depositResult || depositResult.result === '0x') {
+        throw new Error('Deposit failed: Invalid result');
+      }
+
+      // activateValidator() 호출
+      return await this.activateGenesisValidatorDirect(
+        account,
+        contractService,
+        blockNumber,
+        timestamp,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to register validator ${account.address} via VM: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Genesis Validator 활성화 (VM을 통해 직접 호출, 트랜잭션 없이)
+   *
+   * @param account - Genesis 계정 정보
+   * @param contractService - ContractService 인스턴스 (VM 접근용)
+   * @param blockNumber - 블록 번호
+   * @param timestamp - 타임스탬프 (밀리초)
+   * @returns 활성화 성공 여부
+   */
+  private async activateGenesisValidatorDirect(
+    account: GenesisAccount,
+    contractService: any,
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<boolean> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    // activateValidator(address validatorAddress) 함수 호출 데이터 생성
+    const activateData = this.contractService.encodeFunctionCall(
+      'activateValidator',
+      ['address'],
+      [account.address],
+    );
+
+    // VM을 통해 직접 activateValidator() 호출 (트랜잭션 없이)
+    const activateResult = (await (
+      contractService as {
+        executeContractDirect: (
+          to: string,
+          data: string,
+          from: string,
+          privateKey: string,
+          value: bigint,
+          blockNumber: number,
+          timestamp: number,
+        ) => Promise<{
+          result: string;
+          status: 1 | 0;
+          gasUsed: bigint;
+          logs: { address: string; topics: string[]; data: string }[];
+        }>;
+      }
+    ).executeContractDirect(
+      stakingAddress,
+      activateData,
+      account.address,
+      account.privateKey,
+      0n, // value는 0
+      blockNumber,
+      timestamp,
+    )) as {
+      result: string;
+      logs: { address: string; topics: string[]; data: string }[];
+      gasUsed: bigint;
+    };
+
+    if (!activateResult || activateResult.result === '0x') {
+      throw new Error('Activation failed: Invalid result');
+    }
+
+    return true;
   }
 
   /**
@@ -789,19 +1159,19 @@ export class StakingService implements OnApplicationBootstrap {
    * - Execution Layer가 블록 생성 시 자동 처리 (트랜잭션 없이)
    *
    * 우리:
-   * - BlockService의 VM을 통해 processWithdrawals() 직접 호출
+   * - ContractService의 VM을 통해 processWithdrawals() 직접 호출
    * - 트랜잭션 풀을 거치지 않음
    * - 블록 생성 시 자동 처리
    *
    * @param maxProcess - 최대 처리할 출금 요청 수 (가스 제한 방지)
-   * @param blockService - BlockService 인스턴스 (VM 접근용)
+   * @param contractService - ContractService 인스턴스 (VM 접근용)
    * @param blockNumber - 현재 블록 번호
    * @param timestamp - 현재 블록 타임스탬프 (밀리초)
    * @returns 처리된 출금 요청 수
    */
   async processWithdrawalsDirect(
     maxProcess: number = 10,
-    blockService: any, // BlockService 타입 (순환 의존성 방지)
+    contractService: any, // ContractService 타입 (순환 의존성 방지)
     blockNumber: number,
     timestamp: number,
   ): Promise<{ processed: number }> {
@@ -825,9 +1195,9 @@ export class StakingService implements OnApplicationBootstrap {
       throw new Error('Genesis account 0 is not loaded or private key missing');
     }
 
-    // BlockService의 VM을 통해 직접 호출 (트랜잭션 없이)
+    // ContractService의 VM을 통해 직접 호출 (트랜잭션 없이)
     const result = (await (
-      blockService as {
+      contractService as {
         executeContractDirect: (
           to: string,
           data: string,
@@ -838,8 +1208,9 @@ export class StakingService implements OnApplicationBootstrap {
           timestamp: number,
         ) => Promise<{
           result: string;
-          logs: { address: string; topics: string[]; data: string }[];
+          status: 1 | 0;
           gasUsed: bigint;
+          logs: { address: string; topics: string[]; data: string }[];
         }>;
       }
     ).executeContractDirect(
@@ -1007,59 +1378,89 @@ export class StakingService implements OnApplicationBootstrap {
   /**
    * 서버 시작 시 자동 실행
    *
-   * Genesis 계정 중 처음 90명을 StakingContract에 자동 등록합니다.
+   * 현재 상황:
+   * - Execution Layer와 Consensus Layer가 통합되어 있음
+   * - Validator 등록을 트랜잭션으로 처리하면 순환 의존성 발생:
+   *   1. 블록 생성 → Validator 필요
+   *   2. Validator 등록 → 트랜잭션 필요
+   *   3. 트랜잭션 실행 → 블록 필요
    *
-   * KV DB 삭제 시나리오 고려:
-   * - LevelDB를 지우고 재실행하면 모든 상태가 초기화됨
-   * - StakingContract의 상태도 모두 초기화됨
-   * - 따라서 모든 Validator를 다시 등록해야 함
-   * - 이미 등록된 Validator는 스킵 (정상 운영 시)
+   * 해결 방법:
+   * - Genesis Block 생성 시점에 VM을 통해 직접 StakingContract 함수 호출
+   * - BlockService.createGenesisBlock()에서 registerGenesisValidatorDirect() 호출
+   * - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
    *
-   * 동작:
-   * 1. StakingContract 배포 확인
-   * 2. Genesis Block 생성 완료 대기
-   * 3. Genesis Validator 자동 등록 (registerGenesisValidators만 비동기로 실행)
+   * 추후 레이어 분리 시:
+   * - Execution Layer: Deposit Contract에 트랜잭션으로 ETH 예치
+   * - Consensus Layer: Beacon Chain이 Deposit 이벤트를 감지하여 Validator 등록
+   * - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능 (순환 의존성 없음)
+   * - 이 경우 onApplicationBootstrap에서 트랜잭션 방식으로 등록하도록 변경
    *
-   * 주의:
-   * - onApplicationBootstrap은 동기로 완료되지만, registerGenesisValidators는 백그라운드에서 실행
-   * - 다른 모듈의 onApplicationBootstrap은 정상적으로 동기 실행됨
-   * - Validator 등록은 서버 시작을 지연시키지 않음
+   * 현재 구현:
+   * - Genesis Validator 등록은 BlockService.createGenesisBlock()에서 처리됨
+   * - 이 메서드는 StakingContract 배포 확인 및 Genesis Block 대기만 수행
    */
   async onApplicationBootstrap(): Promise<void> {
     // StakingContract가 배포되어 있는지 확인
     const deployed = this.contractService.getDeployedContracts();
     if (!deployed || !deployed.staking) {
       this.logger.warn(
-        'StakingContract is not deployed. Skipping Genesis Validator registration.',
+        'StakingContract is not deployed. Genesis Validator registration will be skipped.',
       );
       return;
     }
 
     try {
+      // Genesis Block 생성 완료 대기 (BlockService에서 Validator 등록을 처리하므로 대기만 함)
+      await this.waitForGenesisBlock(10000);
+      this.logger.log(
+        'Genesis Block confirmed. Validator registration is handled by BlockService.',
+      );
+    } catch (error) {
+      this.logger.error(`Failed to wait for Genesis Block: ${error.message}`);
+    }
+
+    // 기존 트랜잭션 방식 등록 코드 (주석 처리)
+    // 추후 레이어 분리 시 사용 예정:
+    /*
+    try {
       // Genesis Block 생성 완료 대기 (최대 10초)
       await this.waitForGenesisBlock(10000);
 
-      // registerGenesisValidators만 비동기로 실행 (서버 시작을 막지 않음)
-      // setImmediate를 사용하여 현재 실행 컨텍스트가 완료된 후 실행
+      // 첫 번째 Validator만 동기로 등록 (블록 생성을 위해 필수)
+      this.logger.log(
+        'Registering first Genesis Validator synchronously (for block production)...',
+      );
+      try {
+        await this.registerSingleGenesisValidator(0); // 첫 번째 계정
+        this.logger.log(
+          'First Genesis Validator registered. Block production can start.',
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to register first Genesis Validator: ${String(error)}`,
+        );
+        // 첫 번째 등록 실패 시에도 서버는 계속 실행 (수동 등록 가능)
+      }
+
+      // 나머지 Validator는 비동기로 등록 (서버 시작을 막지 않음)
       setImmediate(() => {
         void (async () => {
           try {
-            await this.registerGenesisValidators();
+            await this.registerGenesisValidators(1); // 1번부터 시작 (0번은 이미 등록됨)
           } catch (error) {
             this.logger.error(
-              `Failed to register Genesis Validators: ${String(error)}`,
+              `Failed to register remaining Genesis Validators: ${String(error)}`,
             );
-            // 에러가 발생해도 서버는 계속 실행 (Validator 등록은 수동으로도 가능)
+            // 에러가 발생해도 서버는 계속 실행
           }
         })();
       });
-
-      // onApplicationBootstrap은 즉시 완료 (Promise 반환)
-      // registerGenesisValidators는 백그라운드에서 계속 실행됨
     } catch (error) {
       this.logger.error(`Failed to wait for Genesis Block: ${error.message}`);
       // 에러가 발생해도 서버는 계속 실행
     }
+    */
   }
 
   /**
@@ -1109,20 +1510,125 @@ export class StakingService implements OnApplicationBootstrap {
   }
 
   /**
-   * Genesis Validator 자동 등록
+   * 단일 Genesis Validator 등록 (동기)
    *
-   * genesis-accounts.json에서 처음 90개 계정을 읽어서
+   * 블록 생성을 위해 최소 1명의 Validator를 동기로 등록합니다.
+   *
+   * @param accountIndex - genesis-accounts.json에서 등록할 계정 인덱스 (0부터 시작)
+   */
+  private async registerSingleGenesisValidator(
+    accountIndex: number,
+  ): Promise<void> {
+    const accountsPath = this.findAccountsFile();
+    if (!accountsPath) {
+      throw new Error('genesis-accounts.json not found');
+    }
+
+    const fileContent = fs.readFileSync(accountsPath, 'utf8');
+    const accounts: GenesisAccount[] = JSON.parse(fileContent);
+
+    if (accountIndex >= accounts.length) {
+      throw new Error(
+        `Account index ${accountIndex} is out of range (total: ${accounts.length})`,
+      );
+    }
+
+    const account = accounts[accountIndex];
+
+    try {
+      // 이미 등록되어 있는지 확인
+      const validatorInfo = await this.getValidator(account.address);
+
+      // validatorAddress가 0x0000...이 아니면 이미 등록됨
+      if (
+        validatorInfo.validatorAddress !==
+        '0x0000000000000000000000000000000000000000'
+      ) {
+        // 이미 등록되어 있지만, 활성화 안 된 경우 활성화 시도
+        if (
+          validatorInfo.status === 'pending_queued' ||
+          validatorInfo.status === 'pending_initialized'
+        ) {
+          this.logger.debug(
+            `Validator ${account.address} is registered but not activated. Attempting activation...`,
+          );
+          const activateResult = await this.activateValidator(account.address);
+          await this.waitForTransactionConfirmation(activateResult.hash, 30000);
+          this.logger.log(
+            `✅ Successfully activated validator ${account.address}`,
+          );
+          return;
+        } else if (validatorInfo.status === 'active_ongoing') {
+          this.logger.log(
+            `Validator ${account.address} is already active. Skipping.`,
+          );
+          return;
+        } else {
+          throw new Error(
+            `Validator ${account.address} is in unexpected status: ${validatorInfo.status}`,
+          );
+        }
+      }
+
+      // 계정 잔액 확인
+      const balance = await this.accountService.getBalance(account.address);
+      const minStakeWei = BigInt(MIN_STAKE) * WEI_PER_DSTN;
+
+      if (balance < minStakeWei) {
+        throw new Error(
+          `Account ${account.address} has insufficient balance (${balance} < ${minStakeWei})`,
+        );
+      }
+
+      // deposit() 호출 (32 DSTN 예치)
+      this.logger.debug(
+        `Depositing ${MIN_STAKE} DSTN for validator ${account.address}...`,
+      );
+      const depositResult = await this.deposit(
+        account.privateKey,
+        `0x${minStakeWei.toString(16)}`,
+      );
+
+      // 트랜잭션 완료 대기
+      await this.waitForTransactionConfirmation(depositResult.hash, 30000);
+
+      // activateValidator() 호출
+      this.logger.debug(`Activating validator ${account.address}...`);
+      const activateResult = await this.activateValidator(account.address);
+
+      // 활성화 트랜잭션 완료 대기
+      await this.waitForTransactionConfirmation(activateResult.hash, 30000);
+
+      this.logger.log(
+        `✅ Successfully registered validator ${account.address}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to register validator ${account.address}: ${error.message}`,
+      );
+      throw error; // 동기 등록이므로 에러를 다시 throw
+    }
+  }
+
+  /**
+   * Genesis Validator 자동 등록 (비동기)
+   *
+   * genesis-accounts.json에서 지정된 인덱스부터 90개 계정을 읽어서
    * StakingContract에 자동으로 등록합니다.
    *
    * 동작:
-   * 1. genesis-accounts.json에서 처음 90개 계정 읽기
+   * 1. genesis-accounts.json에서 startIndex부터 최대 90개 계정 읽기
    * 2. 각 계정이 이미 등록되어 있는지 확인
    * 3. 등록되지 않은 경우:
    *    - 계정 잔액 확인 (32 DSTN 이상 필요)
    *    - deposit() 호출 (32 DSTN 예치)
    *    - activateValidator() 호출 (활성화)
+   *
+   * @param startIndex - 시작 인덱스 (0번은 이미 등록되었으므로 1부터 시작)
    */
-  private async registerGenesisValidators(): Promise<void> {
+  private async registerGenesisValidators(
+    startIndex: number = 0,
+  ): Promise<void> {
     const accountsPath = this.findAccountsFile();
     if (!accountsPath) {
       this.logger.warn(
@@ -1134,8 +1640,12 @@ export class StakingService implements OnApplicationBootstrap {
     const fileContent = fs.readFileSync(accountsPath, 'utf8');
     const accounts: GenesisAccount[] = JSON.parse(fileContent);
 
-    // 처음 90개만 등록
-    const accountsToRegister = accounts.slice(0, GENESIS_VALIDATOR_COUNT);
+    // startIndex부터 최대 90개까지 등록
+    const endIndex = Math.min(
+      startIndex + GENESIS_VALIDATOR_COUNT,
+      accounts.length,
+    );
+    const accountsToRegister = accounts.slice(startIndex, endIndex);
 
     this.logger.log(
       `Registering ${accountsToRegister.length} Genesis Validators to StakingContract...`,

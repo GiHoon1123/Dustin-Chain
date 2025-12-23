@@ -14,6 +14,7 @@ import { StablecoinService } from './stablecoin.service';
  * 역할:
  * - 컨트랙트 바이트코드 조회
  * - 컨트랙트 읽기 메서드 호출 (eth_call)
+ * - 컨트랙트 배포 (VM 직접 실행)
  *
  * 구성:
  * - ContractController: API 엔드포인트
@@ -22,10 +23,13 @@ import { StablecoinService } from './stablecoin.service';
  * 의존성:
  * - AccountModule: 계정 정보 조회 (codeHash 등)
  * - TransactionModule: 트랜잭션 생성 및 제출 (쓰기 작업용)
- * - IBlockRepository: 최신 블록 조회 (순환 의존성 해결을 위해 BlockService 대신 사용)
+ * - IBlockRepository: 최신 블록 조회
  */
 @Module({
-  imports: [AccountModule, TransactionModule],
+  imports: [
+    AccountModule,
+    TransactionModule,
+  ],
   controllers: [ContractController, StablecoinController],
   providers: [ContractService, StablecoinService],
   exports: [ContractService, StablecoinService],

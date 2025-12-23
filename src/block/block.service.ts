@@ -26,6 +26,7 @@ import { AccountService } from '../account/account.service';
 import { CHAIN_ID, EMPTY_ROOT } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Address, Hash } from '../common/types/common.types';
+import { StakingService } from '../staking/staking.service';
 import { CustomStateManager } from '../state/custom-state-manager';
 import { StateManager } from '../state/state-manager';
 import { IBlockRepository } from '../storage/repositories/block.repository.interface';
@@ -106,6 +107,7 @@ export class BlockService implements OnApplicationBootstrap {
     private readonly txPool: TransactionPool,
     private readonly stateManager: StateManager,
     private readonly evmState: CustomStateManager,
+    private readonly stakingService: StakingService,
   ) {
     // Common 객체 초기화 (체인 파라미터)
     this.common = createCustomCommon(
@@ -301,7 +303,170 @@ export class BlockService implements OnApplicationBootstrap {
 
     this.logger.log(`Genesis Block created: ${hash}`);
 
+    // Genesis Validator 등록 (트랜잭션 없이 VM을 통해 직접 호출)
+    // 현재 상황:
+    // - Execution Layer와 Consensus Layer가 통합되어 있음
+    // - Validator 등록을 트랜잭션으로 처리하면 순환 의존성 발생:
+    //   1. 블록 생성 → Validator 필요
+    //   2. Validator 등록 → 트랜잭션 필요
+    //   3. 트랜잭션 실행 → 블록 필요
+    // 해결 방법:
+    // - Genesis Block 생성 시점에 VM을 통해 직접 StakingContract 함수 호출
+    // - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
+    // 추후 레이어 분리 시:
+    // - Execution Layer: Deposit Contract에 트랜잭션으로 ETH 예치
+    // - Consensus Layer: Beacon Chain이 Deposit 이벤트를 감지하여 Validator 등록
+    // - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능 (순환 의존성 없음)
+    await this.registerGenesisValidators(genesisBlock.timestamp);
+
     return genesisBlock;
+  }
+
+  /**
+   * Genesis Validator 등록 (VM을 통해 직접 호출, 트랜잭션 없이)
+   *
+   * 현재 상황:
+   * - Execution Layer와 Consensus Layer가 통합되어 있음
+   * - Validator 등록을 트랜잭션으로 처리하면 순환 의존성 발생
+   *
+   * 해결 방법:
+   * - Genesis Block 생성 시점에 VM을 통해 직접 StakingContract 함수 호출
+   * - 트랜잭션 없이 상태 변경
+   *
+   * 추후 레이어 분리 시:
+   * - Execution Layer: Deposit Contract에 트랜잭션으로 ETH 예치
+   * - Consensus Layer: Beacon Chain이 Deposit 이벤트를 감지하여 Validator 등록
+   *
+   * @param timestamp - Genesis Block 타임스탬프 (밀리초)
+   */
+  private async registerGenesisValidators(timestamp: number): Promise<void> {
+    // VM이 초기화되어 있지 않으면 초기화
+    if (!this.vm) {
+      try {
+        this.vm = await createVM({
+          stateManager: this.evmState as unknown as StateManagerInterface,
+          common: this.common,
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to initialize VM for validator registration: ${String(error)}`,
+        );
+        return;
+      }
+    }
+
+    // StakingContract가 배포되어 있는지 확인
+    // StakingService를 통해 ContractService 접근
+    const stakingServiceAny = this.stakingService as any;
+    if (!stakingServiceAny.contractService) {
+      this.logger.warn(
+        'ContractService not available. Skipping Genesis Validator registration.',
+      );
+      return;
+    }
+
+    const deployed = stakingServiceAny.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      this.logger.warn(
+        'StakingContract is not deployed. Skipping Genesis Validator registration.',
+      );
+      return;
+    }
+
+    // genesis-accounts.json 로드
+    const accountsPath = this.findGenesisAccountsFile();
+    if (!accountsPath) {
+      this.logger.warn(
+        'genesis-accounts.json not found. Skipping Genesis Validator registration.',
+      );
+      return;
+    }
+
+    try {
+      const fileContent = fs.readFileSync(accountsPath, 'utf8');
+      const accounts: Array<{
+        index: number;
+        address: string;
+        publicKey: string;
+        privateKey: string;
+      }> = JSON.parse(fileContent);
+
+      // 처음 90개만 Validator로 등록
+      const GENESIS_VALIDATOR_COUNT = 90;
+      const accountsToRegister = accounts.slice(0, GENESIS_VALIDATOR_COUNT);
+
+      this.logger.log(
+        `Registering ${accountsToRegister.length} Genesis Validators via VM (no transaction)...`,
+      );
+
+      let registered = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const account of accountsToRegister) {
+        try {
+          // StakingService를 통해 ContractService 접근
+          const stakingServiceAny = this.stakingService as any;
+          const contractService = stakingServiceAny.contractService;
+          if (!contractService) {
+            this.logger.warn(
+              'ContractService not available. Skipping validator registration.',
+            );
+            failed++;
+            continue;
+          }
+
+          const success =
+            await this.stakingService.registerGenesisValidatorDirect(
+              account,
+              contractService,
+              0, // Genesis Block 번호
+              timestamp,
+            );
+
+          if (success) {
+            registered++;
+            this.logger.debug(
+              `Registered validator ${account.address} (${registered}/${accountsToRegister.length})`,
+            );
+          } else {
+            skipped++;
+          }
+        } catch (error) {
+          failed++;
+          this.logger.error(
+            `Failed to register validator ${account.address}: ${error.message}`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `Genesis Validator registration completed: ${registered} registered, ${skipped} skipped, ${failed} failed`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to load genesis-accounts.json: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * genesis-accounts.json 파일 경로 찾기
+   */
+  private findGenesisAccountsFile(): string | null {
+    const possiblePaths = [
+      path.resolve(process.cwd(), 'genesis-accounts.json'),
+      path.resolve(__dirname, '../../genesis-accounts.json'),
+      path.resolve(__dirname, '../../../genesis-accounts.json'),
+    ];
+
+    for (const filePath of possiblePaths) {
+      if (fs.existsSync(filePath)) {
+        return filePath;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -738,6 +903,187 @@ export class BlockService implements OnApplicationBootstrap {
       logs,
       gasUsed,
     };
+  }
+
+  /**
+   * 컨트랙트 배포 (VM을 통해 직접 실행, 트랜잭션 제출 없이)
+   *
+   * 현재 상황:
+   * - Execution Layer와 Consensus Layer가 통합되어 있음
+   * - 컨트랙트 배포를 트랜잭션으로 처리하면 nonce race condition 발생 가능
+   * - Genesis Block 생성 시점이나 특수한 경우에 직접 배포 필요
+   *
+   * 해결 방법:
+   * - VM을 통해 직접 컨트랙트 배포
+   * - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
+   * - nonce는 증가시키지만 실제 트랜잭션은 생성하지 않음
+   *
+   * 추후 레이어 분리 시:
+   * - Execution Layer: 트랜잭션으로 컨트랙트 배포
+   * - Consensus Layer: 블록에 포함하여 실행
+   * - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능
+   *
+   * @param bytecode - 컨트랙트 바이트코드 (hex string)
+   * @param from - 배포자 주소
+   * @param privateKey - 배포자 개인키
+   * @param value - 전송할 금액 (Wei, 기본값: 0)
+   * @param blockNumber - 블록 번호
+   * @param timestamp - 타임스탬프 (밀리초)
+   * @returns 배포된 컨트랙트 주소
+   */
+  async deployContractDirect(
+    bytecode: string,
+    from: Address,
+    privateKey: string,
+    value: bigint = 0n,
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<Address> {
+    if (!this.vm) {
+      throw new Error('VM is not initialized');
+    }
+
+    // bytecode를 Buffer로 변환
+    const bytecodeHex = bytecode.startsWith('0x')
+      ? bytecode.slice(2)
+      : bytecode;
+    const bytecodeBuffer = Buffer.from(bytecodeHex, 'hex');
+    const bytecodeBytes = new Uint8Array(bytecodeBuffer);
+
+    // 트랜잭션 객체 생성 (컨트랙트 배포는 to가 null)
+    const accountNonce = await this.accountService.getNonce(from);
+    const gasPrice = 1000000000n; // 1 Gwei
+    const gasLimit = 10000000n; // 충분한 가스 한도
+
+    // 트랜잭션 해시 계산 (EIP-155 서명 대상)
+    // RLP([nonce, gasPrice, gasLimit, to(null), value, data, chainId, 0, 0])
+    const toBufferForSign = Buffer.alloc(0); // 컨트랙트 배포는 to가 null
+    const dataBufferForSign = Buffer.from(bytecodeBytes);
+
+    const signArray = [
+      this.toRlpBuffer(BigInt(accountNonce)),
+      this.toRlpBuffer(gasPrice),
+      this.toRlpBuffer(gasLimit),
+      toBufferForSign, // null인 경우 빈 버퍼
+      this.toRlpBuffer(value),
+      dataBufferForSign,
+      this.toRlpBuffer(BigInt(CHAIN_ID)),
+      Buffer.alloc(0), // r = 0
+      Buffer.alloc(0), // s = 0
+    ];
+
+    const signRlp = this.cryptoService.rlpEncode(signArray);
+    const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
+
+    // EIP-155 서명 생성
+    const signature = this.cryptoService.signTransaction(
+      txHash,
+      privateKey,
+      CHAIN_ID,
+    );
+
+    // 서명된 트랜잭션 생성 (to가 null인 경우 undefined)
+    const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
+    const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
+
+    const txForVM = createLegacyTx(
+      {
+        nonce: BigInt(accountNonce),
+        gasPrice,
+        gasLimit,
+        to: undefined, // 컨트랙트 배포는 to가 null
+        value,
+        data: bytecodeBytes,
+        v: BigInt(signature.v),
+        r: rValue,
+        s: sValue,
+      },
+      { common: this.common },
+    );
+
+    // Block Header 생성
+    const blockHeader = new EthereumBlockHeader(
+      {
+        number: BigInt(blockNumber),
+        gasLimit: 30000000n,
+        timestamp: BigInt(Math.floor(timestamp / 1000)), // 초 단위
+        parentHash: Buffer.alloc(32, 0),
+        stateRoot: Buffer.alloc(32, 0),
+        transactionsTrie: Buffer.alloc(32, 0),
+        receiptTrie: Buffer.alloc(32, 0),
+        logsBloom: Buffer.alloc(256, 0),
+        difficulty: 0n,
+        extraData: Buffer.alloc(0),
+        gasUsed: 0n,
+        mixHash: Buffer.alloc(32, 0),
+        nonce: Buffer.alloc(8, 0),
+      },
+      { common: this.common },
+    );
+
+    const vmBlock = new EthereumBlock(blockHeader, [], [], undefined, {
+      common: this.common,
+    });
+
+    // VM을 통해 직접 실행
+    const result = await runTx(this.vm, {
+      tx: txForVM,
+      block: vmBlock,
+    });
+
+    // 실행 결과 파싱
+    const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+    if (status === 0) {
+      const error = result.execResult.exceptionError;
+      throw new Error(
+        `Contract deployment failed: ${error?.error?.toString() || 'Unknown error'}`,
+      );
+    }
+
+    // 배포된 컨트랙트 주소 추출
+    const created = result.createdAddress;
+    let contractAddress: Address | null = null;
+
+    if (created) {
+      // Address 타입 처리: string, Address 객체, Uint8Array, Buffer 등
+      if (typeof created === 'string') {
+        contractAddress = created;
+      } else if (created && typeof created === 'object') {
+        // Address 객체인 경우 .toString() 또는 .bytes 사용
+        if ('toString' in created) {
+          const addrStr = (created as { toString: () => string }).toString();
+          contractAddress =
+            addrStr && addrStr.startsWith('0x') ? addrStr : null;
+        } else if ('bytes' in created) {
+          const bytes = (created as { bytes: Uint8Array | Buffer }).bytes;
+          contractAddress = this.cryptoService.bytesToHex(Buffer.from(bytes));
+        } else {
+          // Uint8Array나 Buffer인 경우
+          contractAddress = this.cryptoService.bytesToHex(
+            Buffer.from(created as unknown as Uint8Array),
+          );
+        }
+      } else {
+        // Uint8Array나 다른 타입인 경우 변환
+        contractAddress = this.cryptoService.bytesToHex(
+          Buffer.from(created as unknown as Uint8Array),
+        );
+      }
+
+      // 최종 검증: contractAddress가 유효한 0x 접두사 주소인지 확인
+      if (contractAddress && !contractAddress.startsWith('0x')) {
+        contractAddress = `0x${contractAddress}`;
+      }
+    }
+
+    if (!contractAddress) {
+      throw new Error('Failed to get deployed contract address');
+    }
+
+    // nonce 증가 (실제 트랜잭션이 아니지만 상태 변경이 일어났으므로)
+    await this.accountService.incrementNonce(from);
+
+    return contractAddress;
   }
 
   /**

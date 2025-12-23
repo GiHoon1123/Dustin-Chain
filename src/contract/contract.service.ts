@@ -1,12 +1,17 @@
 import {
+  Block as EthereumBlock,
+  BlockHeader as EthereumBlockHeader,
+} from '@ethereumjs/block';
+import {
   Common,
   createCustomCommon,
   Hardfork,
   Mainnet,
   StateManagerInterface,
 } from '@ethereumjs/common';
+import { createLegacyTx } from '@ethereumjs/tx';
 import { Address as EthAddress } from '@ethereumjs/util';
-import { createVM, VM } from '@ethereumjs/vm';
+import { createVM, runTx, VM } from '@ethereumjs/vm';
 import {
   Inject,
   Injectable,
@@ -19,7 +24,7 @@ import * as path from 'path';
 import { AccountService } from '../account/account.service';
 import { CHAIN_ID } from '../common/constants/blockchain.constants';
 import { CryptoService } from '../common/crypto/crypto.service';
-import { Address } from '../common/types/common.types';
+import { Address, Hash } from '../common/types/common.types';
 import { CustomStateManager } from '../state/custom-state-manager';
 import { IBlockRepository } from '../storage/repositories/block.repository.interface';
 import { TransactionService } from '../transaction/transaction.service';
@@ -43,7 +48,8 @@ interface GenesisAccount {
 @Injectable()
 export class ContractService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ContractService.name);
-  private callVM: VM | null = null;
+  private callVM: VM | null = null; // eth_call 전용 VM
+  private deployVM: VM | null = null; // 컨트랙트 배포 전용 VM
   private readonly common: Common;
 
   private genesisAccount0: GenesisAccount | null = null;
@@ -90,6 +96,21 @@ export class ContractService implements OnApplicationBootstrap {
       );
     } catch (e: unknown) {
       this.logger.error(`Failed to initialize Call VM: ${String(e)}`);
+      // VM 없이도 계속 진행 (나중에 에러 발생)
+    }
+
+    try {
+      // 컨트랙트 배포 전용 VM 인스턴스 생성
+      this.deployVM = await createVM({
+        stateManager: this.evmState as unknown as StateManagerInterface,
+        common: this.common,
+      });
+
+      this.logger.log(
+        `Deploy VM initialized for contract deployment (chainId=${this.common.chainId()})`,
+      );
+    } catch (e: unknown) {
+      this.logger.error(`Failed to initialize Deploy VM: ${String(e)}`);
       // VM 없이도 계속 진행 (나중에 에러 발생)
     }
 
@@ -686,6 +707,374 @@ export class ContractService implements OnApplicationBootstrap {
   }
 
   /**
+   * BigInt를 RLP 버퍼로 변환 (빅엔디안 바이트 배열)
+   */
+  private toRlpBuffer(value: bigint): Buffer {
+    if (value === 0n) {
+      return Buffer.alloc(0);
+    }
+    const hex = value.toString(16);
+    const hexPadded = hex.length % 2 === 0 ? hex : '0' + hex;
+    return Buffer.from(hexPadded, 'hex');
+  }
+
+  /**
+   * 컨트랙트 배포 (VM을 통해 직접 실행, 트랜잭션 제출 없이)
+   *
+   * 현재 상황:
+   * - Execution Layer와 Consensus Layer가 통합되어 있음
+   * - 컨트랙트 배포를 트랜잭션으로 처리하면 nonce race condition 발생 가능
+   * - Genesis Block 생성 시점이나 특수한 경우에 직접 배포 필요
+   *
+   * 해결 방법:
+   * - VM을 통해 직접 컨트랙트 배포
+   * - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
+   * - nonce는 증가시키지만 실제 트랜잭션은 생성하지 않음
+   *
+   * 추후 레이어 분리 시:
+   * - Execution Layer: 트랜잭션으로 컨트랙트 배포
+   * - Consensus Layer: 블록에 포함하여 실행
+   * - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능
+   *
+   * @param bytecode - 컨트랙트 바이트코드 (hex string)
+   * @param from - 배포자 주소
+   * @param privateKey - 배포자 개인키
+   * @param value - 전송할 금액 (Wei, 기본값: 0)
+   * @param blockNumber - 블록 번호
+   * @param timestamp - 타임스탬프 (밀리초)
+   * @returns 배포된 컨트랙트 주소
+   */
+  async deployContractDirect(
+    bytecode: string,
+    from: Address,
+    privateKey: string,
+    value: bigint = 0n,
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<Address> {
+    if (!this.deployVM) {
+      throw new Error('Deploy VM is not initialized');
+    }
+
+    // bytecode를 Buffer로 변환
+    const bytecodeHex = bytecode.startsWith('0x')
+      ? bytecode.slice(2)
+      : bytecode;
+    const bytecodeBuffer = Buffer.from(bytecodeHex, 'hex');
+    const bytecodeBytes = new Uint8Array(bytecodeBuffer);
+
+    // 트랜잭션 객체 생성 (컨트랙트 배포는 to가 null)
+    const accountNonce = await this.accountService.getNonce(from);
+    const gasPrice = 1000000000n; // 1 Gwei
+    const gasLimit = 10000000n; // 충분한 가스 한도
+
+    // 트랜잭션 해시 계산 (EIP-155 서명 대상)
+    // RLP([nonce, gasPrice, gasLimit, to(null), value, data, chainId, 0, 0])
+    const toBufferForSign = Buffer.alloc(0); // 컨트랙트 배포는 to가 null
+    const dataBufferForSign = Buffer.from(bytecodeBytes);
+
+    const signArray = [
+      this.toRlpBuffer(BigInt(accountNonce)),
+      this.toRlpBuffer(gasPrice),
+      this.toRlpBuffer(gasLimit),
+      toBufferForSign, // null인 경우 빈 버퍼
+      this.toRlpBuffer(value),
+      dataBufferForSign,
+      this.toRlpBuffer(BigInt(CHAIN_ID)),
+      Buffer.alloc(0), // r = 0
+      Buffer.alloc(0), // s = 0
+    ];
+
+    const signRlp = this.cryptoService.rlpEncode(signArray);
+    const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
+
+    // EIP-155 서명 생성
+    const signature = this.cryptoService.signTransaction(
+      txHash,
+      privateKey,
+      CHAIN_ID,
+    );
+
+    // 서명된 트랜잭션 생성 (to가 null인 경우 undefined)
+    const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
+    const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
+
+    const txForVM = createLegacyTx(
+      {
+        nonce: BigInt(accountNonce),
+        gasPrice,
+        gasLimit,
+        to: undefined, // 컨트랙트 배포는 to가 null
+        value,
+        data: bytecodeBytes,
+        v: BigInt(signature.v),
+        r: rValue,
+        s: sValue,
+      },
+      { common: this.common },
+    );
+
+    // Block Header 생성
+    const blockHeader = new EthereumBlockHeader(
+      {
+        number: BigInt(blockNumber),
+        gasLimit: 30000000n,
+        timestamp: BigInt(Math.floor(timestamp / 1000)), // 초 단위
+        parentHash: Buffer.alloc(32, 0),
+        stateRoot: Buffer.alloc(32, 0),
+        transactionsTrie: Buffer.alloc(32, 0),
+        receiptTrie: Buffer.alloc(32, 0),
+        logsBloom: Buffer.alloc(256, 0),
+        difficulty: 0n,
+        extraData: Buffer.alloc(0),
+        gasUsed: 0n,
+        mixHash: Buffer.alloc(32, 0),
+        nonce: Buffer.alloc(8, 0),
+      },
+      { common: this.common },
+    );
+
+    const vmBlock = new EthereumBlock(blockHeader, [], [], undefined, {
+      common: this.common,
+    });
+
+    // VM을 통해 직접 실행
+    const result = await runTx(this.deployVM, {
+      tx: txForVM,
+      block: vmBlock,
+    });
+
+    // 실행 결과 파싱
+    const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+    if (status === 0) {
+      const error = result.execResult.exceptionError;
+      throw new Error(
+        `Contract deployment failed: ${error?.error?.toString() || 'Unknown error'}`,
+      );
+    }
+
+    // 배포된 컨트랙트 주소 추출
+    const created = result.createdAddress;
+    let contractAddress: Address | null = null;
+
+    if (created) {
+      // Address 타입 처리: string, Address 객체, Uint8Array, Buffer 등
+      if (typeof created === 'string') {
+        contractAddress = created;
+      } else if (created && typeof created === 'object') {
+        // Address 객체인 경우 .toString() 또는 .bytes 사용
+        if ('toString' in created) {
+          const addrStr = (created as { toString: () => string }).toString();
+          contractAddress =
+            addrStr && addrStr.startsWith('0x') ? addrStr : null;
+        } else if ('bytes' in created) {
+          const bytes = (created as { bytes: Uint8Array | Buffer }).bytes;
+          contractAddress = this.cryptoService.bytesToHex(Buffer.from(bytes));
+        } else {
+          // Uint8Array나 Buffer인 경우
+          contractAddress = this.cryptoService.bytesToHex(
+            Buffer.from(created as unknown as Uint8Array),
+          );
+        }
+      } else {
+        // Uint8Array나 다른 타입인 경우 변환
+        contractAddress = this.cryptoService.bytesToHex(
+          Buffer.from(created as unknown as Uint8Array),
+        );
+      }
+
+      // 최종 검증: contractAddress가 유효한 0x 접두사 주소인지 확인
+      if (contractAddress && !contractAddress.startsWith('0x')) {
+        contractAddress = `0x${contractAddress}`;
+      }
+    }
+
+    if (!contractAddress) {
+      throw new Error('Failed to get deployed contract address');
+    }
+
+    // nonce 증가 (실제 트랜잭션이 아니지만 상태 변경이 일어났으므로)
+    await this.accountService.incrementNonce(from);
+
+    return contractAddress;
+  }
+
+  /**
+   * 컨트랙트 함수 호출 (VM을 통해 직접 실행, 트랜잭션 제출 없이)
+   *
+   * 현재 상황:
+   * - Execution Layer와 Consensus Layer가 통합되어 있음
+   * - 컨트랙트 함수 호출을 트랜잭션으로 처리하면 nonce race condition 발생 가능
+   * - Genesis Block 생성 시점이나 특수한 경우에 직접 호출 필요
+   *
+   * 해결 방법:
+   * - VM을 통해 직접 컨트랙트 함수 호출
+   * - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
+   * - nonce는 증가시키지만 실제 트랜잭션은 생성하지 않음
+   *
+   * 추후 레이어 분리 시:
+   * - Execution Layer: 트랜잭션으로 컨트랙트 함수 호출
+   * - Consensus Layer: 블록에 포함하여 실행
+   * - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능
+   *
+   * @param to - 컨트랙트 주소
+   * @param data - 함수 호출 데이터 (함수 선택자 + 파라미터)
+   * @param from - 호출자 주소
+   * @param privateKey - 호출자 개인키
+   * @param value - 전송할 금액 (Wei, 기본값: 0)
+   * @param blockNumber - 블록 번호
+   * @param timestamp - 타임스탬프 (밀리초)
+   * @returns 실행 결과
+   */
+  async executeContractDirect(
+    to: Address,
+    data: string,
+    from: Address,
+    privateKey: string,
+    value: bigint = 0n,
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<{
+    result: string;
+    status: 1 | 0;
+    gasUsed: bigint;
+    logs: { address: Address; topics: Hash[]; data: string }[];
+  }> {
+    if (!this.deployVM) {
+      throw new Error('Deploy VM is not initialized');
+    }
+
+    // data를 Buffer로 변환
+    const dataHex = data.startsWith('0x') ? data.slice(2) : data;
+    const dataBuffer = Buffer.from(dataHex, 'hex');
+    const dataBytes = new Uint8Array(dataBuffer);
+
+    // 트랜잭션 객체 생성
+    const accountNonce = await this.accountService.getNonce(from);
+    const gasPrice = 1000000000n; // 1 Gwei
+    const gasLimit = 10000000n; // 충분한 가스 한도
+
+    // to 주소를 EthAddress로 변환
+    const toBytes = this.cryptoService.hexToBytes(to);
+    const toEthAddress = new EthAddress(new Uint8Array(toBytes));
+
+    // 트랜잭션 해시 계산 (EIP-155 서명 대상)
+    const signArray = [
+      this.toRlpBuffer(BigInt(accountNonce)),
+      this.toRlpBuffer(gasPrice),
+      this.toRlpBuffer(gasLimit),
+      Buffer.from(toBytes),
+      this.toRlpBuffer(value),
+      dataBuffer,
+      this.toRlpBuffer(BigInt(CHAIN_ID)),
+      Buffer.alloc(0), // r = 0
+      Buffer.alloc(0), // s = 0
+    ];
+
+    const signRlp = this.cryptoService.rlpEncode(signArray);
+    const txHash = this.cryptoService.hashBuffer(Buffer.from(signRlp));
+
+    // EIP-155 서명 생성
+    const signature = this.cryptoService.signTransaction(
+      txHash,
+      privateKey,
+      CHAIN_ID,
+    );
+
+    // 서명된 트랜잭션 생성
+    const rValue = Buffer.from(this.cryptoService.hexToBytes(signature.r));
+    const sValue = Buffer.from(this.cryptoService.hexToBytes(signature.s));
+
+    const txForVM = createLegacyTx(
+      {
+        nonce: BigInt(accountNonce),
+        gasPrice,
+        gasLimit,
+        to: toEthAddress,
+        value,
+        data: dataBytes,
+        v: BigInt(signature.v),
+        r: rValue,
+        s: sValue,
+      },
+      { common: this.common },
+    );
+
+    // Block Header 생성
+    const blockHeader = new EthereumBlockHeader(
+      {
+        number: BigInt(blockNumber),
+        gasLimit: 30000000n,
+        timestamp: BigInt(Math.floor(timestamp / 1000)), // 초 단위
+        parentHash: Buffer.alloc(32, 0),
+        stateRoot: Buffer.alloc(32, 0),
+        transactionsTrie: Buffer.alloc(32, 0),
+        receiptTrie: Buffer.alloc(32, 0),
+        logsBloom: Buffer.alloc(256, 0),
+        difficulty: 0n,
+        extraData: Buffer.alloc(0),
+        gasUsed: 0n,
+        mixHash: Buffer.alloc(32, 0),
+        nonce: Buffer.alloc(8, 0),
+      },
+      { common: this.common },
+    );
+
+    const vmBlock = new EthereumBlock(blockHeader, [], [], undefined, {
+      common: this.common,
+    });
+
+    // VM을 통해 직접 실행
+    const result = await runTx(this.deployVM, {
+      tx: txForVM,
+      block: vmBlock,
+    });
+
+    // 실행 결과 파싱
+    const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+    const gasUsed = result.totalGasSpent;
+
+    // 로그 파싱
+    const logs: { address: Address; topics: Hash[]; data: string }[] = [];
+    if (result.execResult.logs) {
+      for (const log of result.execResult.logs) {
+        const logAddress = this.cryptoService.bytesToHex(
+          Buffer.from(log[0] as Uint8Array),
+        );
+        const logTopics = (log[1] as Uint8Array[]).map((topic) =>
+          this.cryptoService.bytesToHex(Buffer.from(topic)),
+        );
+        const logData = this.cryptoService.bytesToHex(
+          Buffer.from(log[2] as Uint8Array),
+        );
+        logs.push({
+          address: logAddress,
+          topics: logTopics,
+          data: logData,
+        });
+      }
+    }
+
+    // 반환값 파싱
+    let returnValue = '';
+    if (result.execResult.returnValue) {
+      returnValue = this.cryptoService.bytesToHex(
+        Buffer.from(result.execResult.returnValue),
+      );
+    }
+
+    // nonce 증가 (실제 트랜잭션이 아니지만 상태 변경이 일어났으므로)
+    await this.accountService.incrementNonce(from);
+
+    return {
+      result: returnValue,
+      status,
+      gasUsed,
+      logs,
+    };
+  }
+
+  /**
    * 함수 선택자 계산 (이더리움 표준)
    *
    * 함수 선택자 = keccak256("함수명(파라미터타입)")[0:4]
@@ -977,15 +1366,41 @@ export class ContractService implements OnApplicationBootstrap {
 
     this.logger.log('Starting stablecoin system deployment...');
 
-    // 1. StableCoin 배포
-    this.logger.log('Deploying StableCoin...');
-    const stablecoinDeployResult = await this.deployContract(
+    if (!this.deploymentAccount) {
+      throw new Error('Deployment account (255) is not loaded');
+    }
+
+    // 최신 블록 정보 가져오기 (deployContractDirect에 필요)
+    const latestBlock = await this.blockRepository.findLatest();
+    if (!latestBlock) {
+      throw new Error('Latest block not found');
+    }
+    const blockNumber = latestBlock.number;
+    const timestamp = Date.now(); // 밀리초
+
+    // 1. StableCoin 배포 (VM을 통해 직접 실행, 트랜잭션 제출 없이)
+    // 현재 상황:
+    // - Execution Layer와 Consensus Layer가 통합되어 있음
+    // - 컨트랙트 배포를 트랜잭션으로 처리하면 nonce race condition 발생 가능
+    // - Genesis Block 생성 시점이나 특수한 경우에 직접 배포 필요
+    //
+    // 해결 방법:
+    // - VM을 통해 직접 컨트랙트 배포
+    // - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
+    // - nonce는 증가시키지만 실제 트랜잭션은 생성하지 않음
+    //
+    // 추후 레이어 분리 시:
+    // - Execution Layer: 트랜잭션으로 컨트랙트 배포
+    // - Consensus Layer: 블록에 포함하여 실행
+    // - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능
+    this.logger.log('Deploying StableCoin via VM (no transaction)...');
+    const stablecoinAddress = await this.deployContractDirect(
       stablecoinBytecode,
-      'StableCoin',
-      stablecoinABI,
-    );
-    const stablecoinAddress = await this.waitForContractAddress(
-      stablecoinDeployResult.hash,
+      this.deploymentAccount.address,
+      this.deploymentAccount.privateKey,
+      0n, // value
+      blockNumber,
+      timestamp,
     );
 
     if (!stablecoinAddress) {
@@ -994,20 +1409,20 @@ export class ContractService implements OnApplicationBootstrap {
 
     this.logger.log(`StableCoin deployed at: ${stablecoinAddress}`);
 
-    // ABI가 있으면 저장 (배포 시 주소 계산하여 저장됨)
+    // ABI가 있으면 저장
     if (stablecoinABI) {
       this.saveContractABI(stablecoinAddress, 'StableCoin', stablecoinABI);
     }
 
-    // 2. CollateralVault 배포
-    this.logger.log('Deploying CollateralVault...');
-    const vaultDeployResult = await this.deployContract(
+    // 2. CollateralVault 배포 (VM을 통해 직접 실행, 트랜잭션 제출 없이)
+    this.logger.log('Deploying CollateralVault via VM (no transaction)...');
+    const vaultAddress = await this.deployContractDirect(
       vaultBytecode,
-      'CollateralVault',
-      vaultABI,
-    );
-    const vaultAddress = await this.waitForContractAddress(
-      vaultDeployResult.hash,
+      this.deploymentAccount.address,
+      this.deploymentAccount.privateKey,
+      0n, // value
+      blockNumber,
+      timestamp,
     );
 
     if (!vaultAddress) {
@@ -1021,46 +1436,40 @@ export class ContractService implements OnApplicationBootstrap {
       this.saveContractABI(vaultAddress, 'CollateralVault', vaultABI);
     }
 
-    // 3. CollateralVault.setStablecoin(StableCoin주소) 호출
-    this.logger.log('Linking CollateralVault to StableCoin...');
+    // 3. CollateralVault.setStablecoin(StableCoin주소) 호출 (VM을 통해 직접 실행)
+    this.logger.log('Linking CollateralVault to StableCoin via VM (no transaction)...');
     const setStablecoinData = this.encodeFunctionCall(
       'setStablecoin',
       ['address'],
       [stablecoinAddress],
     );
-    const setStablecoinResult = await this.executeContract(
+    await this.executeContractDirect(
       vaultAddress,
       setStablecoinData,
+      this.deploymentAccount.address,
+      this.deploymentAccount.privateKey,
+      0n, // value
+      blockNumber,
+      timestamp,
     );
-    // 트랜잭션이 블록에 포함될 때까지 대기 및 성공 여부 확인
-    const setStablecoinSuccess = await this.waitForTransaction(
-      setStablecoinResult.hash,
-    );
-    if (!setStablecoinSuccess) {
-      throw new Error(
-        `Failed to link CollateralVault to StableCoin. Transaction hash: ${setStablecoinResult.hash}`,
-      );
-    }
     this.logger.log('CollateralVault.setStablecoin() completed');
 
-    // 4. StableCoin.setVault(CollateralVault주소) 호출
-    this.logger.log('Linking StableCoin to CollateralVault...');
+    // 4. StableCoin.setVault(CollateralVault주소) 호출 (VM을 통해 직접 실행)
+    this.logger.log('Linking StableCoin to CollateralVault via VM (no transaction)...');
     const setVaultData = this.encodeFunctionCall(
       'setVault',
       ['address'],
       [vaultAddress],
     );
-    const setVaultResult = await this.executeContract(
+    await this.executeContractDirect(
       stablecoinAddress,
       setVaultData,
+      this.deploymentAccount.address,
+      this.deploymentAccount.privateKey,
+      0n, // value
+      blockNumber,
+      timestamp,
     );
-    // 트랜잭션이 블록에 포함될 때까지 대기 및 성공 여부 확인
-    const setVaultSuccess = await this.waitForTransaction(setVaultResult.hash);
-    if (!setVaultSuccess) {
-      throw new Error(
-        `Failed to link StableCoin to CollateralVault. Transaction hash: ${setVaultResult.hash}`,
-      );
-    }
     this.logger.log('StableCoin.setVault() completed');
 
     // 5. 연결 검증: 실제로 연결되었는지 확인
@@ -1099,8 +1508,8 @@ export class ContractService implements OnApplicationBootstrap {
     return {
       stablecoinAddress,
       vaultAddress,
-      stablecoinTxHash: stablecoinDeployResult.hash,
-      vaultTxHash: vaultDeployResult.hash,
+      stablecoinTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
+      vaultTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
     };
   }
 
@@ -1248,21 +1657,42 @@ export class ContractService implements OnApplicationBootstrap {
 
     this.logger.log('Starting StakingContract deployment...');
 
-    // StakingContract 배포 (생성자 파라미터 없음 - admin 제거됨)
-    this.logger.log('Deploying StakingContract...');
-    const stakingDeployResult = await this.deployContract(
-      stakingBytecode,
-      'StakingContract',
-      finalABI,
-    );
-
-    const stakingAddress = await this.waitForContractAddress(
-      stakingDeployResult.hash,
-    );
-
-    if (!stakingAddress) {
-      throw new Error('Failed to get StakingContract address');
+    if (!this.deploymentAccount) {
+      throw new Error('Deployment account (255) is not loaded');
     }
+
+    // 최신 블록 정보 가져오기 (deployContractDirect에 필요)
+    const latestBlock = await this.blockRepository.findLatest();
+    if (!latestBlock) {
+      throw new Error('Latest block not found');
+    }
+    const blockNumber = latestBlock.number;
+    const timestamp = Date.now(); // 밀리초
+
+    // StakingContract 배포 (VM을 통해 직접 실행, 트랜잭션 제출 없이)
+    // 현재 상황:
+    // - Execution Layer와 Consensus Layer가 통합되어 있음
+    // - 컨트랙트 배포를 트랜잭션으로 처리하면 nonce race condition 발생 가능
+    // - Genesis Block 생성 시점이나 특수한 경우에 직접 배포 필요
+    //
+    // 해결 방법:
+    // - VM을 통해 직접 컨트랙트 배포
+    // - 트랜잭션 없이 상태 변경 (가스 비용 없음, 블록에 포함되지 않음)
+    // - nonce는 증가시키지만 실제 트랜잭션은 생성하지 않음
+    //
+    // 추후 레이어 분리 시:
+    // - Execution Layer: 트랜잭션으로 컨트랙트 배포
+    // - Consensus Layer: 블록에 포함하여 실행
+    // - 레이어 분리 시에는 트랜잭션 방식으로 처리 가능
+    this.logger.log('Deploying StakingContract via VM (no transaction)...');
+    const stakingAddress = await this.deployContractDirect(
+      stakingBytecode,
+      this.deploymentAccount.address,
+      this.deploymentAccount.privateKey,
+      0n, // value
+      blockNumber,
+      timestamp,
+    );
 
     this.logger.log(`StakingContract deployed at: ${stakingAddress}`);
 
@@ -1302,7 +1732,7 @@ export class ContractService implements OnApplicationBootstrap {
 
     return {
       stakingAddress,
-      stakingTxHash: stakingDeployResult.hash,
+      stakingTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
     };
   }
 

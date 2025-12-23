@@ -711,6 +711,41 @@ contract StakingContract {
     }
     
     /**
+     * @dev Pending Validator 목록 조회
+     * 
+     * pending_queued 또는 pending_initialized 상태의 Validator 목록을 반환합니다.
+     * Activation Queue 처리에 사용됩니다.
+     * 
+     * 이더리움:
+     * - Activation Queue에 대기 중인 Validator 목록
+     * - Churn Limit에 따라 Epoch마다 활성화됨
+     * 
+     * @return Pending Validator 주소 배열
+     */
+    function getPendingValidators() external view returns (address[] memory) {
+        address[] memory pending = new address[](validatorList.length);
+        uint256 count = 0;
+        
+        for (uint256 i = 0; i < validatorList.length; i++) {
+            ValidatorStatus status = validators[validatorList[i]].status;
+            if (
+                status == ValidatorStatus.pending_queued ||
+                status == ValidatorStatus.pending_initialized
+            ) {
+                pending[count] = validatorList[i];
+                count++;
+            }
+        }
+        
+        // 배열 크기 조정
+        assembly {
+            mstore(pending, count)
+        }
+        
+        return pending;
+    }
+    
+    /**
      * @dev 출금 대기열 조회
      * 
      * @return 출금 대기 중인 Validator 주소 배열

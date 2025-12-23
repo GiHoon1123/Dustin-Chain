@@ -263,6 +263,9 @@ export class BlockProducer implements OnApplicationBootstrap {
         // 자동화: Epoch 보상 일괄 지급 (Epoch 완료 시)
         await this.processEpochRewards(block.number);
 
+        // 자동화: Activation Queue 처리 (Epoch 시작 시, 이더리움과 동일)
+        await this.processActivationQueue(block.number);
+
         // 자동화: 출금 처리 (주기적으로)
         await this.processWithdrawals(block.number);
 
@@ -621,6 +624,36 @@ export class BlockProducer implements OnApplicationBootstrap {
   }
 
   /**
+   * Activation Queue 처리 자동화
+   *
+   * 이더리움 Beacon Chain:
+   * - Epoch 시작 시 Activation Queue 처리
+   * - Churn Limit만큼만 활성화 (네트워크 안정성)
+   * - pending_queued 상태의 Validator를 active_ongoing으로 변경
+   *
+   * 우리:
+   * - BlockProducer가 Epoch 시작 시 자동 호출
+   * - StakingService.processActivationQueue() 호출
+   *
+   * @param blockNumber - 현재 블록 번호
+   */
+  private async processActivationQueue(blockNumber: number): Promise<void> {
+    try {
+      // Epoch 시작 시에만 처리 (이더리움과 동일)
+      if (blockNumber % EPOCH_SIZE !== 0) {
+        return;
+      }
+
+      await this.stakingService.processActivationQueue(blockNumber);
+    } catch (error) {
+      // 에러가 발생해도 블록 생성은 계속 진행
+      this.logger.error(
+        `Failed to process Activation Queue: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * 출금 처리 (자동화)
    *
    * 이더리움:
@@ -654,9 +687,19 @@ export class BlockProducer implements OnApplicationBootstrap {
 
       // 최대 10개씩 처리 (가스 제한 방지)
       // VM을 통해 직접 호출 (트랜잭션 없이)
+      // StakingService를 통해 ContractService 접근
+      const stakingServiceAny = this.stakingService as any;
+      const contractService = stakingServiceAny.contractService;
+      if (!contractService) {
+        this.logger.warn(
+          'ContractService not available. Skipping withdrawal processing.',
+        );
+        return;
+      }
+
       const result = await this.stakingService.processWithdrawalsDirect(
         10,
-        this.blockService,
+        contractService,
         blockNumber,
         Date.now(), // 타임스탬프 (밀리초)
       );
