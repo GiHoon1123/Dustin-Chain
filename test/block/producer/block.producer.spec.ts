@@ -249,8 +249,14 @@ describe('BlockProducer', () => {
       consensusService.hasSupermajority.mockReturnValue(true);
       blockService.saveBlock.mockResolvedValue(undefined);
       accountService.addBalance.mockResolvedValue(undefined);
-      stakingService.rewardProposer.mockResolvedValue(undefined);
-      stakingService.accumulateCommitteeReward.mockResolvedValue(undefined);
+      stakingService.rewardProposer.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+      });
+      stakingService.accumulateCommitteeReward.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+      });
       stakingService.distributeEpochRewards.mockResolvedValue({
         hash: '0x1234567890abcdef',
         status: '0x1',
@@ -311,8 +317,14 @@ describe('BlockProducer', () => {
       blockService.createBlock.mockResolvedValue(block);
       consensusService.collectAttestations.mockResolvedValue(attestations);
       consensusService.hasSupermajority.mockReturnValue(false);
-      stakingService.rewardProposer.mockResolvedValue(undefined);
-      stakingService.accumulateCommitteeReward.mockResolvedValue(undefined);
+      stakingService.rewardProposer.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+      });
+      stakingService.accumulateCommitteeReward.mockResolvedValue({
+        hash: '0x1234567890abcdef',
+        status: '0x1',
+      });
       stakingService.distributeEpochRewards.mockResolvedValue({
         hash: '0x1234567890abcdef',
         status: '0x1',
