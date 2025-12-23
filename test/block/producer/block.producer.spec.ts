@@ -186,6 +186,7 @@ describe('BlockProducer', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       const attestations = committee.slice(0, 90).map((validator) => {
@@ -227,6 +228,7 @@ describe('BlockProducer', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 

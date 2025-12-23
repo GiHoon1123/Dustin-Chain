@@ -1,13 +1,13 @@
 {
   "stablecoin": {
-    "address": "0x290ce6ada00eff35b18a96dabe4bf0735ea4d555",
+    "address": "0x1111111111111111111111111111111111111111",
     "name": "StableCoin",
-    "deployedAt": "2025-12-21T12:46:26.433Z"
+    "deployedAt": "2025-12-23T01:23:25.213Z"
   },
   "vault": {
-    "address": "0xad51a3cbdb49eb8a33d075fe1bc4a171de9d6915",
+    "address": "0x2222222222222222222222222222222222222222",
     "name": "CollateralVault",
-    "deployedAt": "2025-12-21T12:46:26.433Z"
+    "deployedAt": "2025-12-23T01:23:25.213Z"
   },
   "staking": {
     "address": "0x4594d2bc7bc272109ab1a44358e9dfef35cd60a2",

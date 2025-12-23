@@ -24,6 +24,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '0'.repeat(64),
+        '0x' + '0'.repeat(64),
       );
 
       expect(block.number).toBe(0);
@@ -54,6 +55,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       expect(block.transactions.length).toBe(1);
@@ -72,6 +74,7 @@ describe('Block Entity', () => {
           r: '0x' + 'r'.repeat(64),
           s: '0x' + 's'.repeat(64),
         },
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 
@@ -98,6 +101,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       expect(block.getTransactionCount()).toBe(2);
@@ -115,6 +119,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 
@@ -138,6 +143,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '0'.repeat(64),
+        '0x' + '0'.repeat(64),
       );
 
       expect(block.isGenesis()).toBe(true);
@@ -153,6 +159,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 
@@ -171,6 +178,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 
@@ -207,6 +215,7 @@ describe('Block Entity', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 

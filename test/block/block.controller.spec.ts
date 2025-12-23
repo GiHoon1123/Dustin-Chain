@@ -63,6 +63,7 @@ describe('BlockController', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       blockService.getBlockByNumber.mockResolvedValue(block);
@@ -98,6 +99,7 @@ describe('BlockController', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         hash,
+        hash,
       );
 
       blockService.getBlockByHash.mockResolvedValue(block);
@@ -126,6 +128,7 @@ describe('BlockController', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 

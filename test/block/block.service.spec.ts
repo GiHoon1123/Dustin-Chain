@@ -232,6 +232,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '0'.repeat(64),
+        '0x' + '0'.repeat(64),
       );
 
       blockRepository.findByNumber.mockResolvedValue(existingBlock);
@@ -253,6 +254,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       blockRepository.findByNumber.mockResolvedValue(block);
@@ -273,6 +275,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         hash,
+        hash,
       );
 
       blockRepository.findByHash.mockResolvedValue(block);
@@ -291,6 +294,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 
@@ -312,6 +316,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 
@@ -340,6 +345,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '0'.repeat(64),
         '0x' + '0'.repeat(64),
       );
 
@@ -376,6 +382,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '0'.repeat(64),
         '0x' + '0'.repeat(64),
       );
 
@@ -434,6 +441,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       const receipt = new TransactionReceipt(
@@ -470,6 +478,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       await service.saveBlock(block);
@@ -499,6 +508,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
       );
 
@@ -717,6 +727,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         '0x' + '1'.repeat(64),
         '0x' + '1'.repeat(64),
+        '0x' + '1'.repeat(64),
       );
 
       blockRepository.findLatest.mockResolvedValue(block);
@@ -812,6 +823,7 @@ describe('BlockService', () => {
         EMPTY_ROOT,
         EMPTY_ROOT,
         EMPTY_ROOT,
+        '0x' + '0'.repeat(64),
         '0x' + '0'.repeat(64),
         '0x' + '0'.repeat(64),
       );

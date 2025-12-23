@@ -7,6 +7,7 @@ import { Address } from '../../src/common/types/common.types';
 import { CustomStateManager } from '../../src/state/custom-state-manager';
 import { TransactionService } from '../../src/transaction/transaction.service';
 import { ContractService } from '../../src/contract/contract.service';
+import { IBlockRepository } from '../../src/storage/repositories/block.repository.interface';
 
 /**
  * ContractService 테스트
@@ -72,6 +73,13 @@ describe('ContractService', () => {
         {
           provide: TransactionService,
           useValue: mockTransactionService,
+        },
+        {
+          provide: IBlockRepository,
+          useValue: {
+            findByNumber: jest.fn(),
+            findLatest: jest.fn(),
+          },
         },
         ContractService,
       ],
