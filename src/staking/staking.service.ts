@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { ClassicLevel } from 'classic-level';
 import * as fs from 'fs';
 import * as keccak from 'keccak';
 import * as path from 'path';
@@ -54,6 +55,16 @@ interface GenesisAccount {
 @Injectable()
 export class StakingService implements OnApplicationBootstrap {
   private readonly logger = new Logger(StakingService.name);
+
+  // 컨트랙트 메소드 없이 메모리에서 관리하는 보상 정보 (저널링 역할)
+  // validatorAddress -> totalRewards (누적 보상)
+  private validatorRewards: Map<Address, bigint> = new Map();
+
+  // 전체 누적 보상 (모든 검증자들의 보상 합계)
+  private totalRewards: bigint = 0n;
+
+  // LevelDB 인스턴스 (보상 데이터 영구 저장)
+  private rewardsDb: ClassicLevel<string, string> | null = null;
 
   constructor(
     private readonly contractService: ContractService,
@@ -294,7 +305,7 @@ export class StakingService implements OnApplicationBootstrap {
     const statusValue = parseInt(resultHex.slice(128, 192), 16); // offset 128-191: uint8 (enum)
     const activatedAt = '0x' + resultHex.slice(192, 256); // offset 192-255: uint256
     const exitRequestedAt = '0x' + resultHex.slice(256, 320); // offset 256-319: uint256
-    const totalRewards = '0x' + resultHex.slice(320, 384); // offset 320-383: uint256
+    // totalRewards는 DB에서 조회하므로 여기서는 사용 안 함
     const slashedAmount = '0x' + resultHex.slice(384, 448); // offset 384-447: uint256
     const withdrawalAddr = '0x' + resultHex.slice(472, 512); // offset 448-511: address (마지막 20바이트만 사용, 448+24=472)
 
@@ -308,6 +319,10 @@ export class StakingService implements OnApplicationBootstrap {
       5: 'exited_withdrawn',
     };
 
+    // totalRewards는 DB에서 조회 (컨트랙트 대신)
+    const totalRewardsFromDB =
+      await this.getValidatorRewardFromDB(validatorAddress);
+
     return {
       validatorAddress: validatorAddr,
       stakedAmount,
@@ -315,7 +330,7 @@ export class StakingService implements OnApplicationBootstrap {
       withdrawalAddress: withdrawalAddr,
       activatedAt,
       exitRequestedAt,
-      totalRewards,
+      totalRewards: `0x${totalRewardsFromDB.toString(16)}`, // DB에서 조회한 값
       slashedAmount,
     };
   }
@@ -765,7 +780,9 @@ export class StakingService implements OnApplicationBootstrap {
       : statsResult.result;
 
     const totalStaked = '0x' + statsHex.slice(0, 64);
-    const totalRewards = '0x' + statsHex.slice(64, 128);
+    // totalRewards는 DB에서 조회 (컨트랙트 대신)
+    const totalRewardsFromDB = this.getTotalRewardsFromDB();
+    const totalRewards = `0x${totalRewardsFromDB.toString(16)}`;
     const totalSlashed = '0x' + statsHex.slice(128, 192);
     const activeValidators = parseInt(statsHex.slice(192, 256), 16);
     const pendingCount = parseInt(statsHex.slice(256, 320), 16);
@@ -952,6 +969,181 @@ export class StakingService implements OnApplicationBootstrap {
       ...result,
       totalDistributed: 0n, // TODO: Receipt에서 실제 값 추출
     };
+  }
+
+  /**
+   * Epoch별 누적 보상 조회
+   *
+   * @param epoch - Epoch 번호
+   * @param validatorAddress - Validator 주소
+   * @returns 누적 보상 (Wei)
+   */
+  async getEpochReward(
+    epoch: number,
+    validatorAddress: Address,
+  ): Promise<bigint> {
+    const deployed = this.contractService.getDeployedContracts();
+    if (!deployed || !deployed.staking) {
+      throw new Error('StakingContract is not deployed');
+    }
+
+    const stakingAddress = deployed.staking.address;
+
+    // epochRewards(uint256, address) public mapping 조회
+    const data = this.contractService.encodeFunctionCall(
+      'epochRewards',
+      ['uint256', 'address'],
+      [`0x${BigInt(epoch).toString(16)}`, validatorAddress],
+    );
+
+    const result = await this.contractService.callContract(
+      stakingAddress,
+      data,
+    );
+
+    // uint256 반환값 파싱
+    const rewardHex = result.result.startsWith('0x')
+      ? result.result
+      : `0x${result.result}`;
+    return BigInt(rewardHex);
+  }
+
+  /**
+   * 검증자별 보상 업데이트 (저널링 방식)
+   *
+   * 실제 보상은 addBalance로 직접 지급하지만,
+   * 보상 통계는 메모리 Map에 기록하고 블록 커밋 시 DB에 저장
+   *
+   * @param validatorAddress - 검증자 주소
+   * @param amount - 추가할 보상 금액 (Wei)
+   */
+  updateValidatorReward(validatorAddress: Address, amount: bigint): void {
+    if (amount <= 0n) {
+      return;
+    }
+
+    // 1. 메모리 Map 업데이트 (저널링)
+    const current = this.validatorRewards.get(validatorAddress) || 0n;
+    this.validatorRewards.set(validatorAddress, current + amount);
+
+    // 2. 전체 보상 업데이트
+    this.totalRewards += amount;
+
+    this.logger.debug(
+      `Validator reward updated: ${validatorAddress.slice(0, 10)}... +${Number(amount) / Number(WEI_PER_DSTN)} DSTN (total: ${Number(current + amount) / Number(WEI_PER_DSTN)} DSTN)`,
+    );
+  }
+
+  /**
+   * 서버 시작 시 DB에서 보상 데이터 로드
+   */
+  private async loadRewardsFromDB(): Promise<void> {
+    if (!this.rewardsDb) {
+      return;
+    }
+
+    try {
+      // 전체 보상 로드
+      try {
+        const totalRewardsStr = await this.rewardsDb.get('total:rewards');
+        if (totalRewardsStr) {
+          this.totalRewards = BigInt(totalRewardsStr);
+          this.logger.log(
+            `Loaded total rewards from DB: ${Number(this.totalRewards) / Number(WEI_PER_DSTN)} DSTN`,
+          );
+        }
+      } catch {
+        // 키가 없으면 0으로 시작
+        this.totalRewards = 0n;
+      }
+
+      // 검증자별 보상 로드 (모든 키 순회)
+      let loadedCount = 0;
+      for await (const [key, value] of this.rewardsDb.iterator({
+        gt: 'validator:reward:',
+        lt: 'validator:reward:\xff',
+      })) {
+        const address = key.replace('validator:reward:', '');
+        const amount = BigInt(value);
+        this.validatorRewards.set(address, amount);
+        loadedCount++;
+      }
+
+      if (loadedCount > 0) {
+        this.logger.log(`Loaded ${loadedCount} validator rewards from DB`);
+      }
+    } catch (error: any) {
+      this.logger.error(`Failed to load rewards from DB: ${error.message}`);
+    }
+  }
+
+  /**
+   * 블록 커밋 시 보상 데이터를 DB에 저장 (저널링 → DB)
+   *
+   * StateManager.commitBlock()과 동일한 타이밍에 호출
+   */
+  async commitRewardsToDB(): Promise<void> {
+    if (!this.rewardsDb) {
+      return;
+    }
+
+    try {
+      // 전체 보상 저장
+      await this.rewardsDb.put('total:rewards', this.totalRewards.toString());
+
+      // 검증자별 보상 저장 (변경된 것만)
+      for (const [address, amount] of this.validatorRewards.entries()) {
+        const key = `validator:reward:${address}`;
+        await this.rewardsDb.put(key, amount.toString());
+      }
+
+      // this.logger.debug(`Rewards committed to DB`);
+    } catch (error: any) {
+      this.logger.error(`Failed to commit rewards to DB: ${error.message}`);
+    }
+  }
+
+  /**
+   * DB에서 검증자별 보상 조회
+   *
+   * @param validatorAddress - 검증자 주소
+   * @returns 누적 보상 (Wei)
+   */
+  async getValidatorRewardFromDB(validatorAddress: Address): Promise<bigint> {
+    // 1. 메모리 Map에서 먼저 확인 (최신 데이터)
+    if (this.validatorRewards.has(validatorAddress)) {
+      return this.validatorRewards.get(validatorAddress)!;
+    }
+
+    // 2. DB에서 조회
+    if (!this.rewardsDb) {
+      return 0n;
+    }
+
+    try {
+      const key = `validator:reward:${validatorAddress}`;
+      const value = await this.rewardsDb.get(key);
+      if (value) {
+        const amount = BigInt(value);
+        // 메모리 Map에도 캐시
+        this.validatorRewards.set(validatorAddress, amount);
+        return amount;
+      }
+    } catch {
+      // 키가 없으면 0 반환
+    }
+
+    return 0n;
+  }
+
+  /**
+   * DB에서 전체 보상 조회
+   *
+   * @returns 전체 누적 보상 (Wei)
+   */
+  getTotalRewardsFromDB(): bigint {
+    // 메모리에서 반환 (항상 최신)
+    return this.totalRewards;
   }
 
   /**
@@ -1374,7 +1566,7 @@ export class StakingService implements OnApplicationBootstrap {
           // data = amount (uint256)
           if (log.topics && log.topics.length >= 3) {
             // topics[2]는 indexed address이므로 32바이트 (66자리: 0x + 64 hex)
-            const topic2 = log.topics[2] as string;
+            const topic2 = log.topics[2];
             // 마지막 20바이트(40 hex chars)만 사용 (주소는 20바이트)
             const toAddress = '0x' + topic2.slice(-40).toLowerCase();
 
@@ -1570,6 +1762,23 @@ export class StakingService implements OnApplicationBootstrap {
    * - 이 메서드는 StakingContract 배포 확인 및 Genesis Block 대기만 수행
    */
   async onApplicationBootstrap(): Promise<void> {
+    // LevelDB 초기화 (보상 데이터 저장용)
+    try {
+      this.rewardsDb = new ClassicLevel('data/rewards', {
+        valueEncoding: 'utf8',
+      });
+      await this.rewardsDb.open();
+      this.logger.log('Rewards LevelDB opened');
+
+      // 서버 시작 시 DB에서 보상 데이터 로드
+      await this.loadRewardsFromDB();
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to initialize Rewards LevelDB: ${error.message}`,
+      );
+      // DB 초기화 실패해도 서비스는 계속 실행
+    }
+
     // StakingContract가 배포되어 있는지 확인
     const deployed = this.contractService.getDeployedContracts();
     if (!deployed || !deployed.staking) {

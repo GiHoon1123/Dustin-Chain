@@ -499,21 +499,17 @@ export class BlockProducer implements OnApplicationBootstrap {
     const currentEpoch = this.getCurrentEpoch(blockNumber);
 
     // 1. Proposer 보상 (즉시 지급)
-    // 모든 Validator는 StakingContract에 등록되어 있으므로 StakingContract를 통해 지급
+    // 실제 이더리움처럼 System-level 처리: 트랜잭션 없이 직접 상태 업데이트
     try {
-      await this.stakingService.rewardProposer(proposer, proposerReward);
-      this.logger.debug(
-        `Proposer reward: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}...`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to reward proposer via StakingContract: ${error.message}`,
-      );
-      // 실패 시 직접 지급으로 폴백 (비상 조치)
       await this.accountService.addBalance(proposer, proposerReward);
-      this.logger.warn(
-        `Proposer reward fallback: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}... (direct balance)`,
+      this.logger.debug(
+        `Proposer reward: ${PROPOSER_REWARD} DSTN to ${proposer.slice(0, 10)}... (direct balance update)`,
       );
+
+      // 보상 통계 업데이트 (메모리 Map에 기록, 블록 커밋 시 DB 저장)
+      this.stakingService.updateValidatorReward(proposer, proposerReward);
+    } catch (error: any) {
+      this.logger.error(`Failed to reward proposer: ${error.message}`);
     }
 
     // 2. Committee 보상 (Epoch 단위로 누적)
@@ -605,14 +601,57 @@ export class BlockProducer implements OnApplicationBootstrap {
             `Distributing Epoch ${previousEpoch} rewards to ${validatorAddresses.length} validators...`,
           );
 
-          await this.stakingService.distributeEpochRewards(
-            previousEpoch,
-            validatorAddresses,
-          );
+          // 실제 이더리움처럼 System-level 처리: addBalance로 직접 업데이트
+          let totalDistributed = 0n;
+          let distributedCount = 0;
+
+          for (const validatorAddress of validatorAddresses) {
+            try {
+              // StakingContract에서 해당 Epoch의 누적 보상 조회
+              const epochReward = await this.stakingService.getEpochReward(
+                previousEpoch,
+                validatorAddress,
+              );
+
+              if (epochReward > 0n) {
+                // Validator 정보 조회 (withdrawalAddress 확인)
+                const validator =
+                  await this.stakingService.getValidator(validatorAddress);
+
+                if (validator && validator.status === 'active_ongoing') {
+                  // Withdrawal Address로 직접 지급 (이더리움과 동일)
+                  const withdrawalAddress =
+                    validator.withdrawalAddress || validatorAddress;
+                  await this.accountService.addBalance(
+                    withdrawalAddress,
+                    BigInt(epochReward),
+                  );
+
+                  // 보상 통계 업데이트 (validatorAddress 기준으로 기록)
+                  // withdrawalAddress가 다르더라도 validatorAddress 기준으로 기록
+                  this.stakingService.updateValidatorReward(
+                    validatorAddress,
+                    BigInt(epochReward),
+                  );
+
+                  totalDistributed += epochReward;
+                  distributedCount++;
+
+                  this.logger.debug(
+                    `Epoch ${previousEpoch} reward: ${Number(epochReward) / Number(WEI_PER_DSTN)} DSTN to ${withdrawalAddress.slice(0, 10)}...`,
+                  );
+                }
+              }
+            } catch (error) {
+              this.logger.error(
+                `Failed to distribute reward for ${validatorAddress}: ${error.message}`,
+              );
+            }
+          }
 
           this.lastDistributedEpoch = previousEpoch;
           this.logger.log(
-            `✅ Epoch ${previousEpoch} rewards distributed to ${validatorAddresses.length} validators`,
+            `✅ Epoch ${previousEpoch} rewards distributed: ${distributedCount} validators, ${Number(totalDistributed) / Number(WEI_PER_DSTN)} DSTN total`,
           );
         }
       } catch (error) {
