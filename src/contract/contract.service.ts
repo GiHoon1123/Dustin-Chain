@@ -1142,14 +1142,18 @@ export class ContractService implements OnApplicationBootstrap {
       const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
       if (status === 1) {
         // 성공 시 commit (우리 StateManager에 상태 변경 반영)
+        this.logger.log(`[executeContractDirect] Committing changes...`);
         await this.evmState.commit();
+        this.logger.log(`[executeContractDirect] Changes committed`);
       } else {
         // 실패 시 revert (변경사항 취소)
         const errorMsg = result.execResult.exceptionError
           ? result.execResult.exceptionError.toString()
           : 'Unknown error';
         this.logger.error(`Contract call failed: ${errorMsg}`);
+        this.logger.log(`[executeContractDirect] Reverting changes...`);
         await this.evmState.revert();
+        this.logger.log(`[executeContractDirect] Changes reverted`);
       }
     } catch (error: any) {
       // 에러 발생 시 revert
@@ -1168,6 +1172,9 @@ export class ContractService implements OnApplicationBootstrap {
     // 로그 파싱
     const logs: { address: Address; topics: Hash[]; data: string }[] = [];
     if (result.execResult.logs) {
+      this.logger.log(
+        `[executeContractDirect] Parsing ${result.execResult.logs.length} log(s)...`,
+      );
       for (const log of result.execResult.logs) {
         const logAddress = this.cryptoService.bytesToHex(
           Buffer.from(log[0] as Uint8Array),
@@ -1183,7 +1190,12 @@ export class ContractService implements OnApplicationBootstrap {
           topics: logTopics,
           data: logData,
         });
+        this.logger.log(
+          `[executeContractDirect] Log: address=${logAddress}, topics=${logTopics.length}, data=${logData.slice(0, 20)}...`,
+        );
       }
+    } else {
+      this.logger.log(`[executeContractDirect] No logs emitted`);
     }
 
     // 반환값 파싱
@@ -1683,28 +1695,34 @@ export class ContractService implements OnApplicationBootstrap {
         }
       }
 
-      // 업데이트할 컨트랙트만 덮어쓰기
+      // 업데이트할 컨트랙트만 덮어쓰기 (ABI 포함)
       if (stablecoinAddress) {
+        const abi = this.getContractABI(stablecoinAddress);
         deployedData.stablecoin = {
           address: stablecoinAddress,
           name: 'StableCoin',
           deployedAt: new Date().toISOString(),
+          abi: abi?.abi || null,
         };
       }
 
       if (vaultAddress) {
+        const abi = this.getContractABI(vaultAddress);
         deployedData.vault = {
           address: vaultAddress,
           name: 'CollateralVault',
           deployedAt: new Date().toISOString(),
+          abi: abi?.abi || null,
         };
       }
 
       if (stakingAddress) {
+        const abi = this.getContractABI(stakingAddress);
         deployedData.staking = {
           address: stakingAddress,
           name: 'StakingContract',
           deployedAt: new Date().toISOString(),
+          abi: abi?.abi || null,
         };
       }
 

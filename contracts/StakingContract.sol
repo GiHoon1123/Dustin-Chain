@@ -62,7 +62,7 @@ contract StakingContract {
      * - 테스트 편의를 위해 1분으로 설정
      * - 프로덕션에서는 27시간으로 변경 필요
      */
-    uint256 public constant WITHDRAWAL_DELAY = 1 minutes; // 1분 (테스트용)
+    uint256 public constant WITHDRAWAL_DELAY = 5 seconds; // 5초 (테스트용, 기존: 1 minutes)
     
     /**
      * @dev 최대 Validator 수
@@ -692,19 +692,23 @@ contract StakingContract {
      * @return 활성 Validator 주소 배열
      */
     function getActiveValidators() external view returns (address[] memory) {
-        address[] memory active = new address[](validatorList.length);
+        // 먼저 개수 계산
         uint256 count = 0;
-        
         for (uint256 i = 0; i < validatorList.length; i++) {
             if (validators[validatorList[i]].status == ValidatorStatus.active_ongoing) {
-                active[count] = validatorList[i];
                 count++;
             }
         }
         
-        // 배열 크기 조정
-        assembly {
-            mstore(active, count)
+        // 정확한 크기로 배열 생성
+        address[] memory active = new address[](count);
+        uint256 index = 0;
+        
+        for (uint256 i = 0; i < validatorList.length; i++) {
+            if (validators[validatorList[i]].status == ValidatorStatus.active_ongoing) {
+                active[index] = validatorList[i];
+                index++;
+            }
         }
         
         return active;
@@ -723,8 +727,21 @@ contract StakingContract {
      * @return Pending Validator 주소 배열
      */
     function getPendingValidators() external view returns (address[] memory) {
-        address[] memory pending = new address[](validatorList.length);
+        // 먼저 개수 계산
         uint256 count = 0;
+        for (uint256 i = 0; i < validatorList.length; i++) {
+            ValidatorStatus status = validators[validatorList[i]].status;
+            if (
+                status == ValidatorStatus.pending_queued ||
+                status == ValidatorStatus.pending_initialized
+            ) {
+                count++;
+            }
+        }
+        
+        // 정확한 크기로 배열 생성
+        address[] memory pending = new address[](count);
+        uint256 index = 0;
         
         for (uint256 i = 0; i < validatorList.length; i++) {
             ValidatorStatus status = validators[validatorList[i]].status;
@@ -732,14 +749,9 @@ contract StakingContract {
                 status == ValidatorStatus.pending_queued ||
                 status == ValidatorStatus.pending_initialized
             ) {
-                pending[count] = validatorList[i];
-                count++;
+                pending[index] = validatorList[i];
+                index++;
             }
-        }
-        
-        // 배열 크기 조정
-        assembly {
-            mstore(pending, count)
         }
         
         return pending;
@@ -778,7 +790,8 @@ contract StakingContract {
         _totalRewards = totalRewards;
         _totalSlashed = totalSlashed;
         
-        for (uint256 i = 0; i < validatorList.length; i++) {
+        uint256 listLength = validatorList.length;
+        for (uint256 i = 0; i < listLength; i++) {
             ValidatorStatus status = validators[validatorList[i]].status;
             if (status == ValidatorStatus.active_ongoing) {
                 activeCount++;
@@ -789,6 +802,13 @@ contract StakingContract {
                 pendingCount++;
             }
         }
+    }
+    
+    /**
+     * @dev validatorList 길이 조회 (디버깅용)
+     */
+    function getValidatorListLength() external view returns (uint256) {
+        return validatorList.length;
     }
     
     // ============ 내부 함수 ============

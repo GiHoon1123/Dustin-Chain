@@ -124,6 +124,19 @@ export class CustomStateManager {
   ): Promise<void> {
     const normalizedAddr = this.normalizeAddress(address);
     const our = this.toOurAccount(normalizedAddr, eth);
+
+    // 이전 잔액 확인
+    const oldAccount = await this.stateManager.getAccount(normalizedAddr);
+    const oldBalance = oldAccount?.balance || 0n;
+
+    if (oldBalance !== our.balance) {
+      const diff = our.balance - oldBalance;
+      const diffDSTN = Number(diff) / 10 ** 18;
+      this.logger.log(
+        `[putAccount] Balance changed for ${normalizedAddr}: ${oldBalance} -> ${our.balance} Wei (diff: ${diff} Wei = ${diffDSTN} DSTN)`,
+      );
+    }
+
     await this.stateManager.setAccount(normalizedAddr, our);
     // this.logger.debug(
     //   `putAccount(${address}) nonce=${our.nonce}, balance=${our.balance}`,
@@ -196,7 +209,19 @@ export class CustomStateManager {
       acc.nonce = Number(accountFields.nonce);
     }
     if (accountFields.balance !== undefined) {
+      const oldBalance = acc.balance;
       acc.balance = accountFields.balance;
+      // 출금 처리 시 잔액 변경 로깅
+      if (oldBalance !== accountFields.balance) {
+        const diff = accountFields.balance - oldBalance;
+        const diffDSTN = Number(diff) / 10 ** 18;
+        this.logger.log(
+          `[modifyAccountFields] Balance changed for ${normalizedAddr}: ${oldBalance} -> ${accountFields.balance} Wei (diff: ${diff} Wei = ${diffDSTN} DSTN)`,
+        );
+        this.logger.log(
+          `[modifyAccountFields] Journal stack depth: ${(this.stateManager as any).journalStack?.length || 'unknown'}`,
+        );
+      }
     }
     if (accountFields.storageRoot !== undefined) {
       // Uint8Array인지 확인하고 변환

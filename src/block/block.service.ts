@@ -217,48 +217,94 @@ export class BlockService implements OnApplicationBootstrap {
     }
 
     const contractService = stakingServiceAny.contractService;
+
+    // 1. deployed-contracts.json에서 컨트랙트 주소 읽기
     const deployed = contractService.getDeployedContracts();
 
-    // StakingContract가 배포되어 있는지 확인
+    // 2. 데이터베이스에서 실제로 바이트코드가 있는지 확인
+    let needRedeploy = false;
     if (deployed && deployed.staking && deployed.staking.address) {
-      this.logger.log(
-        `StakingContract already deployed at: ${deployed.staking.address}`,
-      );
-      this.logger.log('Registering Genesis Validators...');
-      await this.registerGenesisValidators(timestamp);
-      return;
+      try {
+        const bytecode = await contractService.getContractBytecode(
+          deployed.staking.address,
+        );
+        if (!bytecode.bytecode || bytecode.bytecode === '0x') {
+          this.logger.warn(
+            `StakingContract address exists in JSON but bytecode is empty in database. Redeploying...`,
+          );
+          needRedeploy = true;
+        } else {
+          this.logger.log(
+            `StakingContract already deployed at: ${deployed.staking.address}`,
+          );
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `Failed to verify StakingContract bytecode: ${error.message}. Redeploying...`,
+        );
+        needRedeploy = true;
+      }
+    } else {
+      needRedeploy = true;
     }
 
-    // StakingContract가 없으면 배포 필요
-    this.logger.log('StakingContract not found. Deploying contracts...');
-
-    try {
-      // 1. StakingContract 배포
-      this.logger.log('Deploying StakingContract...');
-      const stakingResult = await contractService.deployStakingContract();
-      this.logger.log(
-        `StakingContract deployed at: ${stakingResult.stakingAddress}`,
-      );
-
-      // 2. StableCoin 시스템 배포
-      this.logger.log('Deploying StableCoin system...');
-      const stablecoinResult = await contractService.deployStablecoin();
-      this.logger.log(
-        `StableCoin deployed at: ${stablecoinResult.stablecoinAddress}`,
-      );
-      this.logger.log(
-        `CollateralVault deployed at: ${stablecoinResult.vaultAddress}`,
-      );
-
-      // 3. Genesis Validator 등록
-      this.logger.log('Registering Genesis Validators...');
-      await this.registerGenesisValidators(timestamp);
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to deploy contracts and register validators: ${error.message}`,
-      );
-      // 에러가 발생해도 서버는 계속 실행
+    // StableCoin도 확인
+    if (
+      !needRedeploy &&
+      deployed &&
+      deployed.stablecoin &&
+      deployed.stablecoin.address
+    ) {
+      try {
+        const bytecode = await contractService.getContractBytecode(
+          deployed.stablecoin.address,
+        );
+        if (!bytecode.bytecode || bytecode.bytecode === '0x') {
+          this.logger.warn(
+            `StableCoin address exists in JSON but bytecode is empty in database. Redeploying...`,
+          );
+          needRedeploy = true;
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `Failed to verify StableCoin bytecode: ${error.message}. Redeploying...`,
+        );
+        needRedeploy = true;
+      }
     }
+
+    // 3. 바이트코드가 없으면 재배포 (스테이킹 + 스테이블코인 동시 배포)
+    if (needRedeploy) {
+      this.logger.log('Contracts not found or invalid. Deploying contracts...');
+
+      try {
+        // StakingContract와 StableCoin 시스템 동시 배포
+        this.logger.log('Deploying StakingContract and StableCoin system...');
+        const stakingResult = await contractService.deployStakingContract();
+        const stablecoinResult = await contractService.deployStablecoin();
+
+        this.logger.log(
+          `✅ StakingContract deployed at: ${stakingResult.stakingAddress}`,
+        );
+        this.logger.log(
+          `✅ StableCoin deployed at: ${stablecoinResult.stablecoinAddress}`,
+        );
+        this.logger.log(
+          `✅ CollateralVault deployed at: ${stablecoinResult.vaultAddress}`,
+        );
+        this.logger.log(
+          '✅ Contract addresses and ABIs saved to deployed-contracts.json',
+        );
+      } catch (error: any) {
+        this.logger.error(`Failed to deploy contracts: ${error.message}`);
+        // 에러가 발생해도 서버는 계속 실행
+        return;
+      }
+    }
+
+    // 4. 컨트랙트가 있으면 Genesis Validator 등록
+    this.logger.log('Registering Genesis Validators...');
+    await this.registerGenesisValidators(timestamp);
   }
 
   /**
@@ -450,8 +496,8 @@ export class BlockService implements OnApplicationBootstrap {
         privateKey: string;
       }> = JSON.parse(fileContent);
 
-      // 처음 90개만 Validator로 등록
-      const GENESIS_VALIDATOR_COUNT = 90;
+      // 처음 10개만 Validator로 등록
+      const GENESIS_VALIDATOR_COUNT = 10;
       const accountsToRegister = accounts.slice(0, GENESIS_VALIDATOR_COUNT);
 
       this.logger.log(
@@ -502,10 +548,119 @@ export class BlockService implements OnApplicationBootstrap {
       this.logger.log(
         `Genesis Validator registration completed: ${registered} registered, ${skipped} skipped, ${failed} failed`,
       );
+
+      if (registered === 0 && failed > 0) {
+        this.logger.error(
+          `⚠️ Genesis Validator registration failed: ${failed} validators failed to register. Check server logs for details.`,
+        );
+      }
     } catch (error) {
       this.logger.error(
         `Failed to load genesis-accounts.json: ${error.message}`,
       );
+      this.logger.error(`Error stack: ${error.stack || 'No stack trace'}`);
+    }
+  }
+
+  /**
+   * validatorList에 Validator 주소들을 수동으로 추가
+   *
+   * Solidity 동적 배열 스토리지 레이아웃:
+   * - validatorList.length는 slot 1에 저장됨
+   * - validatorList[i]는 keccak256(1) + i slot에 저장됨
+   *
+   * @param validatorAddresses - 추가할 Validator 주소 배열
+   * @param stakingAddress - StakingContract 주소
+   */
+  private async manuallyAddValidatorsToValidatorList(
+    validatorAddresses: string[],
+    stakingAddress: string,
+  ): Promise<void> {
+    try {
+      // 현재 validatorList.length 조회
+      const lengthSlot = Buffer.alloc(32);
+      lengthSlot[31] = 1; // slot 1 (validatorList.length)
+      const currentLengthBytes = await this.evmState.getContractStorage(
+        stakingAddress,
+        lengthSlot,
+      );
+      const currentLength =
+        currentLengthBytes.length > 0
+          ? Number(
+              BigInt('0x' + Buffer.from(currentLengthBytes).toString('hex')),
+            )
+          : 0;
+
+      this.logger.log(
+        `Current validatorList.length: ${currentLength}, adding ${validatorAddresses.length} validators...`,
+      );
+
+      // keccak256(1) 계산 (배열 시작 슬롯)
+      const slot1Buffer = Buffer.alloc(32);
+      slot1Buffer[31] = 1;
+      const arrayStartSlot = BigInt(
+        '0x' + this.cryptoService.hashBuffer(slot1Buffer).slice(2),
+      );
+
+      // 각 Validator 주소를 배열에 추가
+      for (let i = 0; i < validatorAddresses.length; i++) {
+        const index = currentLength + i;
+        const validatorAddress = validatorAddresses[i];
+
+        // 배열 요소 슬롯 계산: keccak256(1) + index
+        const elementSlot = arrayStartSlot + BigInt(index);
+        const elementSlotBuffer = Buffer.alloc(32);
+        elementSlot
+          .toString(16)
+          .padStart(64, '0')
+          .match(/.{2}/g)!
+          .reverse()
+          .forEach((byte, idx) => {
+            elementSlotBuffer[idx] = parseInt(byte, 16);
+          });
+
+        // 주소를 32바이트로 패딩 (왼쪽에 0 패딩)
+        const addressBytes = Buffer.from(
+          validatorAddress.replace(/^0x/, '').padStart(64, '0'),
+          'hex',
+        );
+        const paddedAddress = Buffer.alloc(32);
+        addressBytes.copy(paddedAddress, 12); // 오른쪽 정렬 (마지막 20바이트)
+
+        // 스토리지에 저장
+        await this.evmState.putContractStorage(
+          stakingAddress,
+          elementSlotBuffer,
+          paddedAddress,
+        );
+      }
+
+      // validatorList.length 업데이트
+      const newLength = currentLength + validatorAddresses.length;
+      const newLengthBuffer = Buffer.alloc(32);
+      BigInt(newLength)
+        .toString(16)
+        .padStart(64, '0')
+        .match(/.{2}/g)!
+        .reverse()
+        .forEach((byte, idx) => {
+          newLengthBuffer[idx] = parseInt(byte, 16);
+        });
+
+      await this.evmState.putContractStorage(
+        stakingAddress,
+        lengthSlot,
+        newLengthBuffer,
+      );
+
+      this.logger.log(
+        `Successfully added ${validatorAddresses.length} validators to validatorList. New length: ${newLength}`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to manually add validators to validatorList: ${error.message}`,
+      );
+      throw error;
     }
   }
 
@@ -1510,6 +1665,26 @@ export class BlockService implements OnApplicationBootstrap {
       }
 
       const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+
+      // deposit() 함수 호출 실패 시 상세 로깅
+      if (
+        status === 0 &&
+        tx.to &&
+        tx.data &&
+        tx.data.startsWith('0xd0e30db0')
+      ) {
+        const error = result.execResult.exceptionError;
+        this.logger.error(
+          `[VM] 🔍 DEPOSIT FAILED - tx=${tx.hash}, from=${tx.from}, to=${tx.to}, value=${tx.value.toString()}`,
+        );
+        this.logger.error(
+          `[VM] Exception error: ${JSON.stringify({
+            error: error?.error?.toString(),
+            errorType: error?.errorType,
+            message: error?.message,
+          })}`,
+        );
+      }
 
       // gasUsed 계산: VM 실행 결과에서 가스 사용량 추출
       let gasUsed: bigint;
