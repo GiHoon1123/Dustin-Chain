@@ -60,9 +60,10 @@ describe('BlockProducer', () => {
       processWithdrawalsDirect: jest.fn().mockResolvedValue({ processed: 0 }),
       hasPendingWithdrawals: jest.fn().mockResolvedValue(false),
       getActiveValidators: jest.fn().mockResolvedValue([]),
-      rewardProposer: jest.fn().mockResolvedValue(undefined),
+      updateValidatorReward: jest.fn().mockReturnValue(undefined),
       accumulateCommitteeReward: jest.fn().mockResolvedValue(undefined),
       distributeEpochRewards: jest.fn().mockResolvedValue(undefined),
+      commitRewardsToDB: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const mockCryptoService = {
@@ -250,10 +251,7 @@ describe('BlockProducer', () => {
       consensusService.hasSupermajority.mockReturnValue(true);
       blockService.saveBlock.mockResolvedValue(undefined);
       accountService.addBalance.mockResolvedValue(undefined);
-      stakingService.rewardProposer.mockResolvedValue({
-        hash: '0x1234567890abcdef',
-        status: '0x1',
-      });
+      stakingService.updateValidatorReward.mockReturnValue(undefined);
       stakingService.accumulateCommitteeReward.mockResolvedValue({
         hash: '0x1234567890abcdef',
         status: '0x1',
@@ -318,10 +316,7 @@ describe('BlockProducer', () => {
       blockService.createBlock.mockResolvedValue(block);
       consensusService.collectAttestations.mockResolvedValue(attestations);
       consensusService.hasSupermajority.mockReturnValue(false);
-      stakingService.rewardProposer.mockResolvedValue({
-        hash: '0x1234567890abcdef',
-        status: '0x1',
-      });
+      stakingService.updateValidatorReward.mockReturnValue(undefined);
       stakingService.accumulateCommitteeReward.mockResolvedValue({
         hash: '0x1234567890abcdef',
         status: '0x1',
@@ -423,10 +418,7 @@ describe('BlockProducer', () => {
         );
       });
 
-      stakingService.rewardProposer.mockResolvedValue({
-        hash: '0x1234567890abcdef',
-        status: '0x1',
-      });
+      stakingService.updateValidatorReward.mockReturnValue(undefined);
       stakingService.accumulateCommitteeReward.mockResolvedValue({
         hash: '0x1234567890abcdef',
         status: '0x1',
@@ -434,8 +426,8 @@ describe('BlockProducer', () => {
 
       await (producer as any).distributeRewards(proposer, attestations, blockNumber);
 
-      // Proposer 보상 지급 확인
-      expect(stakingService.rewardProposer).toHaveBeenCalled();
+      // Proposer 보상 지급 확인 (updateValidatorReward로 변경됨)
+      expect(stakingService.updateValidatorReward).toHaveBeenCalled();
       // Committee 보상 누적 확인
       expect(stakingService.accumulateCommitteeReward).toHaveBeenCalled();
     });

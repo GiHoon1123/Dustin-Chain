@@ -13,6 +13,7 @@ import { IStateRepository } from '../../src/storage/repositories/state.repositor
 import { TransactionPool } from '../../src/transaction/pool/transaction.pool';
 import { Block } from '../../src/block/entities/block.entity';
 import { BlockService } from '../../src/block/block.service';
+import { StakingService } from '../../src/staking/staking.service';
 import { Transaction } from '../../src/transaction/entities/transaction.entity';
 import { TransactionReceipt } from '../../src/transaction/entities/transaction-receipt.entity';
 
@@ -148,6 +149,14 @@ describe('BlockService', () => {
       revert: jest.fn(),
     } as any;
 
+    const mockStakingService = {
+      processWithdrawalsDirect: jest.fn().mockResolvedValue({ processed: 0 }),
+      hasPendingWithdrawals: jest.fn().mockResolvedValue(false),
+      getActiveValidators: jest.fn().mockResolvedValue([]),
+      updateValidatorReward: jest.fn().mockResolvedValue(undefined),
+      commitRewardsToDB: jest.fn().mockResolvedValue(undefined),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         {
@@ -177,6 +186,10 @@ describe('BlockService', () => {
         {
           provide: TransactionPool,
           useClass: TransactionPool,
+        },
+        {
+          provide: StakingService,
+          useValue: mockStakingService,
         },
         BlockService,
       ],

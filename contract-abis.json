@@ -1,18 +1,6 @@
 {
   "contracts": [
     {
-      "address": "0x1111111111111111111111111111111111111111",
-      "name": "TestContract",
-      "abi": [
-        {
-          "type": "function",
-          "name": "test",
-          "inputs": [],
-          "outputs": []
-        }
-      ]
-    },
-    {
       "address": "0xf50b73244b062ff0613360854f8095e03eb0da71",
       "name": "StableCoin",
       "abi": [
@@ -1339,6 +1327,18 @@
         {
           "stateMutability": "payable",
           "type": "receive"
+        }
+      ]
+    },
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "name": "TestContract",
+      "abi": [
+        {
+          "type": "function",
+          "name": "test",
+          "inputs": [],
+          "outputs": []
         }
       ]
     }

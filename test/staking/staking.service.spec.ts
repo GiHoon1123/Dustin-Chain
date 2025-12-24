@@ -174,6 +174,76 @@ describe('StakingService', () => {
       expect(stats.totalStaked).toBeDefined();
       expect(stats.totalValidators).toBeDefined();
       expect(stats.activeValidators).toBeDefined();
+      expect(stats.totalRewards).toBeDefined();
+    });
+  });
+
+  describe('보상 관리 (Reward Management)', () => {
+    it('should update validator reward', () => {
+      const validatorAddress = mockAddress;
+      const rewardAmount = BigInt('1000000000000000000'); // 1 DSTN
+
+      service.updateValidatorReward(validatorAddress, rewardAmount);
+
+      const totalRewards = service.getTotalRewardsFromDB();
+      expect(totalRewards).toBe(rewardAmount);
+    });
+
+    it('should get validator reward from memory first', async () => {
+      const validatorAddress = mockAddress;
+      const rewardAmount = BigInt('2000000000000000000'); // 2 DSTN
+
+      // 메모리에 먼저 저장
+      service.updateValidatorReward(validatorAddress, rewardAmount);
+
+      // 조회 시 메모리에서 반환되어야 함
+      const reward = await service.getValidatorRewardFromDB(validatorAddress);
+      expect(reward).toBe(rewardAmount);
+    });
+
+    it('should accumulate rewards correctly', () => {
+      const validatorAddress = mockAddress;
+      const reward1 = BigInt('1000000000000000000'); // 1 DSTN
+      const reward2 = BigInt('2000000000000000000'); // 2 DSTN
+
+      service.updateValidatorReward(validatorAddress, reward1);
+      service.updateValidatorReward(validatorAddress, reward2);
+
+      const totalRewards = service.getTotalRewardsFromDB();
+      expect(totalRewards).toBe(reward1 + reward2);
+    });
+
+    it('should handle multiple validators', () => {
+      const validator1 = mockAddress;
+      const validator2 = mockWithdrawalAddress;
+      const reward1 = BigInt('1000000000000000000'); // 1 DSTN
+      const reward2 = BigInt('2000000000000000000'); // 2 DSTN
+
+      service.updateValidatorReward(validator1, reward1);
+      service.updateValidatorReward(validator2, reward2);
+
+      const totalRewards = service.getTotalRewardsFromDB();
+      expect(totalRewards).toBe(reward1 + reward2);
+    });
+
+    it('should get total rewards from memory', () => {
+      const validatorAddress = mockAddress;
+      const rewardAmount = BigInt('5000000000000000000'); // 5 DSTN
+
+      service.updateValidatorReward(validatorAddress, rewardAmount);
+
+      const totalRewards = service.getTotalRewardsFromDB();
+      expect(totalRewards).toBe(rewardAmount);
+    });
+
+    it('should not update reward for zero amount', () => {
+      const validatorAddress = mockAddress;
+      const initialTotal = service.getTotalRewardsFromDB();
+
+      service.updateValidatorReward(validatorAddress, 0n);
+
+      const totalRewards = service.getTotalRewardsFromDB();
+      expect(totalRewards).toBe(initialTotal);
     });
   });
 });

@@ -169,6 +169,8 @@ describe('ContractService', () => {
           privateKey: '0x' + '1'.repeat(64),
         },
       ];
+      // deploymentAccount 설정 (deployContract에서 사용)
+      (service as any).deploymentAccount = (service as any).deploymentAccounts[0];
 
       accountService.getOrCreateAccount.mockResolvedValue({
         address: '0x' + '1'.repeat(40),
