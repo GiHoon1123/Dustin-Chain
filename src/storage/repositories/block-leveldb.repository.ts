@@ -240,6 +240,36 @@ export class BlockLevelDBRepository
   }
 
   /**
+   * 최신 블록 번호만 빠르게 조회 (전체 블록 로드 없이)
+   *
+   * 성능 최적화:
+   * - findLatest()는 전체 블록을 로드하므로 느림
+   * - 블록 번호만 필요할 때는 이 메서드 사용
+   */
+  async findLatestNumber(): Promise<number | null> {
+    try {
+      const latestHashRaw = await this.db.get('LastBlock');
+      if (!latestHashRaw) {
+        return null;
+      }
+
+      const latestHash = this.ensureString(latestHashRaw);
+      // 해시로부터 블록 번호만 빠르게 조회 (전체 블록 로드 없이)
+      const numberKey = `n${latestHash}`;
+      const blockNumberRaw = await this.db.get(numberKey);
+      if (!blockNumberRaw) {
+        return null;
+      }
+      return parseInt(this.ensureString(blockNumberRaw));
+    } catch (error: any) {
+      if (error.code === 'LEVEL_NOT_FOUND') {
+        return null;
+      }
+      return null;
+    }
+  }
+
+  /**
    * 최신 블록 조회
    */
   async findLatest(): Promise<Block | null> {

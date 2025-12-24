@@ -264,7 +264,7 @@ export class BlockProducer implements OnApplicationBootstrap {
         await this.processEpochRewards(block.number);
 
         // 자동화: Activation Queue 처리 (Epoch 시작 시, 이더리움과 동일)
-        await this.processActivationQueue(block.number);
+        await this.processActivationQueue(block.number, block.timestamp);
 
         // 자동화: 출금 처리 (주기적으로)
         await this.processWithdrawals(block.number);
@@ -637,19 +637,20 @@ export class BlockProducer implements OnApplicationBootstrap {
    *
    * @param blockNumber - 현재 블록 번호
    */
-  private async processActivationQueue(blockNumber: number): Promise<void> {
+  private async processActivationQueue(
+    blockNumber: number,
+    timestamp: number,
+  ): Promise<void> {
     try {
       // Epoch 시작 시에만 처리 (이더리움과 동일)
       if (blockNumber % EPOCH_SIZE !== 0) {
         return;
       }
 
-      await this.stakingService.processActivationQueue(blockNumber);
+      await this.stakingService.processActivationQueue(blockNumber, timestamp);
     } catch (error) {
       // 에러가 발생해도 블록 생성은 계속 진행
-      this.logger.error(
-        `Failed to process Activation Queue: ${error.message}`,
-      );
+      this.logger.error(`Failed to process Activation Queue: ${error.message}`);
     }
   }
 

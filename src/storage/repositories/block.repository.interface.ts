@@ -32,6 +32,11 @@ export interface IBlockRepository {
   findLatest(): Promise<Block | null>;
 
   /**
+   * 최신 블록 번호만 빠르게 조회 (전체 블록 로드 없이)
+   */
+  findLatestNumber(): Promise<number | null>;
+
+  /**
    * 블록 저장
    */
   save(block: Block): Promise<void>;

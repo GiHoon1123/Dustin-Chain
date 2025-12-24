@@ -355,17 +355,17 @@ export class CustomStateManager {
       if (hex) {
         const bytesBuffer = Buffer.from(hex, 'hex');
         const bytes = new Uint8Array(bytesBuffer);
-        this.logger.debug(
-          `[getContractCode] ${_address} → ${bytes.byteLength} bytes (codeHash=${codeHash})`,
-        );
+        // this.logger.debug(
+        //   `[getContractCode] ${_address} → ${bytes.byteLength} bytes (codeHash=${codeHash})`,
+        // );
         return bytes;
       } else {
-        this.logger.warn(
-          `[getContractCode] ${_address} codeHash=${codeHash} but code not found in KV`,
-        );
+        // this.logger.warn(
+        //   `[getContractCode] ${_address} codeHash=${codeHash} but code not found in KV`,
+        // );
       }
     } else {
-      this.logger.warn(`[getContractCode] ${_address} no codeHash in account`);
+      // this.logger.warn(`[getContractCode] ${_address} no codeHash in account`);
     }
 
     // 3. Fallback 1: account_codehash 키로 찾기
@@ -377,14 +377,14 @@ export class CustomStateManager {
       if (hex) {
         const bytesBuffer = Buffer.from(hex, 'hex');
         const bytes = new Uint8Array(bytesBuffer);
-        this.logger.debug(
-          `[getContractCode] ${_address} → ${bytes.byteLength} bytes (fallback: account_codehash)`,
-        );
+        // this.logger.debug(
+        //   `[getContractCode] ${_address} → ${bytes.byteLength} bytes (fallback: account_codehash)`,
+        // );
         return bytes;
       } else {
-        this.logger.warn(
-          `[getContractCode] ${_address} account_codehash found but code not found`,
-        );
+        // this.logger.warn(
+        //   `[getContractCode] ${_address} account_codehash found but code not found`,
+        // );
       }
     }
 
@@ -394,13 +394,13 @@ export class CustomStateManager {
     const bytesBuffer = hex ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
     const bytes = new Uint8Array(bytesBuffer);
     if (bytes.byteLength > 0) {
-      this.logger.debug(
-        `[getContractCode] ${_address} → ${bytes.byteLength} bytes (fallback: code:addr)`,
-      );
+      // this.logger.debug(
+      //   `[getContractCode] ${_address} → ${bytes.byteLength} bytes (fallback: code:addr)`,
+      // );
     } else {
-      this.logger.warn(
-        `[getContractCode] ${_address} → 0 bytes (no code found, all fallbacks failed)`,
-      );
+      // this.logger.warn(
+      //   `[getContractCode] ${_address} → 0 bytes (no code found, all fallbacks failed)`,
+      // );
     }
     return bytes;
   }

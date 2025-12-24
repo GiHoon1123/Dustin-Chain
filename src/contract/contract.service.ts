@@ -173,6 +173,30 @@ export class ContractService implements OnApplicationBootstrap {
   }
 
   /**
+   * Deployment Account 조회 (Backend 자동화용)
+   */
+  getDeploymentAccount(): GenesisAccount | null {
+    return this.deploymentAccount;
+  }
+
+  /**
+   * 최신 블록 정보 조회 (VM 실행용)
+   */
+  async getLatestBlockInfo(): Promise<{
+    blockNumber: number;
+    timestamp: number;
+  }> {
+    const latestNumber = await this.blockRepository.findLatestNumber();
+    if (latestNumber === null) {
+      throw new Error('Latest block not found');
+    }
+    return {
+      blockNumber: latestNumber,
+      timestamp: Date.now(), // 밀리초
+    };
+  }
+
+  /**
    * 배포 전용 계정 로드 (Genesis Account 255)
    */
   private loadDeploymentAccount(): void {
@@ -749,11 +773,29 @@ export class ContractService implements OnApplicationBootstrap {
     from: Address,
     privateKey: string,
     value: bigint = 0n,
-    blockNumber: number,
-    timestamp: number,
+    blockNumber?: number,
+    timestamp?: number,
   ): Promise<Address> {
     if (!this.deployVM) {
       throw new Error('Deploy VM is not initialized');
+    }
+
+    // 블록 정보가 제공되지 않으면 자동으로 가져오기
+    // 성능 최적화: 블록 번호만 빠르게 조회 (전체 블록 로드 없이)
+    let finalBlockNumber: number;
+    let finalTimestamp: number;
+    if (blockNumber === undefined || timestamp === undefined) {
+      const latestNumber = await (
+        this.blockRepository as any
+      ).findLatestNumber();
+      if (latestNumber === null) {
+        throw new Error('Latest block not found');
+      }
+      finalBlockNumber = latestNumber;
+      finalTimestamp = Date.now(); // 밀리초
+    } else {
+      finalBlockNumber = blockNumber;
+      finalTimestamp = timestamp;
     }
 
     // bytecode를 Buffer로 변환
@@ -817,9 +859,9 @@ export class ContractService implements OnApplicationBootstrap {
     // Block Header 생성
     const blockHeader = new EthereumBlockHeader(
       {
-        number: BigInt(blockNumber),
+        number: BigInt(finalBlockNumber),
         gasLimit: 30000000n,
-        timestamp: BigInt(Math.floor(timestamp / 1000)), // 초 단위
+        timestamp: BigInt(Math.floor(finalTimestamp / 1000)), // 초 단위
         parentHash: Buffer.alloc(32, 0),
         stateRoot: Buffer.alloc(32, 0),
         transactionsTrie: Buffer.alloc(32, 0),
@@ -838,19 +880,36 @@ export class ContractService implements OnApplicationBootstrap {
       common: this.common,
     });
 
-    // VM을 통해 직접 실행
-    const result = await runTx(this.deployVM, {
-      tx: txForVM,
-      block: vmBlock,
-    });
+    // VM 실행 전 checkpoint 생성 (우리 StateManager에 상태 변경 반영을 위해)
+    // VM의 runTx는 내부적으로 checkpoint/commit을 처리하지만,
+    // 우리의 StateManager 저널 스택에도 반영되도록 명시적으로 처리
+    await this.evmState.checkpoint();
 
-    // 실행 결과 파싱
-    const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
-    if (status === 0) {
-      const error = result.execResult.exceptionError;
-      throw new Error(
-        `Contract deployment failed: ${error?.error?.toString() || 'Unknown error'}`,
-      );
+    let result;
+    try {
+      // VM을 통해 직접 실행
+      result = await runTx(this.deployVM, {
+        tx: txForVM,
+        block: vmBlock,
+      });
+
+      // 실행 결과 파싱
+      const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+      if (status === 0) {
+        // 실패 시 revert (변경사항 취소)
+        await this.evmState.revert();
+        const error = result.execResult.exceptionError;
+        throw new Error(
+          `Contract deployment failed: ${error?.error?.toString() || 'Unknown error'}`,
+        );
+      } else {
+        // 성공 시 commit (우리 StateManager에 상태 변경 반영)
+        await this.evmState.commit();
+      }
+    } catch (error) {
+      // 에러 발생 시 revert
+      await this.evmState.revert();
+      throw error;
     }
 
     // 배포된 컨트랙트 주소 추출
@@ -932,8 +991,8 @@ export class ContractService implements OnApplicationBootstrap {
     from: Address,
     privateKey: string,
     value: bigint = 0n,
-    blockNumber: number,
-    timestamp: number,
+    blockNumber?: number,
+    timestamp?: number,
   ): Promise<{
     result: string;
     status: 1 | 0;
@@ -942,6 +1001,22 @@ export class ContractService implements OnApplicationBootstrap {
   }> {
     if (!this.deployVM) {
       throw new Error('Deploy VM is not initialized');
+    }
+
+    // 블록 정보가 제공되지 않으면 자동으로 가져오기
+    let finalBlockNumber: number;
+    let finalTimestamp: number;
+    if (blockNumber === undefined || timestamp === undefined) {
+      // 성능 최적화: findLatestNumber() 사용 (전체 블록 로드 없이)
+      const latestNumber = await this.blockRepository.findLatestNumber();
+      if (latestNumber === null) {
+        throw new Error('Latest block not found');
+      }
+      finalBlockNumber = latestNumber;
+      finalTimestamp = Date.now(); // 밀리초
+    } else {
+      finalBlockNumber = blockNumber;
+      finalTimestamp = timestamp;
     }
 
     // data를 Buffer로 변환
@@ -1003,9 +1078,9 @@ export class ContractService implements OnApplicationBootstrap {
     // Block Header 생성
     const blockHeader = new EthereumBlockHeader(
       {
-        number: BigInt(blockNumber),
+        number: BigInt(finalBlockNumber),
         gasLimit: 30000000n,
-        timestamp: BigInt(Math.floor(timestamp / 1000)), // 초 단위
+        timestamp: BigInt(Math.floor(finalTimestamp / 1000)), // 초 단위
         parentHash: Buffer.alloc(32, 0),
         stateRoot: Buffer.alloc(32, 0),
         transactionsTrie: Buffer.alloc(32, 0),
@@ -1024,11 +1099,67 @@ export class ContractService implements OnApplicationBootstrap {
       common: this.common,
     });
 
-    // VM을 통해 직접 실행
-    const result = await runTx(this.deployVM, {
-      tx: txForVM,
-      block: vmBlock,
-    });
+    // VM 실행 전 checkpoint 생성 (우리 StateManager에 상태 변경 반영을 위해)
+    // VM의 runTx는 내부적으로 checkpoint/commit을 처리하지만,
+    // 우리의 StateManager 저널 스택에도 반영되도록 명시적으로 처리
+    this.logger.log(`[executeContractDirect] Creating checkpoint...`);
+    await this.evmState.checkpoint();
+    this.logger.log(`[executeContractDirect] Checkpoint created`);
+
+    let result;
+    try {
+      const startTime = Date.now();
+      this.logger.log(
+        `[executeContractDirect] Starting VM execution: to=${to}, from=${from}, data=${data.slice(0, 20)}...`,
+      );
+
+      // 타임아웃 추가 (60초)
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('VM execution timeout after 60 seconds'));
+        }, 60000);
+      });
+
+      // VM을 통해 직접 실행
+      const runTxPromise = runTx(this.deployVM, {
+        tx: txForVM,
+        block: vmBlock,
+      });
+
+      result = (await Promise.race([
+        runTxPromise,
+        timeoutPromise,
+      ])) as typeof runTxPromise extends Promise<infer T> ? T : never;
+
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+
+      this.logger.log(
+        `[executeContractDirect] VM execution completed in ${duration}ms: status=${result.execResult.exceptionError ? 0 : 1}`,
+      );
+
+      // 실행 결과 파싱
+      const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
+      if (status === 1) {
+        // 성공 시 commit (우리 StateManager에 상태 변경 반영)
+        await this.evmState.commit();
+      } else {
+        // 실패 시 revert (변경사항 취소)
+        const errorMsg = result.execResult.exceptionError
+          ? result.execResult.exceptionError.toString()
+          : 'Unknown error';
+        this.logger.error(`Contract call failed: ${errorMsg}`);
+        await this.evmState.revert();
+      }
+    } catch (error: any) {
+      // 에러 발생 시 revert
+      this.logger.error(
+        `Contract call exception: ${error.message || String(error)}`,
+      );
+      this.logger.error(`Error stack: ${error.stack || 'No stack trace'}`);
+      await this.evmState.revert();
+      throw error;
+    }
 
     // 실행 결과 파싱
     const status: 1 | 0 = result.execResult.exceptionError ? 0 : 1;
@@ -1437,7 +1568,9 @@ export class ContractService implements OnApplicationBootstrap {
     }
 
     // 3. CollateralVault.setStablecoin(StableCoin주소) 호출 (VM을 통해 직접 실행)
-    this.logger.log('Linking CollateralVault to StableCoin via VM (no transaction)...');
+    this.logger.log(
+      'Linking CollateralVault to StableCoin via VM (no transaction)...',
+    );
     const setStablecoinData = this.encodeFunctionCall(
       'setStablecoin',
       ['address'],
@@ -1455,7 +1588,9 @@ export class ContractService implements OnApplicationBootstrap {
     this.logger.log('CollateralVault.setStablecoin() completed');
 
     // 4. StableCoin.setVault(CollateralVault주소) 호출 (VM을 통해 직접 실행)
-    this.logger.log('Linking StableCoin to CollateralVault via VM (no transaction)...');
+    this.logger.log(
+      'Linking StableCoin to CollateralVault via VM (no transaction)...',
+    );
     const setVaultData = this.encodeFunctionCall(
       'setVault',
       ['address'],
@@ -1508,8 +1643,10 @@ export class ContractService implements OnApplicationBootstrap {
     return {
       stablecoinAddress,
       vaultAddress,
-      stablecoinTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
-      vaultTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
+      stablecoinTxHash:
+        '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
+      vaultTxHash:
+        '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
     };
   }
 
@@ -1732,7 +1869,8 @@ export class ContractService implements OnApplicationBootstrap {
 
     return {
       stakingAddress,
-      stakingTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
+      stakingTxHash:
+        '0x0000000000000000000000000000000000000000000000000000000000000000', // 트랜잭션 없이 배포됨
     };
   }
 
