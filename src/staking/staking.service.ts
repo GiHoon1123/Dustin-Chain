@@ -755,128 +755,6 @@ export class StakingService implements OnApplicationBootstrap {
    * @returns 트랜잭션 해시 및 상태
    */
   /**
-   * Validator 활성화 (테스트용 API - VM 직접 호출 방식)
-   *
-   * 테스트용 API이므로 VM을 통해 직접 호출하여 즉시 처리합니다.
-   * 실제 운영에서는 processActivationQueue가 자동으로 처리합니다.
-   *
-   * @param validatorAddress - 활성화할 Validator 주소
-   * @returns 성공 여부
-   */
-  async activateValidator(
-    validatorAddress: Address,
-  ): Promise<{ hash: string; status: string }> {
-    try {
-      // Validator 상태 확인
-      const validatorInfo = await this.getValidator(validatorAddress);
-      this.logger.log(
-        `Attempting to activate validator ${validatorAddress}, current status: ${validatorInfo.status}, validatorAddress from contract: ${validatorInfo.validatorAddress}`,
-      );
-
-      // validatorAddress가 0x0000...이면 validator가 등록되지 않았을 수 있음
-      // 하지만 status가 pending이면 deposit은 성공했으므로 활성화 시도
-      if (
-        validatorInfo.validatorAddress ===
-          '0x0000000000000000000000000000000000000000' &&
-        validatorInfo.status === 'unknown'
-      ) {
-        throw new Error(
-          `Validator ${validatorAddress} is not registered in StakingContract`,
-        );
-      }
-
-      // pending 상태가 아니면 에러
-      if (
-        validatorInfo.status !== 'pending_initialized' &&
-        validatorInfo.status !== 'pending_queued'
-      ) {
-        throw new Error(
-          `Validator is not in pending state. Current status: ${validatorInfo.status}`,
-        );
-      }
-
-      const deployed = this.contractService.getDeployedContracts();
-      if (!deployed || !deployed.staking) {
-        throw new Error('StakingContract is not deployed');
-      }
-
-      const stakingAddress = deployed.staking.address;
-
-      // activateValidator(address validatorAddress) 함수 호출 데이터 생성
-      const activateData = this.contractService.encodeFunctionCall(
-        'activateValidator',
-        ['address'],
-        [validatorAddress],
-      );
-
-      // Deployment Account (255번) 가져오기 (VM 직접 실행용, 시스템 자동화 작업)
-      const deploymentAccount = this.contractService.getDeploymentAccount();
-      if (!deploymentAccount || !deploymentAccount.privateKey) {
-        throw new Error('Deployment account (255) is not loaded');
-      }
-
-      // 원본 로직(processActivationQueue)에서 사용하는 방식 그대로 복사
-      // 블록 정보를 가져와서 명시적으로 전달
-      this.logger.log(`[activateValidator] Getting block info...`);
-      const blockRepository = (this.contractService as any).blockRepository;
-      if (!blockRepository) {
-        throw new Error('BlockRepository not available');
-      }
-
-      this.logger.log(`[activateValidator] Calling findLatestNumber...`);
-      const latestNumber = await blockRepository.findLatestNumber();
-      this.logger.log(
-        `[activateValidator] findLatestNumber completed: ${latestNumber}`,
-      );
-
-      if (latestNumber === null) {
-        throw new Error('Latest block not found');
-      }
-      const blockNumber = latestNumber;
-      const timestamp = Date.now(); // 밀리초
-      this.logger.log(
-        `[activateValidator] Block info: number=${blockNumber}, timestamp=${timestamp}`,
-      );
-
-      // VM을 통해 직접 activateValidator() 호출 (트랜잭션 없이)
-      // 원본 로직과 동일한 방식으로 호출
-      const activateResult = await this.contractService.executeContractDirect(
-        stakingAddress,
-        activateData,
-        deploymentAccount.address,
-        deploymentAccount.privateKey,
-        0n, // value는 0
-        blockNumber,
-        timestamp,
-      );
-
-      // status가 1이면 성공, 0이면 실패
-      if (!activateResult || activateResult.status === 0) {
-        throw new Error(
-          `Activation failed: status=${activateResult?.status}, result=${activateResult?.result}`,
-        );
-      }
-
-      this.logger.log(
-        `✅ Activated validator ${validatorAddress} via VM (test API)`,
-      );
-
-      // VM 직접 호출이므로 트랜잭션 해시는 없음
-      // 테스트용 API이므로 성공 상태만 반환
-      return {
-        hash: '0x0000000000000000000000000000000000000000000000000000000000000000', // VM 직접 호출은 해시 없음
-        status: 'success', // VM 직접 호출은 즉시 성공
-      };
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to activate validator ${validatorAddress}: ${error.message}`,
-      );
-      this.logger.error(`Error stack: ${error.stack}`);
-      throw error;
-    }
-  }
-
-  /**
    * Proposer 보상 지급 (Backend에서 호출)
    *
    * StakingContract의 rewardProposer() 함수를 호출하여
@@ -1691,18 +1569,14 @@ export class StakingService implements OnApplicationBootstrap {
         validatorInfo.validatorAddress !==
         '0x0000000000000000000000000000000000000000'
       ) {
-        // 이미 등록되어 있지만, 활성화 안 된 경우 활성화 시도
+        // 이미 등록되어 있지만, 활성화 안 된 경우
+        // 자동화 로직(processActivationQueue)이 처리하므로 여기서는 스킵
         if (
           validatorInfo.status === 'pending_queued' ||
           validatorInfo.status === 'pending_initialized'
         ) {
           this.logger.debug(
-            `Validator ${account.address} is registered but not activated. Attempting activation...`,
-          );
-          const activateResult = await this.activateValidator(account.address);
-          await this.waitForTransactionConfirmation(activateResult.hash, 30000);
-          this.logger.log(
-            `✅ Successfully activated validator ${account.address}`,
+            `Validator ${account.address} is registered but not activated. Will be activated by processActivationQueue.`,
           );
           return;
         } else if (validatorInfo.status === 'active_ongoing') {
@@ -1739,15 +1613,9 @@ export class StakingService implements OnApplicationBootstrap {
       // 트랜잭션 완료 대기
       await this.waitForTransactionConfirmation(depositResult.hash, 30000);
 
-      // activateValidator() 호출
-      this.logger.debug(`Activating validator ${account.address}...`);
-      const activateResult = await this.activateValidator(account.address);
-
-      // 활성화 트랜잭션 완료 대기
-      await this.waitForTransactionConfirmation(activateResult.hash, 30000);
-
+      // 활성화는 자동화 로직(processActivationQueue)이 처리
       this.logger.log(
-        `✅ Successfully registered validator ${account.address}`,
+        `✅ Successfully registered validator ${account.address}. Activation will be handled by processActivationQueue.`,
       );
     } catch (error) {
       this.logger.error(
@@ -1812,34 +1680,16 @@ export class StakingService implements OnApplicationBootstrap {
           validatorInfo.validatorAddress !==
           '0x0000000000000000000000000000000000000000'
         ) {
-          // 이미 등록되어 있지만, 활성화 안 된 경우 활성화 시도
+          // 이미 등록되어 있지만, 활성화 안 된 경우
+          // 자동화 로직(processActivationQueue)이 처리하므로 여기서는 스킵
           if (
             validatorInfo.status === 'pending_queued' ||
             validatorInfo.status === 'pending_initialized'
           ) {
             this.logger.debug(
-              `Validator ${account.address} is registered but not activated. Attempting activation...`,
+              `Validator ${account.address} is registered but not activated. Will be activated by processActivationQueue.`,
             );
-            try {
-              // activateValidator() 호출
-              const activateResult = await this.activateValidator(
-                account.address,
-              );
-              // 활성화 트랜잭션 완료 대기
-              await this.waitForTransactionConfirmation(
-                activateResult.hash,
-                30000,
-              );
-              registered++;
-              this.logger.debug(
-                `Successfully activated validator ${account.address} (${registered}/${accountsToRegister.length})`,
-              );
-            } catch (activateError) {
-              this.logger.error(
-                `Failed to activate validator ${account.address}: ${activateError.message}`,
-              );
-              failed++;
-            }
+            skipped++;
           } else {
             // 이미 활성화되었거나 다른 상태
             this.logger.debug(
@@ -1875,13 +1725,7 @@ export class StakingService implements OnApplicationBootstrap {
         // KV DB 삭제 후 재시작 시 블록 생성이 느릴 수 있으므로 충분한 대기
         await this.waitForTransactionConfirmation(depositResult.hash, 30000);
 
-        // activateValidator() 호출
-        this.logger.debug(`Activating validator ${account.address}...`);
-        const activateResult = await this.activateValidator(account.address);
-
-        // 활성화 트랜잭션 완료 대기
-        await this.waitForTransactionConfirmation(activateResult.hash, 30000);
-
+        // 활성화는 자동화 로직(processActivationQueue)이 처리
         registered++;
         this.logger.debug(
           `Successfully registered validator ${account.address} (${registered}/${accountsToRegister.length})`,

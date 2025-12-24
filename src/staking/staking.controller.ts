@@ -156,29 +156,6 @@ export class StakingController {
   }
 
   /**
-   * Validator 활성화 (테스트용)
-   *
-   * POST /staking/activate-validator
-   */
-  @Post('activate-validator')
-  @ApiOperation({
-    summary: 'Validator 활성화 (테스트용)',
-    description:
-      'pending 상태인 Validator를 활성화합니다.\n\n' +
-      '⚠️  테스트용 API입니다. 실제 운영에서는 Backend가 자동으로 처리합니다.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Validator 활성화 성공',
-    type: TransactionResponseDto,
-  })
-  async activateValidator(
-    @Body() body: { validatorAddress: string },
-  ): Promise<TransactionResponseDto> {
-    return await this.stakingService.activateValidator(body.validatorAddress);
-  }
-
-  /**
    * 출금 처리 (테스트용)
    *
    * POST /staking/process-withdrawals
