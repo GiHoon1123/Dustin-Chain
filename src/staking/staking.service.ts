@@ -42,7 +42,7 @@ import { ContractService } from '../contract/contract.service';
 /**
  * Genesis Validator 자동 등록 개수
  */
-const GENESIS_VALIDATOR_COUNT = 90;
+const GENESIS_VALIDATOR_COUNT = 10;
 
 interface GenesisAccount {
   index: number;
@@ -395,6 +395,40 @@ export class StakingService implements OnApplicationBootstrap {
       validatorAddresses.push(address);
     }
 
+    // validatorList가 비어있을 경우 fallback: Genesis 계정 목록 사용
+    if (validatorAddresses.length === 0) {
+      this.logger.warn(
+        'validatorList is empty. Falling back to Genesis accounts for active validators.',
+      );
+      // Genesis 계정 목록 로드
+      const fs = await import('fs');
+      const path = await import('path');
+      const genesisAccountsPath = path.join(
+        process.cwd(),
+        'genesis-accounts.json',
+      );
+      if (fs.existsSync(genesisAccountsPath)) {
+        const genesisAccounts: Array<{
+          index: number;
+          address: string;
+          publicKey: string;
+          privateKey: string;
+        }> = JSON.parse(fs.readFileSync(genesisAccountsPath, 'utf8'));
+        // 모든 Genesis 계정에 대해 Validator 상태 확인
+        const allValidators = await Promise.all(
+          genesisAccounts.map((account) =>
+            this.getValidator(account.address).catch(() => null),
+          ),
+        );
+        // active_ongoing 상태인 Validator만 필터링
+        const activeValidators = allValidators.filter(
+          (v): v is NonNullable<typeof v> =>
+            v !== null && v.status === 'active_ongoing',
+        );
+        return activeValidators;
+      }
+    }
+
     // 각 Validator의 상세 정보 조회
     const validators = await Promise.all(
       validatorAddresses.map((address) => this.getValidator(address)),
@@ -539,14 +573,17 @@ export class StakingService implements OnApplicationBootstrap {
     blockNumber: number,
     timestamp: number,
   ): Promise<void> {
-    // Epoch 시작 시에만 처리 (이더리움과 동일)
-    const EPOCH_SIZE = 32; // blockchain.constants에서 가져와야 하지만 여기서는 하드코딩
-    if (blockNumber % EPOCH_SIZE !== 0) {
-      return;
-    }
+    // 테스트 편의: 매 블록마다 처리 (기존: Epoch 시작 시에만 처리)
+    // 기존 로직 (주석 처리):
+    // const EPOCH_SIZE = 32; // blockchain.constants에서 가져와야 하지만 여기서는 하드코딩
+    // if (blockNumber % EPOCH_SIZE !== 0) {
+    //   return;
+    // }
+    // const currentEpoch = Math.floor(blockNumber / EPOCH_SIZE);
+    // this.logger.log(`Processing Activation Queue for Epoch ${currentEpoch}...`);
 
-    const currentEpoch = Math.floor(blockNumber / EPOCH_SIZE);
-    this.logger.log(`Processing Activation Queue for Epoch ${currentEpoch}...`);
+    // 테스트용: 매 블록마다 처리
+    this.logger.log(`Processing Activation Queue for Block ${blockNumber}...`);
 
     try {
       // Churn Limit 계산
@@ -721,17 +758,18 @@ export class StakingService implements OnApplicationBootstrap {
 
     // getStats() 결과 파싱
     // getStats()는 (uint256, uint256, uint256, uint256, uint256) 반환
-    // (totalStaked, totalValidators, activeValidators, totalRewards, totalSlashed)
+    // (_totalStaked, _totalRewards, _totalSlashed, activeCount, pendingCount)
     // 각 값은 32바이트 = 64 hex characters
     const statsHex = statsResult.result.startsWith('0x')
       ? statsResult.result.slice(2)
       : statsResult.result;
 
     const totalStaked = '0x' + statsHex.slice(0, 64);
-    const totalValidators = parseInt(statsHex.slice(64, 128), 16);
-    const activeValidators = parseInt(statsHex.slice(128, 192), 16);
-    const totalRewards = '0x' + statsHex.slice(192, 256);
-    const totalSlashed = '0x' + statsHex.slice(256, 320);
+    const totalRewards = '0x' + statsHex.slice(64, 128);
+    const totalSlashed = '0x' + statsHex.slice(128, 192);
+    const activeValidators = parseInt(statsHex.slice(192, 256), 16);
+    const pendingCount = parseInt(statsHex.slice(256, 320), 16);
+    const totalValidators = activeValidators + pendingCount;
 
     return {
       totalStaked,
@@ -1088,6 +1126,26 @@ export class StakingService implements OnApplicationBootstrap {
         );
       }
 
+      // deposit() 호출 후 validatorList에 추가되었는지 확인
+      // VM 직접 호출 시 상태 변경이 제대로 반영되었는지 확인
+      const validatorInfoAfterDeposit = await this.getValidator(
+        account.address,
+      );
+      this.logger.log(
+        `[Genesis Validator] After deposit: ${account.address}, status=${validatorInfoAfterDeposit.status}, stakedAmount=${validatorInfoAfterDeposit.stakedAmount}`,
+      );
+
+      // deposit이 실제로 성공했는지 확인
+      if (
+        validatorInfoAfterDeposit.status === 'unknown' ||
+        validatorInfoAfterDeposit.stakedAmount === '0x' ||
+        validatorInfoAfterDeposit.stakedAmount === '0x0'
+      ) {
+        throw new Error(
+          `Deposit appears to have failed: status=${validatorInfoAfterDeposit.status}, stakedAmount=${validatorInfoAfterDeposit.stakedAmount}`,
+        );
+      }
+
       // activateValidator() 호출
       return await this.activateGenesisValidatorDirect(
         account,
@@ -1283,6 +1341,92 @@ export class StakingService implements OnApplicationBootstrap {
       this.logger.log(
         `✅ Processed ${processed} withdrawal(s) directly via VM`,
       );
+
+      // 출금 처리 후 계정 잔액 확인 (디버깅용)
+      // Withdrawn 이벤트에서 수신자 주소와 금액 추출
+      if (result && result.logs) {
+        const eventSignature = 'Withdrawn(address,address,uint256)';
+        const eventSignatureHash = keccak('keccak256')
+          .update(eventSignature)
+          .digest('hex');
+        const withdrawnEventSignature = `0x${eventSignatureHash}`;
+
+        this.logger.log(
+          `[출금 처리] 총 로그 수: ${result.logs.length}, 이벤트 시그니처: ${withdrawnEventSignature}`,
+        );
+
+        const withdrawnLogs = result.logs.filter(
+          (log: any) => log.topics && log.topics[0] === withdrawnEventSignature,
+        );
+
+        this.logger.log(
+          `[출금 처리] Withdrawn 이벤트 로그 수: ${withdrawnLogs.length}`,
+        );
+
+        for (const log of withdrawnLogs) {
+          this.logger.log(
+            `[출금 처리] 이벤트 로그: topics=${JSON.stringify(log.topics)}, data=${log.data}`,
+          );
+          // Withdrawn(address indexed validator, address indexed to, uint256 amount)
+          // topics[0] = event signature
+          // topics[1] = validatorAddress (indexed)
+          // topics[2] = to (수신자, indexed)
+          // data = amount (uint256)
+          if (log.topics && log.topics.length >= 3) {
+            // topics[2]는 indexed address이므로 32바이트 (66자리: 0x + 64 hex)
+            const topic2 = log.topics[2] as string;
+            // 마지막 20바이트(40 hex chars)만 사용 (주소는 20바이트)
+            const toAddress = '0x' + topic2.slice(-40).toLowerCase();
+
+            // data는 uint256 (32바이트)
+            const amountHex = log.data || '0x0';
+            const amount = BigInt(amountHex);
+
+            this.logger.log(
+              `[출금 처리] 파싱된 정보: toAddress=${toAddress}, amount=${amount} Wei (${Number(amount) / 10 ** 18} DSTN)`,
+            );
+
+            // 계정 잔액 확인 (처리 전)
+            const accountBalanceBefore =
+              await this.accountService.getBalance(toAddress);
+            const balanceBeforeDSTN = Number(accountBalanceBefore) / 10 ** 18;
+
+            this.logger.log(
+              `[출금 처리] 처리 전 잔액: ${balanceBeforeDSTN} DSTN (${accountBalanceBefore} Wei)`,
+            );
+
+            // ⚠️ 중요: VM이 컨트랙트의 payable(to).call{value: amount}("") 호출을 처리할 때
+            // 계정 잔액이 자동으로 증가하지 않으므로 addBalance로 직접 업데이트
+            // 트랜잭션 없이 직접 상태 업데이트 (레이어 분리는 나중에)
+            try {
+              await this.accountService.addBalance(toAddress, amount);
+              this.logger.log(
+                `[출금 처리] ✅ addBalance 호출 완료: ${toAddress}에 ${Number(amount) / 10 ** 18} DSTN 추가`,
+              );
+            } catch (error: any) {
+              this.logger.error(
+                `[출금 처리] ❌ addBalance 실패: ${error.message || String(error)}`,
+              );
+              throw error;
+            }
+
+            const accountBalanceAfter =
+              await this.accountService.getBalance(toAddress);
+            const balanceAfterDSTN = Number(accountBalanceAfter) / 10 ** 18;
+            const amountDSTN = Number(amount) / 10 ** 18;
+
+            this.logger.log(
+              `[출금 처리] ✅ 출금 완료: 수신자=${toAddress}, 출금 금액=${amountDSTN} DSTN`,
+            );
+            this.logger.log(
+              `[출금 처리] 잔액 변경: ${balanceBeforeDSTN} DSTN → ${balanceAfterDSTN} DSTN (증가: ${amountDSTN} DSTN)`,
+            );
+            this.logger.log(
+              `[출금 처리] 잔액 변경: ${accountBalanceBefore} -> ${accountBalanceAfter} Wei`,
+            );
+          }
+        }
+      }
     }
 
     return { processed };
@@ -1628,11 +1772,11 @@ export class StakingService implements OnApplicationBootstrap {
   /**
    * Genesis Validator 자동 등록 (비동기)
    *
-   * genesis-accounts.json에서 지정된 인덱스부터 90개 계정을 읽어서
+   * genesis-accounts.json에서 지정된 인덱스부터 10개 계정을 읽어서
    * StakingContract에 자동으로 등록합니다.
    *
    * 동작:
-   * 1. genesis-accounts.json에서 startIndex부터 최대 90개 계정 읽기
+   * 1. genesis-accounts.json에서 startIndex부터 최대 10개 계정 읽기
    * 2. 각 계정이 이미 등록되어 있는지 확인
    * 3. 등록되지 않은 경우:
    *    - 계정 잔액 확인 (32 DSTN 이상 필요)

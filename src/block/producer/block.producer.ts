@@ -632,7 +632,7 @@ export class BlockProducer implements OnApplicationBootstrap {
    * - pending_queued 상태의 Validator를 active_ongoing으로 변경
    *
    * 우리:
-   * - BlockProducer가 Epoch 시작 시 자동 호출
+   * - 테스트 편의: 매 블록마다 처리 (StakingService에서 이미 매 블록마다 처리하도록 변경됨)
    * - StakingService.processActivationQueue() 호출
    *
    * @param blockNumber - 현재 블록 번호
@@ -642,10 +642,11 @@ export class BlockProducer implements OnApplicationBootstrap {
     timestamp: number,
   ): Promise<void> {
     try {
-      // Epoch 시작 시에만 처리 (이더리움과 동일)
-      if (blockNumber % EPOCH_SIZE !== 0) {
-        return;
-      }
+      // 테스트 편의: 매 블록마다 처리 (StakingService에서 이미 매 블록마다 처리하도록 변경됨)
+      // 기존 로직 (주석 처리):
+      // if (blockNumber % EPOCH_SIZE !== 0) {
+      //   return;
+      // }
 
       await this.stakingService.processActivationQueue(blockNumber, timestamp);
     } catch (error) {
@@ -668,10 +669,10 @@ export class BlockProducer implements OnApplicationBootstrap {
    * @param blockNumber - 현재 블록 번호
    */
   private async processWithdrawals(blockNumber: number): Promise<void> {
-    // 10블록마다 한 번씩만 처리 (가스 절약 및 성능 최적화)
+    // 5블록마다 한 번씩만 처리 (가스 절약 및 성능 최적화)
     if (
       this.lastWithdrawalProcessBlock !== -1 &&
-      blockNumber - this.lastWithdrawalProcessBlock < 10
+      blockNumber - this.lastWithdrawalProcessBlock < 5
     ) {
       return;
     }
