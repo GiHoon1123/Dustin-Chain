@@ -136,7 +136,7 @@ export class BlockProducer implements OnApplicationBootstrap {
 
   /**
    * 최소 활성 검증자가 등록될 때까지 대기
-   * 
+   *
    * @param timeoutMs - 최대 대기 시간 (밀리초)
    */
   private async waitForActiveValidators(timeoutMs: number): Promise<void> {
@@ -146,7 +146,8 @@ export class BlockProducer implements OnApplicationBootstrap {
 
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const activeValidators = await this.stakingService.getActiveValidators();
+        const activeValidators =
+          await this.stakingService.getActiveValidators();
         if (activeValidators.length >= minValidators) {
           this.logger.log(
             `Found ${activeValidators.length} active validators. Block production can start.`,
