@@ -57,3 +57,7 @@ data/
 
 # 백업 폴더 (AWS Genesis 백업)
 backup/
+
+# 런타임 생성 파일 (서버에서 자동 생성)
+deployed-contracts.json
+contract-abis.json

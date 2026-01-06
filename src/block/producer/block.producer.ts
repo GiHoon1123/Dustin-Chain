@@ -127,8 +127,49 @@ export class BlockProducer implements OnApplicationBootstrap {
     //   `Genesis Time set: ${new Date(this.genesisTime!).toISOString()}`,
     // );
 
+    // 최소 활성 검증자가 등록될 때까지 대기 (최대 30초)
+    await this.waitForActiveValidators(30000);
+
     // 블록 생성 시작
     this.start();
+  }
+
+  /**
+   * 최소 활성 검증자가 등록될 때까지 대기
+   * 
+   * @param timeoutMs - 최대 대기 시간 (밀리초)
+   */
+  private async waitForActiveValidators(timeoutMs: number): Promise<void> {
+    const startTime = Date.now();
+    const checkInterval = 500; // 500ms마다 확인
+    const minValidators = 3; // 최소 활성 검증자 수
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const activeValidators = await this.stakingService.getActiveValidators();
+        if (activeValidators.length >= minValidators) {
+          this.logger.log(
+            `Found ${activeValidators.length} active validators. Block production can start.`,
+          );
+          return;
+        }
+        this.logger.debug(
+          `Waiting for active validators... (current: ${activeValidators.length}, required: ${minValidators})`,
+        );
+      } catch (error) {
+        // 에러 발생 시 계속 대기
+        this.logger.debug(
+          `Error checking active validators: ${error.message}. Retrying...`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, checkInterval));
+    }
+
+    // 타임아웃 후에도 활성 검증자가 없으면 경고만 출력하고 계속 진행
+    // (수동 등록 가능하도록)
+    this.logger.warn(
+      `No active validators found after ${timeoutMs}ms. Block production may fail.`,
+    );
   }
 
   /**
