@@ -161,6 +161,17 @@ export class CustomStateManager {
     // this.logger.debug(`commit() - depth: ${(this.stateManager as any).journalStack?.length || 'unknown'}`);
   }
 
+  /**
+   * 블록 커밋: 저널 스택의 모든 변경사항을 LevelDB에 저장
+   *
+   * 컨트랙트 배포 시 사용:
+   * - deployContractDirect에서 호출하여 컨트랙트 계정을 LevelDB에 저장
+   * - 일반 블록 생성 시에는 BlockService.commitBlock()에서 호출
+   */
+  async commitBlock(): Promise<void> {
+    await this.stateManager.commitBlock();
+  }
+
   async revert(): Promise<void> {
     await this.stateManager.revertCheckpoint();
     // this.logger.debug(`revert() - depth: ${(this.stateManager as any).journalStack?.length || 'unknown'}`);

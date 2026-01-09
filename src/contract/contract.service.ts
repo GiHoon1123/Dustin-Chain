@@ -905,6 +905,8 @@ export class ContractService implements OnApplicationBootstrap {
       } else {
         // 성공 시 commit (우리 StateManager에 상태 변경 반영)
         await this.evmState.commit();
+        // 컨트랙트 배포는 트랜잭션 없이 실행되므로, 명시적으로 LevelDB에 저장
+        await this.evmState.commitBlock();
       }
     } catch (error) {
       // 에러 발생 시 revert
@@ -1144,6 +1146,8 @@ export class ContractService implements OnApplicationBootstrap {
         // 성공 시 commit (우리 StateManager에 상태 변경 반영)
         this.logger.log(`[executeContractDirect] Committing changes...`);
         await this.evmState.commit();
+        // 컨트랙트 호출도 명시적으로 LevelDB에 저장 (setStablecoin, setVault 등)
+        await this.evmState.commitBlock();
         this.logger.log(`[executeContractDirect] Changes committed`);
       } else {
         // 실패 시 revert (변경사항 취소)
